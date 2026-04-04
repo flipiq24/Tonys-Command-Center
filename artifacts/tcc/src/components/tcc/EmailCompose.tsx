@@ -36,7 +36,7 @@ function ContactAutocomplete({
     onChange(v);
     clearTimeout(timeoutRef.current);
     const lastToken = v.split(",").pop()?.trim() || "";
-    if (lastToken.length >= 2) {
+    if (lastToken.length >= 3) {
       timeoutRef.current = setTimeout(async () => {
         try {
           const results = await get<ContactSuggestion[]>(`/contacts/autocomplete?q=${encodeURIComponent(lastToken)}`);

@@ -3,6 +3,25 @@ import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR } from "./constants";
 import type { Idea, SlackItem, LinearItem } from "./types";
 
+// ─── High-urgency Slack banner ────────────────────────────────────────────────
+function HighUrgencyBanner({ items, onDismiss }: { items: SlackItem[]; onDismiss: () => void }) {
+  const high = items.filter(i => i.level === "high");
+  if (high.length === 0) return null;
+  return (
+    <div style={{
+      background: C.red, color: "#fff", padding: "10px 20px",
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.15)", fontFamily: F, zIndex: 48,
+    }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>🔴 {high.length} High-Urgency Slack Item{high.length > 1 ? "s" : ""}</div>
+        {high[0] && <div style={{ fontSize: 12, opacity: 0.9, marginTop: 2 }}>{high[0].message?.substring(0, 100) || "Needs immediate attention"}</div>}
+      </div>
+      <button onClick={onDismiss} style={{ padding: "5px 12px", background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, cursor: "pointer", fontFamily: F }}>Dismiss</button>
+    </div>
+  );
+}
+
 interface Props {
   clock: string;
   ideas: Idea[];
@@ -41,6 +60,7 @@ const topLevel = (items: { level: string }[]) => {
 
 export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onShowCheckin, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning, onPrint }: Props) {
   const [open, setOpen] = useState(false);
+  const [dismissedHighUrgency, setDismissedHighUrgency] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -133,12 +153,23 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
             <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
             <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
             <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
-            {hasNotif && !open && (
+            {!open && (slackItems.length > 0 || linearItems.length > 0) && (
+              <span style={{
+                position: "absolute", top: -6, right: -6,
+                minWidth: 16, height: 16, borderRadius: 8,
+                background: slackLevel === "high" || linearLevel === "high" ? C.red : C.amb,
+                border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px",
+                lineHeight: 1,
+              }}>
+                {slackItems.length + linearItems.length}
+              </span>
+            )}
+            {!open && unresolved > 0 && slackItems.length === 0 && linearItems.length === 0 && (
               <span style={{
                 position: "absolute", top: -3, right: -3,
                 width: 9, height: 9, borderRadius: "50%",
-                background: unresolved > 0 ? C.red : slackLevel === "high" ? C.red : C.amb,
-                border: "2px solid #fff",
+                background: C.red, border: "2px solid #fff",
               }} />
             )}
           </button>
@@ -186,20 +217,17 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
               {menuItem("💡", "Ideas", null, () => onShowIdea())}
-              {slackItems.length > 0 && menuItem(
-                "💬",
-                `Slack · ${slackItems.length} item${slackItems.length > 1 ? "s" : ""}`,
-                null, () => {},
-                levelColor(slackLevel || undefined),
-              )}
-              {linearItems.length > 0 && menuItem(
-                "📋",
-                `Linear · ${linearItems.length} issue${linearItems.length > 1 ? "s" : ""}`,
-                null, () => {},
-                levelColor(linearLevel || undefined),
-              )}
+              {slackItems.length > 0 && menuItem("💬", "Slack", slackItems.length, () => {}, levelColor(slackLevel || undefined))}
+              {linearItems.length > 0 && menuItem("📋", "Linear", linearItems.length, () => {}, levelColor(linearLevel || undefined))}
               {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
               {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
+              {menuItem("📁", "Setup Drive Folders", null, () => {
+                setOpen(false);
+                fetch("/api/drive/setup-folders", { method: "POST" })
+                  .then(r => r.json())
+                  .then(d => alert(d.ok ? "Drive folders created successfully!" : `Error: ${d.error}`))
+                  .catch(() => alert("Failed to setup Drive folders"));
+              })}
 
               {sep}
 
@@ -209,6 +237,11 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
           )}
         </div>
       </div>
+
+      {/* High-urgency Slack banner */}
+      {!dismissedHighUrgency && slackItems.some(i => i.level === "high") && (
+        <HighUrgencyBanner items={slackItems} onDismiss={() => setDismissedHighUrgency(true)} />
+      )}
 
       {/* Meeting warning banner */}
       {meetingWarning && (

@@ -391,4 +391,68 @@ router.get("/tasks/refresh", async (req, res): Promise<void> => {
   res.json(tasks);
 });
 
+// ── Task Alerts: out-of-sequence and missing due dates ──────────────────────
+router.get("/tasks/alerts", async (req, res): Promise<void> => {
+  try {
+    const issues = await getLinearIssues();
+
+    // (a) In-progress items where a higher-priority item is blocked/stalled
+    const inProgress = issues.filter(i => {
+      const stateName = (i.state?.name || "").toLowerCase();
+      return stateName.includes("progress") || stateName.includes("started") || stateName.includes("doing");
+    });
+
+    const blocked = issues.filter(i => {
+      const stateName = (i.state?.name || "").toLowerCase();
+      return stateName.includes("blocked") || stateName.includes("waiting") || stateName.includes("todo");
+    });
+
+    // Find cases where a blocked item has higher priority (lower number = higher) than an in-progress item
+    const outOfSequence: { id: string; identifier: string; title: string; state: string; priority: number }[] = [];
+    for (const prog of inProgress) {
+      const higherBlockers = blocked.filter(b => (b.priority || 99) < (prog.priority || 99));
+      for (const blocker of higherBlockers) {
+        outOfSequence.push({
+          id: blocker.id,
+          identifier: blocker.identifier,
+          title: blocker.title,
+          state: blocker.state?.name || "Blocked",
+          priority: blocker.priority || 0,
+        });
+      }
+    }
+
+    // Deduplicate
+    const seenIds = new Set<string>();
+    const dedupedOutOfSeq = outOfSequence.filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+
+    // (b) Linear items missing due dates
+    const missingDueDates = issues
+      .filter(i => {
+        const stateName = (i.state?.name || "").toLowerCase();
+        const isActive = !stateName.includes("done") && !stateName.includes("cancelled") && !stateName.includes("completed");
+        return isActive && !i.dueDate;
+      })
+      .map(i => ({
+        id: i.id,
+        identifier: i.identifier,
+        title: i.title,
+        state: i.state?.name || "Active",
+        priority: i.priority || 0,
+      }));
+
+    res.json({
+      outOfSequence: dedupedOutOfSeq,
+      missingDueDates,
+    });
+  } catch (err) {
+    req.log.warn({ err }, "tasks/alerts failed");
+    res.json({ outOfSequence: [], missingDueDates: [] });
+  }
+});
+
 export default router;

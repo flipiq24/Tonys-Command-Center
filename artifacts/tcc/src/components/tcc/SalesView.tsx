@@ -38,6 +38,9 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
   const [results, setResults] = useState<Contact[]>(initialContacts);
   const [total, setTotal] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [noMoreResults, setNoMoreResults] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasFilters = !!(search.trim() || filterStatus !== "All" || filterStage !== "All" || filterType !== "All" || filterCategory !== "All");
@@ -49,10 +52,10 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
     }
   }, [initialContacts, hasFilters]);
 
-  const fetchContacts = useCallback(async () => {
-    setSearching(true);
+  const fetchContacts = useCallback(async (newOffset = 0) => {
+    if (newOffset === 0) setSearching(true);
     try {
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams({ limit: "50", offset: String(newOffset) });
       if (search.trim()) params.set("search", search.trim());
       if (filterStatus !== "All") params.set("status", filterStatus);
       if (filterStage !== "All") params.set("stage", filterStage);
@@ -61,18 +64,44 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
       const data = await get<{ contacts: Contact[]; total: number } | Contact[]>(`/contacts?${params}`);
       const list = Array.isArray(data) ? data : data.contacts;
       const tot = Array.isArray(data) ? list.length : data.total;
-      setResults(list);
+      if (newOffset === 0) {
+        setResults(list);
+        setOffset(list.length);
+        setNoMoreResults(list.length < 50);
+      } else {
+        setResults(prev => [...prev, ...list]);
+        setOffset(prev => prev + list.length);
+        setNoMoreResults(list.length < 50);
+      }
       setTotal(tot);
     } catch { /* keep existing */ }
-    finally { setSearching(false); }
+    finally { setSearching(false); setLoadingMore(false); }
   }, [search, filterStatus, filterStage, filterType, filterCategory]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!hasFilters) { return; }
-    debounceRef.current = setTimeout(fetchContacts, search.trim() ? 300 : 0);
+    if (!hasFilters) { setOffset(0); setNoMoreResults(false); return; }
+    debounceRef.current = setTimeout(() => fetchContacts(0), search.trim() ? 300 : 0);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search, filterStatus, filterStage, filterType, filterCategory, fetchContacts, hasFilters]);
+
+  const handleLoadMore = useCallback(async () => {
+    setLoadingMore(true);
+    if (hasFilters) {
+      await fetchContacts(offset);
+    } else {
+      try {
+        const params = new URLSearchParams({ limit: "50", offset: String(offset) });
+        const data = await get<{ contacts: Contact[]; total: number } | Contact[]>(`/contacts?${params}`);
+        const list = Array.isArray(data) ? data : data.contacts;
+        setResults(prev => [...prev, ...list]);
+        setOffset(prev => prev + list.length);
+        setNoMoreResults(list.length < 50);
+        setTotal(Array.isArray(data) ? null : data.total);
+      } catch { /* keep existing */ }
+      finally { setLoadingMore(false); }
+    }
+  }, [offset, hasFilters, fetchContacts]);
 
   const handleContactUpdated = useCallback((updated: Contact) => {
     setResults(prev => prev.map(c => String(c.id) === String(updated.id) ? updated : c));
@@ -260,6 +289,19 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
             </div>
           );
         })}
+
+        {/* ── Load More ── */}
+        {!noMoreResults && results.length >= 50 && (
+          <div style={{ textAlign: "center", marginTop: 8, marginBottom: 4 }}>
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              style={{ ...btn2, fontSize: 12, padding: "8px 24px", color: C.blu, borderColor: C.blu, opacity: loadingMore ? 0.6 : 1 }}
+            >
+              {loadingMore ? "Loading…" : `Load More (${total && total > results.length ? `${results.length} of ${total}` : results.length} shown)`}
+            </button>
+          </div>
+        )}
 
         {/* ── Call Log ── */}
         {calls.length > 0 && (

@@ -111,10 +111,24 @@ const CIRCLE: React.CSSProperties = {
   fontSize: 11, color: "#fff", padding: 0,
 };
 
+interface TaskAlert {
+  id: string;
+  identifier: string;
+  title: string;
+  state: string;
+  priority: number;
+}
+
+interface TaskAlerts {
+  outOfSequence: TaskAlert[];
+  missingDueDates: TaskAlert[];
+}
+
 export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, onBackToSchedule, onPrint }: Props) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
+  const [alerts, setAlerts] = useState<TaskAlerts>({ outOfSequence: [], missingDueDates: [] });
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
   const [workNextSteps, setWorkNextSteps] = useState("");
@@ -159,6 +173,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
       for (const n of notes) map[n.taskId] = n;
       setTodayNotes(map);
     }).catch(() => {});
+    get<TaskAlerts>("/tasks/alerts").then(setAlerts).catch(() => {});
   }, [loadLocalTasks]);
 
   // Close drive picker on outside click
@@ -292,6 +307,39 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
         marginRight: calSide ? 320 : undefined, transition: "margin 0.2s", fontFamily: F,
       }}>
         <TimeRoutingBanner />
+
+        {/* Alert Cards */}
+        {alerts.outOfSequence.length > 0 && (
+          <div style={{ background: C.redBg, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "12px 16px", marginBottom: 12, marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8 }}>
+              ⚠ Out-of-Sequence: Higher-Priority Items Blocked
+            </div>
+            {alerts.outOfSequence.map(item => (
+              <div key={item.id} style={{ fontSize: 13, color: C.tx, padding: "3px 0", display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: C.red, background: `${C.red}22`, padding: "1px 5px", borderRadius: 3, flexShrink: 0 }}>{item.identifier}</span>
+                <span>{item.title}</span>
+                <span style={{ fontSize: 11, color: C.mut, marginLeft: "auto", flexShrink: 0 }}>{item.state}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {alerts.missingDueDates.length > 0 && (
+          <div style={{ background: C.ambBg, border: `1px solid ${C.amb}44`, borderRadius: 10, padding: "12px 16px", marginBottom: 12, marginTop: alerts.outOfSequence.length > 0 ? 0 : 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.amb, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8 }}>
+              📅 Linear Items Missing Due Dates ({alerts.missingDueDates.length})
+            </div>
+            {alerts.missingDueDates.slice(0, 5).map(item => (
+              <div key={item.id} style={{ fontSize: 13, color: C.tx, padding: "3px 0", display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: C.amb, background: `${C.amb}22`, padding: "1px 5px", borderRadius: 3, flexShrink: 0 }}>{item.identifier}</span>
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</span>
+              </div>
+            ))}
+            {alerts.missingDueDates.length > 5 && (
+              <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>+{alerts.missingDueDates.length - 5} more</div>
+            )}
+          </div>
+        )}
 
         {/* Header */}
         <div style={{

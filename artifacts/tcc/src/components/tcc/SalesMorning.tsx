@@ -77,6 +77,8 @@ function CommTag({ channel }: { channel?: string }) {
 export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onOpenChat, onSwitchToTasks, onBackToSchedule }: Props) {
   const [data, setData] = useState<MorningData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [demoCount, setDemoCount] = useState(0);
+  const [demoUpdating, setDemoUpdating] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [scoring, setScoring] = useState(false);
   const [researching, setResearching] = useState(false);
@@ -89,7 +91,10 @@ export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onO
 
   const todayCallCount = calls.filter(c => c.type === "connected" || c.type === "attempt").length;
 
-  useEffect(() => { loadMorningData(); }, []);
+  useEffect(() => {
+    loadMorningData();
+    get<{ count: number }>("/demos/count").then(r => setDemoCount(r.count)).catch(() => {});
+  }, []);
 
   async function loadMorningData() {
     setLoading(true);
@@ -101,6 +106,25 @@ export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onO
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleDemoIncrement() {
+    setDemoUpdating(true);
+    try {
+      const r = await post<{ count: number }>("/demos/increment", {});
+      setDemoCount(r.count);
+    } catch { /* non-critical */ }
+    finally { setDemoUpdating(false); }
+  }
+
+  async function handleDemoDecrement() {
+    if (demoCount <= 0) return;
+    setDemoUpdating(true);
+    try {
+      const r = await post<{ count: number }>("/demos/decrement", {});
+      setDemoCount(r.count);
+    } catch { /* non-critical */ }
+    finally { setDemoUpdating(false); }
   }
 
   function toggleSelect(id: string) {
@@ -272,9 +296,27 @@ export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onO
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 20px" }}>
 
-        {/* Top-3 Focus Tasks */}
+        {/* Top-3 Focus Tasks + Demo Counter */}
         <div style={{ ...card, marginBottom: 16, padding: "14px 20px" }}>
-          <div style={{ fontFamily: FS, fontSize: 14, fontWeight: 700, marginBottom: 10, color: C.tx }}>Top-3 Focus Tasks</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontFamily: FS, fontSize: 14, fontWeight: 700, color: C.tx }}>Top-3 Focus Tasks</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.sub, fontFamily: F }}>Demos:</span>
+              {demoCount > 0 && (
+                <button
+                  onClick={handleDemoDecrement}
+                  disabled={demoUpdating}
+                  style={{ width: 24, height: 24, borderRadius: "50%", border: `1px solid ${C.brd}`, background: C.card, color: C.sub, cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: demoUpdating ? 0.5 : 1 }}
+                >−</button>
+              )}
+              <span style={{ fontSize: 18, fontWeight: 800, color: C.tx, minWidth: 24, textAlign: "center", fontFamily: FS }}>{demoCount}</span>
+              <button
+                onClick={handleDemoIncrement}
+                disabled={demoUpdating}
+                style={{ width: 24, height: 24, borderRadius: "50%", border: `1px solid ${C.blu}`, background: C.bluBg, color: C.blu, cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: demoUpdating ? 0.5 : 1 }}
+              >+</button>
+            </div>
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {[
               { label: `1 — Make ${Math.max(0, 10 - todayCallCount)} More Sales Calls (${todayCallCount}/10 today)`, primary: true, action: null },

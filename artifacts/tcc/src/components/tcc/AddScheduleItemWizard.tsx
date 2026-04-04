@@ -93,7 +93,7 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   const handleGuestInput = useCallback((val: string) => {
     setGuestInput(val);
     if (acTimer.current) clearTimeout(acTimer.current);
-    if (val.length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
+    if (val.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
     acTimer.current = setTimeout(async () => {
       try {
         const r = await get<Contact[]>(`/contacts/autocomplete?q=${encodeURIComponent(val)}`);

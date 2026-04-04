@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getDrive } from "../../lib/google-auth.js";
+import { createFolderIfNotExists } from "../../lib/google-drive.js";
 
 const router: IRouter = Router();
 
@@ -76,6 +77,41 @@ router.get("/drive/search", async (req, res): Promise<void> => {
   } catch (err) {
     console.warn("[drive/search] failed:", err instanceof Error ? err.message : err);
     res.json([]);
+  }
+});
+
+// ── Setup Drive Folder Hierarchy ────────────────────────────────────────────
+router.post("/drive/setup-folders", async (req, res): Promise<void> => {
+  try {
+    const folderIds: Record<string, string> = {};
+
+    // Root: FlipIQ Command Center
+    const rootId = await createFolderIfNotExists("FlipIQ Command Center");
+    folderIds["FlipIQ Command Center"] = rootId;
+
+    // Transcripts and subfolders
+    const transcriptsId = await createFolderIfNotExists("Transcripts", rootId);
+    folderIds["Transcripts"] = transcriptsId;
+    folderIds["Transcripts/Meetings"] = await createFolderIfNotExists("Meetings", transcriptsId);
+    folderIds["Transcripts/Calls"] = await createFolderIfNotExists("Calls", transcriptsId);
+    folderIds["Transcripts/General"] = await createFolderIfNotExists("General", transcriptsId);
+
+    // Contact Files and subfolders
+    const contactFilesId = await createFolderIfNotExists("Contact Files", rootId);
+    folderIds["Contact Files"] = contactFilesId;
+    folderIds["Contact Files/Team"] = await createFolderIfNotExists("Team", contactFilesId);
+    folderIds["Contact Files/Clients"] = await createFolderIfNotExists("Clients", contactFilesId);
+    folderIds["Contact Files/Prospects"] = await createFolderIfNotExists("Prospects", contactFilesId);
+    folderIds["Contact Files/Consultants"] = await createFolderIfNotExists("Consultants", contactFilesId);
+
+    // Top-level siblings
+    folderIds["Meeting Notes"] = await createFolderIfNotExists("Meeting Notes", rootId);
+    folderIds["Documents"] = await createFolderIfNotExists("Documents", rootId);
+
+    res.json({ ok: true, folderIds });
+  } catch (err) {
+    console.error("[drive/setup-folders] Failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ ok: false, error: String(err) });
   }
 });
 

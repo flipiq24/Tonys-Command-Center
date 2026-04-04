@@ -24,6 +24,7 @@ interface Props {
   onTipSaved: (key: string, text: string) => void;
   onRefresh?: (sources: string[]) => void;
   onDismissWarning?: () => void;
+  onPrint?: () => void;
 }
 
 const ALL_SOURCES = ["emails", "calendar", "slack", "linear", "ai"];
@@ -38,7 +39,7 @@ const topLevel = (items: { level: string }[]) => {
   return "low";
 };
 
-export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onShowCheckin, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning }: Props) {
+export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onShowCheckin, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning, onPrint }: Props) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -198,6 +199,7 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
                 levelColor(linearLevel || undefined),
               )}
               {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
+              {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
 
               {sep}
 

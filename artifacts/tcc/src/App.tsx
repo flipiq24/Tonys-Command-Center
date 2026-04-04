@@ -423,6 +423,7 @@ export default function App() {
       onTipSaved={handleTipSaved}
       onRefresh={refreshBrief}
       onDismissWarning={() => setMeetingWarning(null)}
+      onPrint={() => setPrintMode(true)}
     />
   );
 
@@ -463,6 +464,19 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+      {printMode && (
+        <PrintView
+          tasks={brief?.tasks || []}
+          tDone={tDone}
+          calendarData={brief?.calendarData || []}
+          emailsImportant={brief?.emailsImportant || []}
+          slackItems={brief?.slackItems || []}
+          linearItems={brief?.linearItems || []}
+          topCallContacts={contacts.map(c => ({ name: c.name, phone: c.phone, company: c.company, nextStep: c.nextStep }))}
+          onClose={() => setPrintMode(false)}
+          onRefresh={() => refreshBrief(["calendar", "emails"])}
+        />
       )}
       <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
@@ -533,17 +547,6 @@ export default function App() {
       {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
-      {printMode && (
-        <PrintView
-          tasks={brief?.tasks || []}
-          tDone={tDone}
-          calendarData={brief?.calendarData || []}
-          emailsImportant={brief?.emailsImportant || []}
-          slackItems={brief?.slackItems || []}
-          linearItems={brief?.linearItems || []}
-          onClose={() => setPrintMode(false)}
-        />
-      )}
       <TasksView
         tasks={brief?.tasks || []}
         tDone={tDone}

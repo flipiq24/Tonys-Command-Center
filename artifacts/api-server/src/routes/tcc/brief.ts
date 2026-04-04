@@ -93,8 +93,8 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
     const since = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000);
     const list = await gmail.users.messages.list({
       userId: "me",
-      maxResults: 15,
-      q: `after:${since} is:unread`,
+      maxResults: 20,
+      q: `after:${since} in:inbox -category:promotions -category:social`,
     });
 
     const messages = list.data.messages || [];
@@ -102,7 +102,7 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
 
     // Fetch all message details in parallel — avoids N+1 sequential awaits
     const details = await Promise.all(
-      messages.slice(0, 12).map(msg =>
+      messages.slice(0, 15).map(msg =>
         gmail.users.messages.get({
           userId: "me",
           id: msg.id!,

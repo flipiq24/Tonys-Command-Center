@@ -1,6 +1,32 @@
-// Gmail integration via Replit google-mail connector
-// Uses googleapis package with token from Replit Connectors
+// Gmail integration — dual-mode:
+//   Mode A (production): GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN
+//     → Full gmail.readonly access, tokens auto-refresh (never expire mid-session)
+//   Mode B (connector fallback): Replit google-mail connector
+//     → Limited add-on scopes; inbox read may fail (Insufficient Permission)
+// Mode A takes priority when all 3 env vars are set.
+
 import { google } from "googleapis";
+
+// ─── Mode A: Refresh token OAuth client ──────────────────────────────────────
+
+function buildRefreshTokenClient() {
+  const oauth2 = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID!,
+    process.env.GOOGLE_CLIENT_SECRET!,
+  );
+  oauth2.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+  return oauth2;
+}
+
+function hasRefreshTokens(): boolean {
+  return !!(
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET &&
+    process.env.GOOGLE_REFRESH_TOKEN
+  );
+}
+
+// ─── Mode B: Replit connector token ──────────────────────────────────────────
 
 let connectionSettings: {
   settings: {
@@ -10,7 +36,7 @@ let connectionSettings: {
   };
 } | null = null;
 
-async function getAccessToken(): Promise<string> {
+async function getConnectorAccessToken(): Promise<string> {
   if (
     connectionSettings &&
     connectionSettings.settings.expires_at &&
@@ -45,13 +71,24 @@ async function getAccessToken(): Promise<string> {
   return accessToken;
 }
 
+// ─── Public: get a fresh Gmail client ────────────────────────────────────────
 // WARNING: Never cache this client. Tokens expire.
+
 export async function getUncachableGmailClient() {
-  const accessToken = await getAccessToken();
+  if (hasRefreshTokens()) {
+    // Mode A: full gmail.readonly access via refresh token
+    const auth = buildRefreshTokenClient();
+    return google.gmail({ version: "v1", auth });
+  }
+
+  // Mode B: Replit connector (limited scopes)
+  const accessToken = await getConnectorAccessToken();
   const oauth2Client = new google.auth.OAuth2();
   oauth2Client.setCredentials({ access_token: accessToken });
   return google.gmail({ version: "v1", auth: oauth2Client });
 }
+
+// ─── Convenience helpers ──────────────────────────────────────────────────────
 
 export async function listRecentEmails(maxResults = 10): Promise<{
   id: string;

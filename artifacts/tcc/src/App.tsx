@@ -72,6 +72,14 @@ export default function App() {
     setCustomTips(prev => ({ ...prev, [key]: text }));
   }, []);
 
+  // Persist active view so Tony resumes exactly where he left off on reload
+  const persistView = useCallback((v: View) => {
+    setView(v);
+    if (v !== "checkin" && v !== "journal") {
+      post("/system-instructions", { key: "active_view", text: v }).catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
     const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
     return () => clearInterval(i);
@@ -107,9 +115,12 @@ export default function App() {
           };
           setCk(loaded);
 
-          // Advance gate only when persisted record exists
           if (journal?.formattedText || journal?.rawText) {
-            setView("emails");
+            // Restore the exact view Tony was on before refreshing
+            const VALID_VIEWS: View[] = ["emails", "schedule", "sales", "tasks"];
+            const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
+            const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "emails";
+            setView(restoredView);
           } else {
             setView("journal");
           }
@@ -126,7 +137,11 @@ export default function App() {
           setTDone(done);
         }
         if (instructionsData && Object.keys(instructionsData).length > 0) {
-          setCustomTips(instructionsData);
+          // Filter out non-tip keys before setting as custom tips
+          const tipKeys = Object.fromEntries(
+            Object.entries(instructionsData).filter(([k]) => k !== "active_view" && k !== "email_brain")
+          );
+          setCustomTips(tipKeys);
         }
       } catch {
         /* start fresh */
@@ -153,7 +168,7 @@ export default function App() {
   }, []);
 
   const handleTaskToggle = useCallback(async (task: TaskItem) => {
-    if (task.sales) { setView("sales"); return; }
+    if (task.sales) { persistView("sales"); return; }
     const newVal = !tDone[task.id];
     setTDone(prev => ({ ...prev, [task.id]: newVal }));
     if (newVal) {
@@ -229,7 +244,7 @@ export default function App() {
       calSide={calSide}
       eod={eod}
       customTips={customTips}
-      onSetView={v => setView(v as View)}
+      onSetView={v => persistView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
       onShowChat={() => setShowChat(true)}
@@ -249,7 +264,7 @@ export default function App() {
         snoozed={snoozed}
         customTips={customTips}
         onSnooze={handleSnooze}
-        onDone={() => setView("schedule")}
+        onDone={() => persistView("schedule")}
         onTipSaved={handleTipSaved}
       />
     </div>
@@ -270,8 +285,8 @@ export default function App() {
         onAttempt={c => setAttempt(c)}
         onConnected={name => handleLogCall(name, "connected")}
         onDemoChange={handleDemoChange}
-        onSwitchToTasks={() => setView("tasks")}
-        onBackToSchedule={() => setView("schedule")}
+        onSwitchToTasks={() => persistView("tasks")}
+        onBackToSchedule={() => persistView("schedule")}
       />
     </div>
   );
@@ -287,8 +302,8 @@ export default function App() {
         tDone={tDone}
         calSide={calSide}
         onToggle={handleTaskToggle}
-        onSwitchToSales={() => setView("sales")}
-        onBackToSchedule={() => setView("schedule")}
+        onSwitchToSales={() => persistView("sales")}
+        onBackToSchedule={() => persistView("schedule")}
       />
     </div>
   );
@@ -301,8 +316,8 @@ export default function App() {
       <SharedModals />
       <ScheduleView
         items={brief?.calendarData || []}
-        onEnterSales={() => { setView("sales"); setCalSide(true); }}
-        onEnterTasks={() => { setView("tasks"); setCalSide(true); }}
+        onEnterSales={() => { persistView("sales"); setCalSide(true); }}
+        onEnterTasks={() => { persistView("tasks"); setCalSide(true); }}
       />
     </div>
   );

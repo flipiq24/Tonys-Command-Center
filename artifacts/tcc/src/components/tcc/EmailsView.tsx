@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, TIPS } from "./constants";
-import { Tip } from "./Tip";
+import { SmartTip } from "./SmartTip";
 import { EmailReplyModal } from "./EmailReplyModal";
 import type { EmailItem } from "./types";
 
@@ -9,13 +9,16 @@ interface Props {
   emailsImportant: EmailItem[];
   emailsFyi: EmailItem[];
   snoozed: Record<number, string>;
+  customTips: Record<string, string>;
   onSnooze: (emailId: number, until: string) => void;
   onDone: () => void;
+  onTipSaved: (key: string, text: string) => void;
 }
 
-export function EmailsView({ emailsImportant, emailsFyi, snoozed, onSnooze, onDone }: Props) {
+export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, onSnooze, onDone, onTipSaved }: Props) {
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const unresolved = emailsImportant.filter(e => !snoozed[e.id]).length;
+  const tip = (key: string) => customTips[key] ?? TIPS[key] ?? "";
 
   return (
     <>
@@ -35,10 +38,10 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, onSnooze, onDo
               <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>{e.subj}</div>
               <div style={{ fontSize: 12, color: C.red, marginTop: 4 }}>→ {e.why}</div>
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                <Tip tip={TIPS.suggestReply}>
+                <SmartTip tipKey="suggestReply" tip={tip("suggestReply")} onSaved={onTipSaved}>
                   <button onClick={() => setReplyEmail(e)} style={{ ...btn2, padding: "5px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}>Suggest Reply</button>
-                </Tip>
-                <Tip tip={TIPS.snooze}>
+                </SmartTip>
+                <SmartTip tipKey="snooze" tip={tip("snooze")} onSaved={onTipSaved}>
                   <select onChange={ev => {
                     if (ev.target.value) {
                       onSnooze(e.id, ev.target.value);
@@ -52,7 +55,7 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, onSnooze, onDo
                     <option value="tom">Tomorrow</option>
                     <option value="nw">Next week</option>
                   </select>
-                </Tip>
+                </SmartTip>
                 <button onClick={() => post("/emails/action", { action: "thumbs_up", sender: e.from, subject: e.subj }).catch(() => {})} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15 }}>👍</button>
                 <button onClick={() => post("/emails/action", { action: "thumbs_down", sender: e.from, subject: e.subj }).catch(() => {})} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15 }}>👎</button>
               </div>

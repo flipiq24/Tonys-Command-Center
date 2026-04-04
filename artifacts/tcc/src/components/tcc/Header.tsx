@@ -1,4 +1,4 @@
-import { Tip } from "./Tip";
+import { SmartTip } from "./SmartTip";
 import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR, btn2, TIPS } from "./constants";
 import type { Idea } from "./types";
@@ -9,14 +9,18 @@ interface Props {
   unresolved: number;
   calSide: boolean;
   eod: boolean;
+  customTips: Record<string, string>;
   onSetView: (v: string) => void;
   onToggleCal: () => void;
   onShowIdea: () => void;
   onShowChat: () => void;
   onEod: () => void;
+  onTipSaved: (key: string, text: string) => void;
 }
 
-export function Header({ clock, ideas, unresolved, calSide, eod, onSetView, onToggleCal, onShowIdea, onShowChat, onEod }: Props) {
+export function Header({ clock, ideas, unresolved, calSide, eod, customTips, onSetView, onToggleCal, onShowIdea, onShowChat, onEod, onTipSaved }: Props) {
+  const tip = (key: string) => customTips[key] ?? TIPS[key] ?? "";
+
   return (
     <div style={{ background: C.card, borderBottom: `1px solid ${C.brd}`, padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
       <FontLink />
@@ -28,12 +32,12 @@ export function Header({ clock, ideas, unresolved, calSide, eod, onSetView, onTo
         "Follow the plan I gave you!" — God
       </p>
       <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-        <Tip tip={TIPS.ideas}>
+        <SmartTip tipKey="ideas" tip={tip("ideas")} onSaved={onTipSaved}>
           <button onClick={onShowIdea} style={{ ...btn2, padding: "5px 10px", fontSize: 11 }}>
             💡{ideas.length > 0 ? ` (${ideas.length})` : ""}
           </button>
-        </Tip>
-        <Tip tip={TIPS.gmail}>
+        </SmartTip>
+        <SmartTip tipKey="gmail" tip={tip("gmail")} onSaved={onTipSaved}>
           <button onClick={() => onSetView("emails")} style={{ ...btn2, padding: "5px 10px", fontSize: 11, position: "relative" }}>
             ✉️{unresolved > 0 && (
               <span style={{ position: "absolute", top: -5, right: -5, background: C.red, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -41,14 +45,17 @@ export function Header({ clock, ideas, unresolved, calSide, eod, onSetView, onTo
               </span>
             )}
           </button>
-        </Tip>
+        </SmartTip>
         <button onClick={onToggleCal} style={{ ...btn2, padding: "5px 10px", fontSize: 11, background: calSide ? C.bluBg : C.card, color: calSide ? C.blu : C.tx }}>📅</button>
-        <Tip tip={TIPS.eod}>
+        <SmartTip tipKey="eod" tip={tip("eod")} onSaved={onTipSaved}>
           <button onClick={onEod} style={{ ...btn2, padding: "5px 10px", fontSize: 11, background: eod ? C.grnBg : C.card }}>{eod ? "✓" : "📊"}</button>
-        </Tip>
-        <Tip tip={TIPS.chat}>
+        </SmartTip>
+        <SmartTip tipKey="chat" tip={tip("chat")} onSaved={onTipSaved}>
           <button onClick={onShowChat} style={{ ...btn2, padding: "5px 10px", fontSize: 11, background: C.tx, color: "#fff", border: "none" }}>💬</button>
-        </Tip>
+        </SmartTip>
+      </div>
+      <div style={{ position: "fixed", bottom: 14, right: 14, fontSize: 10, color: C.mut, fontFamily: F, background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, padding: "4px 10px", pointerEvents: "none", zIndex: 100 }}>
+        Hold <kbd style={{ background: "#F0F0F0", borderRadius: 4, padding: "1px 5px", fontFamily: "monospace", border: "1px solid #CCC" }}>Ctrl</kbd> + hover any button to edit its instruction
       </div>
     </div>
   );

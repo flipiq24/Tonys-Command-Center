@@ -102,6 +102,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
         onAttempt={c => { onAttempt(c); setSelectedContactId(null); }}
         onConnected={name => { onConnected(name); setSelectedContactId(null); }}
         onSmsOpen={c => { setSmsContact(c); setSelectedContactId(null); }}
+        onCompose={onCompose ? c => { onCompose(c); setSelectedContactId(null); } : undefined}
       />
       <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
 

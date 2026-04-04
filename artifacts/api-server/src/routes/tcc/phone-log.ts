@@ -1,9 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq, desc, gte, and } from "drizzle-orm";
-import { z } from "zod/v4";
 
 const router: IRouter = Router();
+
+const VALID_TYPES = ["call_outbound", "call_inbound", "sms_outbound", "sms_inbound"] as const;
+type PhoneLogType = typeof VALID_TYPES[number];
 
 // ─── Shared secret check ──────────────────────────────────────────────────────
 function checkSecret(req: import("express").Request, res: import("express").Response): boolean {
@@ -23,24 +25,20 @@ function normalizePhone(p: string): string {
 }
 
 // ─── Webhook: MacroDroid → POST /phone-log?key=secret ────────────────────────
-const PhoneLogBody = z.object({
-  type: z.enum(["call_outbound", "call_inbound", "sms_outbound", "sms_inbound"]),
-  phone_number: z.string(),
-  duration_seconds: z.number().optional(),
-  sms_body: z.string().optional(),
-  logged_at: z.string().optional(),
-});
-
 router.post("/phone-log", async (req, res): Promise<void> => {
   if (!checkSecret(req, res)) return;
 
-  const parsed = PhoneLogBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid body", details: parsed.error.message });
+  const body = req.body as Record<string, unknown>;
+  const type = body["type"] as string;
+  const phone_number = body["phone_number"] as string;
+  const duration_seconds = body["duration_seconds"] as number | undefined;
+  const sms_body = body["sms_body"] as string | undefined;
+  const logged_at = body["logged_at"] as string | undefined;
+
+  if (!phone_number || !VALID_TYPES.includes(type as PhoneLogType)) {
+    res.status(400).json({ error: "invalid body: phone_number and valid type required" });
     return;
   }
-
-  const { type, phone_number, duration_seconds, sms_body, logged_at } = parsed.data;
   const normalizedIncoming = normalizePhone(phone_number);
 
   // Auto-match to contact
@@ -82,17 +80,17 @@ router.get("/phone-log", async (req, res): Promise<void> => {
   const contactId = req.query["contactId"] as string | undefined;
   const since = req.query["since"] as string | undefined;
 
-  let conditions: import("drizzle-orm").SQL[] = [];
-  if (contactId) conditions.push(eq(phoneLogTable.contactId, contactId));
-  if (since) conditions.push(gte(phoneLogTable.loggedAt, new Date(since)));
+  let query = db.select().from(phoneLogTable).$dynamic();
 
-  const logs = await db
-    .select()
-    .from(phoneLogTable)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(phoneLogTable.loggedAt))
-    .limit(50);
+  if (contactId && since) {
+    query = query.where(and(eq(phoneLogTable.contactId, contactId), gte(phoneLogTable.loggedAt, new Date(since))));
+  } else if (contactId) {
+    query = query.where(eq(phoneLogTable.contactId, contactId));
+  } else if (since) {
+    query = query.where(gte(phoneLogTable.loggedAt, new Date(since)));
+  }
 
+  const logs = await query.orderBy(desc(phoneLogTable.loggedAt)).limit(50);
   res.json(logs);
 });
 

@@ -282,6 +282,7 @@ export default function App() {
         calls={calls}
         demos={demos}
         calSide={calSide}
+        apiBase={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`}
         onAttempt={c => setAttempt(c)}
         onConnected={name => handleLogCall(name, "connected")}
         onDemoChange={handleDemoChange}

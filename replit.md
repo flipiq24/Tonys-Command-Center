@@ -69,6 +69,7 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 - Calendar sidebar is the only floating panel (collapsible)
 - Default brief data embedded in backend for day-1 experience without live integrations
 - **Slack**: Uses `SLACK_TOKEN` secret (set) — direct Slack Web API calls in `lib/slack.ts`. Supports postMessage, channel history, list channels, and search. Claude has 4 Slack tools: `send_slack_message`, `read_slack_channel`, `list_slack_channels`, `search_slack`. Note: search requires a user token (xoxp-); bot tokens (xoxb-) only support read/post.
+- **MacroDroid (Android phone bridge)**: `phone_log` table added to DB. `POST /phone-log?key=$MACRODROID_SECRET` receives call/SMS webhooks from Tony's phone. `POST /send-sms` triggers MacroDroid to send SMS natively. Secrets: `MACRODROID_SECRET` (webhook auth key), `MACRODROID_WEBHOOK_URL` (MacroDroid trigger URL). See spec for 4 macros to configure on phone.
 - **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues.
 - **AgentMail**: Connected via Replit connector (`conn_agentmail`). EOD report emails sent to tony@flipiq.com and ethan@flipiq.com.
 - Gmail/Google Calendar: Available via Replit integrations — currently using default/mock brief data.

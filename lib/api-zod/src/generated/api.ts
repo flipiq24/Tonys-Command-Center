@@ -157,9 +157,6 @@ export const EmailActionBody = zod.object({
   subject: zod.string().nullish(),
   reason: zod.string().nullish(),
   snoozeUntil: zod.string().nullish(),
-  body: zod.string().nullish(),
-  gmailMessageId: zod.string().nullish(),
-  notes: zod.string().nullish(),
 });
 
 export const EmailActionResponse = zod.object({

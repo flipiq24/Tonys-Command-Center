@@ -3,8 +3,6 @@ import { eq, desc } from "drizzle-orm";
 import { db, emailTrainingTable, emailSnoozesTable, systemInstructionsTable } from "@workspace/db";
 import { EmailActionBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { sendEmail } from "../../lib/gmail.js";
-import { getGmail } from "../../lib/google-auth.js";
 import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
@@ -162,7 +160,6 @@ router.post("/emails/action", async (req, res): Promise<void> => {
       ? `\n\nTONY'S EMAIL BRAIN (learned from his training):\n${brainRow.content}`
       : "";
 
-    const { notes } = parsed.data;
     let draft = "";
     try {
       const message = await anthropic.messages.create({
@@ -170,59 +167,24 @@ router.post("/emails/action", async (req, res): Promise<void> => {
         max_tokens: 8192,
         system: `You are Tony Diaz's AI assistant. Tony runs FlipIQ, a real estate wholesale platform. 
 Draft professional, concise email replies in Tony's voice — direct, warm, action-oriented. 
-Keep replies short (3-5 sentences max). Always end with a clear next step.
-IMPORTANT: Write in plain prose only. No markdown, no asterisks, no bullet points, no headers, no bold, no formatting characters whatsoever. Just plain text paragraphs.${brainContext}`,
+Keep replies short (3-5 sentences max). Always end with a clear next step.${brainContext}`,
         messages: [{
           role: "user",
           content: `Draft a reply to this email:
 From: ${sender}
 Subject: ${subject}
 ${reason ? `\nContext: ${reason}` : ""}
-${notes ? `\nAdditional notes from Tony: ${notes}` : ""}
 
-Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Plain text only.`,
+Write a professional reply from Tony Diaz. Keep it brief and action-oriented.`,
         }],
       });
       const block = message.content[0];
-      if (block.type === "text") draft = block.text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/^#+\s/gm, "").replace(/^-\s/gm, "").trim();
+      if (block.type === "text") draft = block.text;
     } catch (err) {
       req.log.warn({ err }, "Claude API failed for email reply");
       draft = `Hi ${sender?.split(" ")[0] || "there"},\n\nThanks for reaching out. Let's connect to discuss this further.\n\nBest,\nTony`;
     }
     res.json({ ok: true, draft });
-    return;
-  }
-
-  if (action === "send_reply") {
-    const { sender, subject, body, gmailMessageId } = parsed.data;
-    if (!sender || !subject || !body) {
-      res.status(400).json({ ok: false, error: "sender, subject, and body are required" });
-      return;
-    }
-
-    // Extract plain email address from "Name <email@example.com>" format
-    const toMatch = sender.match(/<([^>]+)>/);
-    const toEmail = toMatch ? toMatch[1] : sender;
-
-    // Look up the Gmail thread ID so this reply is threaded correctly
-    let threadId: string | undefined;
-    if (gmailMessageId) {
-      try {
-        const gmail = getGmail();
-        const msg = await gmail.users.messages.get({ userId: "me", id: gmailMessageId, format: "metadata" });
-        threadId = msg.data.threadId || undefined;
-      } catch (err) {
-        req.log.warn({ err }, "Could not fetch threadId for send_reply — sending without thread");
-      }
-    }
-
-    // Append Tony's signature
-    const signature = "\n\nTony Diaz\nCEO, FlipIQ";
-    const fullBody = body.trimEnd() + signature;
-
-    const replySubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
-    const result = await sendEmail({ to: toEmail, subject: replySubject, body: fullBody, threadId });
-    res.json(result);
     return;
   }
 

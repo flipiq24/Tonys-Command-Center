@@ -150,11 +150,12 @@ export default function App() {
     })();
   }, []);
 
-  // Load contacts lazily when entering sales
+  // Load contacts lazily when entering sales (first 50, Hot→Warm→New order)
   useEffect(() => {
     if (view === "sales" && !contactsLoaded) {
-      get<Contact[]>("/contacts").then(c => {
-        setContacts(c.length > 0 ? c : DEFAULT_CONTACTS);
+      get<{ contacts: Contact[]; total: number } | Contact[]>("/contacts?limit=50").then(r => {
+        const list = Array.isArray(r) ? r : r.contacts;
+        setContacts(list.length > 0 ? list : DEFAULT_CONTACTS);
         setContactsLoaded(true);
       }).catch(() => {
         setContacts(DEFAULT_CONTACTS);

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
-import { eq, desc, gte, and } from "drizzle-orm";
+import { eq, desc, gte, and, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -41,9 +41,12 @@ router.post("/phone-log", async (req, res): Promise<void> => {
   }
   const normalizedIncoming = normalizePhone(phone_number);
 
-  // Auto-match to contact
-  const allContacts = await db.select({ id: contactsTable.id, name: contactsTable.name, phone: contactsTable.phone }).from(contactsTable);
-  const match = allContacts.find(c => c.phone && normalizePhone(c.phone) === normalizedIncoming);
+  // Auto-match to contact using functional index on regexp_replace(phone, '[^0-9]', '', 'g')
+  const [match] = await db
+    .select({ id: contactsTable.id, name: contactsTable.name })
+    .from(contactsTable)
+    .where(sql`regexp_replace(phone, '[^0-9]', '', 'g') = ${normalizedIncoming}`)
+    .limit(1);
 
   const [entry] = await db
     .insert(phoneLogTable)

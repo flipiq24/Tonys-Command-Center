@@ -348,26 +348,58 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                 </>
               )}
 
-              {activeTab === "activity" && (
-                <>
-                  {calls.length === 0 ? (
-                    <div style={{ color: C.mut, fontSize: 13, textAlign: "center", padding: "24px 0" }}>No call activity yet</div>
-                  ) : (
-                    calls.map((cl, i) => (
-                      <div key={i} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${cl.type === "connected" ? C.grn : C.mut}` }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: cl.type === "connected" ? C.grn : C.tx }}>
-                          {cl.type === "connected" ? "✓ Connected" : cl.type === "attempt" ? "📞 Attempt" : cl.type}
-                        </div>
-                        {cl.notes && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{cl.notes}</div>}
-                        {(cl as CallEntry & { followUpText?: string }).followUpText && (
-                          <div style={{ fontSize: 12, color: C.blu, marginTop: 4, fontStyle: "italic" }}>Draft: {(cl as CallEntry & { followUpText?: string }).followUpText}</div>
-                        )}
-                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cl.createdAt ? new Date(cl.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
-                      </div>
-                    ))
-                  )}
-                </>
-              )}
+              {activeTab === "activity" && (() => {
+                type ActivityItem =
+                  | { kind: "call"; data: CallEntry & { followUpText?: string }; ts: number }
+                  | { kind: "note"; data: ContactNote; ts: number };
+
+                const items: ActivityItem[] = [
+                  ...calls.map(cl => ({
+                    kind: "call" as const,
+                    data: cl as CallEntry & { followUpText?: string },
+                    ts: cl.createdAt ? new Date(cl.createdAt).getTime() : 0,
+                  })),
+                  ...notes.map(n => ({
+                    kind: "note" as const,
+                    data: n,
+                    ts: n.createdAt ? new Date(n.createdAt).getTime() : 0,
+                  })),
+                ].sort((a, b) => b.ts - a.ts);
+
+                if (items.length === 0) {
+                  return <div style={{ color: C.mut, fontSize: 13, textAlign: "center", padding: "24px 0" }}>No activity yet</div>;
+                }
+
+                return (
+                  <>
+                    {items.map((item, i) => {
+                      if (item.kind === "call") {
+                        const cl = item.data;
+                        return (
+                          <div key={`call-${i}`} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${cl.type === "connected" ? C.grn : C.mut}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>Call</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: cl.type === "connected" ? C.grn : C.tx }}>
+                              {cl.type === "connected" ? "✓ Connected" : cl.type === "attempt" ? "Attempt — no answer" : cl.type}
+                            </div>
+                            {cl.notes && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{cl.notes}</div>}
+                            {cl.followUpText && <div style={{ fontSize: 12, color: C.blu, marginTop: 4, fontStyle: "italic" }}>Follow-up draft: {cl.followUpText}</div>}
+                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cl.createdAt ? new Date(cl.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                          </div>
+                        );
+                      } else {
+                        const n = item.data;
+                        return (
+                          <div key={`note-${n.id}`} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${C.brd}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>Note</div>
+                            <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{n.text}</div>
+                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                          </div>
+                        );
+                      }
+                    })}
+                  </>
+                );
+              })()}
             </div>
           </>
         ) : (

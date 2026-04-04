@@ -37,6 +37,7 @@ router.get("/contacts", async (req, res): Promise<void> => {
     .where(where)
     .orderBy(
       sql`CASE status WHEN 'Hot' THEN 0 WHEN 'Warm' THEN 1 WHEN 'New' THEN 2 ELSE 3 END`,
+      sql`CASE pipeline_stage WHEN 'Demo Scheduled' THEN 0 WHEN 'Negotiation' THEN 1 WHEN 'Proposal Sent' THEN 2 WHEN 'Qualified' THEN 3 WHEN 'Lead' THEN 4 ELSE 5 END`,
       contactsTable.name
     )
     .limit(lim)

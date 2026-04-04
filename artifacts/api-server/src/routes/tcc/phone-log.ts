@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq, desc, gte, and } from "drizzle-orm";
 import { z } from "zod/v4";
+import { communicationLogTable } from "../../lib/schema-v2";
+import { updateContactComms } from "../../lib/contact-comms";
 
 const router: IRouter = Router();
 
@@ -74,6 +76,28 @@ router.post("/phone-log", async (req, res): Promise<void> => {
       .set({ lastContactDate: new Date().toISOString().split("T")[0], updatedAt: new Date() })
       .where(eq(contactsTable.id, match.id))
       .catch(err => console.error("[phone-log] Failed to update lastContactDate:", err));
+  }
+
+  // Mirror to communication_log and update contact intelligence
+  const channelMap: Record<string, string> = {
+    call_outbound: "call_outbound",
+    call_inbound: "call_inbound",
+    sms_outbound: "text_sent",
+    sms_inbound: "text_received",
+  };
+  const channel = channelMap[type] || type;
+  const direction = type.endsWith("_outbound") ? "outbound" : "inbound";
+
+  await db.insert(communicationLogTable).values({
+    contactId: match?.id ?? undefined,
+    contactName: match?.name ?? phone_number,
+    channel,
+    direction,
+    summary: sms_body ? sms_body.substring(0, 300) : (duration_seconds ? `${Math.round(duration_seconds / 60)} min call` : type),
+  }).catch(err => console.warn("[phone-log] comm_log insert failed:", err));
+
+  if (match?.id) {
+    updateContactComms(match.id, channel, sms_body || type).catch(() => {});
   }
 
   res.status(201).json({

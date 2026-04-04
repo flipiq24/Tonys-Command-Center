@@ -32,3 +32,7 @@ export function getSheets() {
 export function getPeople() {
   return google.people({ version: "v1", auth: getGoogleAuth() });
 }
+
+export function getDocs() {
+  return google.docs({ version: "v1", auth: getGoogleAuth() });
+}

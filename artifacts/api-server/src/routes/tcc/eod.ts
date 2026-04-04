@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, gte } from "drizzle-orm";
+import { eq, gte, and } from "drizzle-orm";
 import { db, eodReportsTable, callLogTable, demosTable, taskCompletionsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { sendViaAgentMail } from "../../lib/agentmail";
@@ -90,6 +90,78 @@ Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and
     .returning();
 
   res.json({ ...report, ok: true, emailsSent: sentResults });
+});
+
+// Auto-EOD endpoint: called by frontend timer at 4:30 PM Pacific
+// Guard: only sends once per day using alreadySent flag
+router.post("/eod-report/auto", async (req, res): Promise<void> => {
+  const today = todayPacific();
+
+  const [existing] = await db.select().from(eodReportsTable).where(eq(eodReportsTable.date, today));
+  if (existing) {
+    res.json({ ok: true, alreadySent: true, date: today });
+    return;
+  }
+
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+
+  const [calls, demoRows, taskCompletions] = await Promise.all([
+    db.select().from(callLogTable).where(gte(callLogTable.createdAt, todayDate)),
+    db.select().from(demosTable).where(eq(demosTable.scheduledDate, today)),
+    db.select().from(taskCompletionsTable).where(gte(taskCompletionsTable.completedAt, todayDate)),
+  ]);
+
+  const callsMade = calls.length;
+  const demosBooked = demoRows.length;
+  const tasksCompleted = taskCompletions.length;
+  const callList = calls.map(c => `- ${c.contactName}: ${c.type}`).join("\n") || "- No calls logged";
+
+  let reportText = "";
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [{
+        role: "user",
+        content: `Generate a concise EOD report for Tony Diaz, FlipIQ CEO. Auto-generated at 4:30 PM Pacific.
+
+Today:
+- Calls: ${callsMade}
+- Demos: ${demosBooked}  
+- Tasks Done: ${tasksCompleted}
+
+${callList}
+
+3 paragraphs max: what got done, what needs follow-up tomorrow, one closing thought. Tony's voice — direct and honest.`,
+      }],
+    });
+    const block = message.content[0];
+    if (block.type === "text") reportText = block.text;
+  } catch {
+    reportText = `Auto EOD — ${today}\n\nCalls: ${callsMade} | Demos: ${demosBooked} | Tasks: ${tasksCompleted}\n\n${callList}`;
+  }
+
+  const recipients = ["tony@flipiq.com", "ethan@flipiq.com"];
+  const sentResults = await Promise.all(
+    recipients.map(async to => {
+      const r = await sendViaAgentMail({ to, subject: `FlipIQ EOD — ${today} (Auto)`, body: reportText });
+      return { to, ok: r.ok };
+    })
+  );
+
+  const sentTo = sentResults.filter(r => r.ok).map(r => r.to).join(",") || "failed";
+
+  const [report] = await db
+    .insert(eodReportsTable)
+    .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText, sentTo })
+    .onConflictDoUpdate({
+      target: eodReportsTable.date,
+      set: { callsMade, demosBooked, tasksCompleted, reportText, sentTo },
+    })
+    .returning();
+
+  res.json({ ...report, ok: true, alreadySent: false, emailsSent: sentResults });
 });
 
 export default router;

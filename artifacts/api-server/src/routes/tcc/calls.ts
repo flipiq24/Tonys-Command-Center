@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { db, callLogTable } from "@workspace/db";
+import { db, callLogTable, contactsTable } from "@workspace/db";
 import { LogCallBody } from "@workspace/api-zod";
 import { gte, eq, sql } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { z } from "zod";
 import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2";
 import { createReminder } from "../../lib/gcal";
+import { updateContactComms } from "../../lib/contact-comms";
 
 const router: IRouter = Router();
 
@@ -69,6 +70,20 @@ Draft a brief, professional follow-up email (3-4 sentences max). Plain text only
     } catch (err) {
       req.log.warn({ err }, "Claude follow-up email failed");
     }
+  }
+
+  if (contactId) {
+    const channel = type === "connected" ? "call_outbound" : "call_outbound";
+    await db.insert(communicationLogTable).values({
+      contactId,
+      contactName,
+      channel,
+      direction: "outbound",
+      subject: type === "attempt" ? "Call attempt" : "Connected call",
+      summary: notes || (type === "attempt" ? "No answer" : "Connected"),
+    }).catch(err => console.warn("[calls] Failed to log to communication_log:", err));
+
+    updateContactComms(contactId, channel, notes || type).catch(() => {});
   }
 
   res.status(201).json(call);

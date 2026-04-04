@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import { communicationLogTable, contactsTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
+import { updateContactComms } from "../../lib/contact-comms";
 
 const router: IRouter = Router();
 
@@ -67,6 +68,10 @@ router.get("/emails/poll", async (req, res): Promise<void> => {
         gmailMessageId: msg.id!,
         gmailThreadId: msg.threadId || undefined,
       });
+
+      if (matchedContactId) {
+        updateContactComms(matchedContactId, "email_received", subject).catch(() => {});
+      }
 
       newEmails.push({
         from,

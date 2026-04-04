@@ -20,6 +20,13 @@ import meetingHistoryRouter from "./tcc/meeting-history";
 import emailSendRouter from "./tcc/email-send";
 import contactsAutocompleteRouter from "./tcc/contacts-autocomplete";
 import emailPollRouter from "./tcc/email-poll";
+import communicationLogRouter from "./tcc/communication-log";
+import chatThreadsRouter from "./tcc/chat-threads";
+import salesMorningRouter from "./tcc/sales-morning";
+import contactsScoreRouter from "./tcc/contacts-score";
+import contactsResearchRouter from "./tcc/contacts-research";
+import contactsBriefRouter from "./tcc/contacts-brief";
+import sheetsSyncRouter from "./tcc/sheets-sync";
 
 const router: IRouter = Router();
 
@@ -44,10 +51,15 @@ router.use(timeRoutingRouter);
 router.use(meetingHistoryRouter);
 router.use(emailSendRouter);
 router.use(emailPollRouter);
+router.use(communicationLogRouter);
+router.use(chatThreadsRouter);
+router.use(salesMorningRouter);
+router.use(contactsScoreRouter);
+router.use(contactsResearchRouter);
+router.use(contactsBriefRouter);
+router.use(sheetsSyncRouter);
 
-// ─── Canonical aliases (spec-matching paths) ─────────────────────────────────
-// /morning-brief is registered directly in briefRouter (both /brief/today and /morning-brief)
-// /email-action, /call-log, /idea route aliases share handler modules:
+// ─── Canonical aliases ────────────────────────────────────────────────────────
 router.post("/email-action", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {
   req.url = "/emails/action";
   emailsRouter(req, res, next);

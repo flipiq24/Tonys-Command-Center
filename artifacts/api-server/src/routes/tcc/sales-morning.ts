@@ -11,7 +11,7 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
     const todayStr = todayPacific();
     const now = new Date();
     const hours48Ago = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-    const hours24Ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const hours24Ago = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
     // Tier 1: Urgent inbound comms — LEFT JOIN contacts + intel in a single query
     const urgentRows = await db

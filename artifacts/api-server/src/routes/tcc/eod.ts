@@ -182,7 +182,7 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
   let tonyReportText = "";
   try {
     const tonyMsg = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       messages: [{
         role: "user",

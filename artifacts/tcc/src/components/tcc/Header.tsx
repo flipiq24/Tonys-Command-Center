@@ -123,9 +123,6 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
           <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 700, color: C.tx, lineHeight: 1.1 }}>
             Tony's Command Center
           </div>
-          <div style={{ fontFamily: FS, fontSize: 15, color: C.sub, fontStyle: "italic", marginTop: 2 }}>
-            "Follow the plan I gave you!" — God
-          </div>
           <div style={{ fontSize: 12, color: C.mut, marginTop: 2, fontFamily: F }}>
             {TODAY_STR} · {clock}
             {refreshing && (
@@ -138,6 +135,15 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
             )}
           </div>
         </div>
+
+        {/* ── Center: Quote ── */}
+        <p style={{
+          fontFamily: FS, fontSize: 22, color: C.sub, fontStyle: "italic",
+          margin: 0, position: "absolute", left: "50%", transform: "translateX(-50%)",
+          whiteSpace: "nowrap", pointerEvents: "none", fontWeight: 600,
+        }}>
+          "Follow the plan I gave you!" — God
+        </p>
 
         {/* ── Right: Hamburger ── */}
         <div ref={menuRef} style={{ position: "relative" }}>

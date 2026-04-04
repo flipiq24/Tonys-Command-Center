@@ -212,7 +212,7 @@ Format as a brief EOD (4 paragraphs max):
   let ethanReportText = "";
   try {
     const ethanMsg = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       messages: [{
         role: "user",

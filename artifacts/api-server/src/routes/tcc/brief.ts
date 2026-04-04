@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, gte } from "drizzle-orm";
-import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable } from "@workspace/db";
+import { eq, gte, ilike, desc as descOrder, sql as sqlExpr } from "drizzle-orm";
+import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable } from "@workspace/db";
+import { communicationLogTable } from "../../lib/schema-v2.js";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
@@ -10,6 +11,7 @@ import { todayPacific } from "../../lib/dates.js";
 
 // ─── Full seed defaults — matches TCC_Seed_Data JSON ─────────────────────────
 
+// FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_CAL = [
   { t: "8:00 AM", n: "Claremont Imaging Check-in", loc: "Bldg 3A, 255 E Bonita Ave, Pomona", note: "Call 909-450-0393", real: true },
   { t: "9:30 AM", n: "Jedi Kids", real: false },
@@ -32,6 +34,7 @@ const DEFAULT_CAL = [
   { t: "11:30 PM", n: "LinkedIn: shellycofini", real: false },
 ];
 
+// FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_EMAILS_IMPORTANT = [
   { id: 1, from: "Ethan Jolly", subj: "My Amended Contract", why: "Equity stake decision — needs a call, not email reply", time: "Yesterday", p: "high" },
   { id: 2, from: "Chris Wesser", subj: "FlipIQ Lightning Docs Brief", why: "Capital raise — revisions with commentary coming tonight", time: "Today 8:38 AM", p: "high" },
@@ -40,22 +43,26 @@ const DEFAULT_EMAILS_IMPORTANT = [
   { id: 5, from: "Sebastian Calder", subj: "Video sales letters — cost?", why: "Sales tool pricing inquiry", time: "Yesterday", p: "low" },
 ];
 
+// FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_EMAILS_FYI = [
   { id: 10, from: "Dr. Fakhoury", subj: "Mom's medication update", why: "B12 shipping tomorrow, arrives Monday" },
   { id: 11, from: "David Breneman", subj: "Consultation Request", why: "Responded to Ethan — Got it, have a good weekend" },
   { id: 12, from: "Marisol Diaz", subj: "Physician referral", why: "Family medical coordination" },
 ];
 
+// FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_SLACK = [
   { from: "Faisal", message: "Fixes deployed, live in 10-15 min", level: "low", channel: "#engineering" },
   { from: "Ethan", message: "My top 2 goals today. You?", level: "mid", channel: "#leadership" },
 ];
 
+// FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_LINEAR = [
   { who: "Faisal", task: "Comps Map — full screen button", id: "COM-294", level: "low" },
   { who: "Haris", task: "CSM Emails — HTML compose", id: "COM-323", level: "mid" },
 ];
 
+// FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_TASKS = [
   { id: "t1", text: "10 Sales Calls", cat: "SALES", sales: true },
   { id: "t2", text: "Reply to Ethan re: equity contract", cat: "OPS" },
@@ -72,7 +79,7 @@ const DEFAULT_TASKS = [
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean; attendeeCount?: number };
-type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string };
+type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string; contactContext?: string };
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
@@ -432,6 +439,41 @@ async function briefTodayHandler(
     emailsImportant = claudeGenerated?.emailsImportant ?? DEFAULT_EMAILS_IMPORTANT;
     emailsFyi = claudeGenerated?.emailsFyi ?? DEFAULT_EMAILS_FYI;
     emailsPromotions = [];
+  }
+
+  // Step 3b: Enrich important emails with contactContext from DB
+  // For each sender, look up contacts + communication_log interaction count + last summary
+  if (emailsImportant.length > 0) {
+    const enriched = await Promise.all(emailsImportant.map(async (email) => {
+      try {
+        const senderName = email.from.split("<")[0].trim();
+        const [contact] = await db.select().from(contactsTable)
+          .where(ilike(contactsTable.name, `%${senderName}%`)).limit(1);
+        if (!contact) return email;
+
+        const [countRow] = await db.select({ total: sqlExpr<number>`count(*)` })
+          .from(communicationLogTable)
+          .where(eq(communicationLogTable.contactId, contact.id));
+        const total = Number(countRow?.total ?? 0);
+        if (total === 0) return email;
+
+        const [lastComm] = await db.select()
+          .from(communicationLogTable)
+          .where(eq(communicationLogTable.contactId, contact.id))
+          .orderBy(descOrder(communicationLogTable.loggedAt))
+          .limit(1);
+
+        const ordinal = total === 1 ? "1st" : total === 2 ? "2nd" : total === 3 ? "3rd" : `${total}th`;
+        const lastNote = lastComm?.summary || lastComm?.subject || null;
+        const contactContext = lastNote
+          ? `${ordinal} interaction with ${senderName}. Last: ${lastNote}`
+          : `${ordinal} interaction with ${senderName}`;
+        return { ...email, contactContext };
+      } catch {
+        return email;
+      }
+    }));
+    emailsImportant = enriched;
   }
 
   // Step 4: Resolve Slack — priority: live > DB cache (unless forced) > Claude generated > fallback

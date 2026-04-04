@@ -74,11 +74,11 @@ GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
 # Scopes: gmail.send, gmail.readonly, gmail.modify, calendar.events, drive.readonly, spreadsheets, contacts.readonly
 
-# Google Sheet / Doc IDs (hardcoded defaults, override if needed)
-CHECKIN_SHEET_ID=1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI
-JOURNAL_DOC_ID=1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4
-MASTER_TASK_SHEET_ID=
-CONTACT_SHEET_ID=
+# Google Sheet / Doc IDs (LOCKED — correct URLs)
+CHECKIN_SHEET_ID=1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw        # Tony ONLY — personal check-in
+BUSINESS_MASTER_SHEET_ID=1WGuJwCoWbwyFamXXP79yxnPmYhdFPgOGhOR8_V-EQyw  # Tony + Ethan — tasks, contacts, comms (3 tabs)
+JOURNAL_DOC_ID=1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE           # Tony ONLY — daily journal
+# DO NOT use old IDs: 1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI (archived check-in) or 1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4 (archived journal)
 
 # Anthropic
 ANTHROPIC_API_KEY=

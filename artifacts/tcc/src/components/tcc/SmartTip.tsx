@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { post } from "@/lib/api";
 import { F, C } from "./constants";
+import { VoiceField } from "./VoiceField";
 
 interface SmartTipProps {
   tipKey: string;
@@ -20,7 +21,6 @@ export function SmartTip({ tipKey, tip, children, onSaved }: SmartTipProps) {
   const [align, setAlign] = useState<"center" | "left" | "right">("center");
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setDraft(tip); }, [tip]);
 
@@ -50,7 +50,6 @@ export function SmartTip({ tipKey, tip, children, onSaved }: SmartTipProps) {
     setShow(true);
     if (ctrlHeld) {
       setEditing(true);
-      setTimeout(() => textareaRef.current?.focus(), 50);
     }
   };
 
@@ -140,10 +139,11 @@ export function SmartTip({ tipKey, tip, children, onSaved }: SmartTipProps) {
               <div style={{ fontSize: 10, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
                 ✏️ Edit instruction — "{tipKey}"
               </div>
-              <textarea
-                ref={textareaRef}
+              <VoiceField
+                as="textarea"
                 value={draft}
-                onChange={e => setDraft(e.target.value)}
+                onChange={setDraft}
+                autoFocus
                 onKeyDown={e => { if (e.key === "Enter" && e.metaKey) handleSave(); if (e.key === "Escape") handleCancel(); }}
                 style={{ width: "100%", minHeight: 80, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${C.brd}`, fontSize: 12, fontFamily: F, lineHeight: 1.5, resize: "vertical", boxSizing: "border-box", outline: "none" }}
               />

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { C, FS, inp, btn1, btn2 } from "./constants";
+import { VoiceField } from "./VoiceField";
 
 interface Props {
   open: boolean;
@@ -96,11 +97,12 @@ export function ConnectedCallModal({ open, onClose, contactId, contactName, cont
               <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>
                 Outcome Notes *
               </label>
-              <textarea
+              <VoiceField
+                as="textarea"
                 value={outcomeNotes}
-                onChange={e => setOutcomeNotes(e.target.value)}
+                onChange={setOutcomeNotes}
                 placeholder="What was discussed? Key takeaways..."
-                style={{ ...inp, minHeight: 100, resize: "vertical", fontSize: 14, lineHeight: 1.5 } as React.CSSProperties}
+                style={{ ...inp, minHeight: 100, resize: "vertical", fontSize: 14, lineHeight: 1.5 }}
               />
             </div>
 
@@ -108,9 +110,9 @@ export function ConnectedCallModal({ open, onClose, contactId, contactName, cont
               <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>
                 Next Step
               </label>
-              <input
+              <VoiceField
                 value={nextStep}
-                onChange={e => setNextStep(e.target.value)}
+                onChange={setNextStep}
                 placeholder="e.g. Send proposal, Schedule demo, Send contract"
                 style={{ ...inp, fontSize: 14 }}
               />

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { post } from "@/lib/api";
 import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR, card, inp, btn1, btn2, lbl } from "./constants";
+import { VoiceField } from "./VoiceField";
 import type { CheckinState } from "./types";
 
 interface PatternAlert {
@@ -142,8 +143,8 @@ export function CheckinGate({ initial, onComplete }: Props) {
           "Follow the plan I gave you!" — God
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
-          <div><label style={lbl}>Bedtime</label><input style={inp} placeholder="10:30 PM" value={ck.bed} onChange={e => upCk("bed", e.target.value)} /></div>
-          <div><label style={lbl}>Wake time</label><input style={inp} placeholder="6:00 AM" value={ck.wake} onChange={e => upCk("wake", e.target.value)} /></div>
+          <div><label style={lbl}>Bedtime</label><VoiceField value={ck.bed} onChange={v => upCk("bed", v)} placeholder="10:30 PM" style={inp} /></div>
+          <div><label style={lbl}>Wake time</label><VoiceField value={ck.wake} onChange={v => upCk("wake", v)} placeholder="6:00 AM" style={inp} /></div>
         </div>
         {ck.sleep && (
           <div style={{ background: +ck.sleep >= 7 ? C.grnBg : C.ambBg, borderRadius: 10, padding: "10px 16px", marginBottom: 18, fontSize: 14, fontWeight: 600, color: +ck.sleep >= 7 ? C.grn : C.amb }}>

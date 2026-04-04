@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
+import { VoiceField } from "./VoiceField";
 
 interface Props {
   open: boolean;
@@ -30,7 +31,7 @@ export function ClaudeModal({ open, onClose }: Props) {
       <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 18, padding: 28, width: 520, maxWidth: "90vw", maxHeight: "80vh", overflow: "auto" }}>
         <h3 style={{ fontFamily: FS, fontSize: 20, margin: "0 0 4px" }}>Ask Tony's AI</h3>
         <p style={{ fontSize: 12, color: C.mut, margin: "0 0 16px" }}>Draft emails, get accountability, ask anything.</p>
-        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="What do you need?" style={{ ...inp, minHeight: 80, resize: "vertical", marginBottom: 12 }} />
+        <VoiceField as="textarea" value={prompt} onChange={setPrompt} placeholder="What do you need?" style={{ ...inp, minHeight: 80, resize: "vertical", marginBottom: 12 }} />
         {response && (
           <div style={{ padding: 14, background: C.grnBg, borderRadius: 10, fontSize: 13, lineHeight: 1.7, color: C.tx, marginBottom: 12, whiteSpace: "pre-wrap" }}>
             {response}

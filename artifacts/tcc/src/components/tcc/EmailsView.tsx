@@ -27,6 +27,7 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const [training, setTraining] = useState<TrainingState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleRefresh = async () => {
@@ -37,8 +38,17 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
       refreshTimer.current = setTimeout(() => setRefreshing(false), 600);
     }
   };
-  const unresolved = emailsImportant.filter(e => !snoozed[e.id]).length;
+  const allUnresolved = emailsImportant.filter(e => !snoozed[e.id]);
+  const unresolved = allUnresolved.length;
+  const visibleEmails = showAll ? allUnresolved : allUnresolved.slice(0, 3);
+  const hiddenCount = unresolved - 3;
   const tip = (key: string) => (customTips ?? {})[key] ?? TIPS[key] ?? "";
+
+  const gmailUrl = (e: EmailItem) =>
+    e.gmailMessageId
+      ? `https://mail.google.com/mail/u/0/#inbox/${e.gmailMessageId}`
+      : `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(e.subj || e.from || "")}`;
+
 
   const startTraining = (e: EmailItem, vote: "thumbs_up" | "thumbs_down") => {
     setTraining({ emailId: e.id, vote, reason: "", saved: false });
@@ -86,14 +96,29 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
             <span style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{unresolved} need attention</span>
           </div>
 
-          {emailsImportant.filter(e => !snoozed[e.id]).map(e => (
+          {visibleEmails.map(e => (
             <div key={e.id} style={{ marginBottom: 10 }}>
               <div style={{ padding: 14, background: e.p === "high" ? C.redBg : "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${e.p === "high" ? C.red : e.p === "med" ? C.amb : C.mut}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 15, fontWeight: 700 }}>{e.from}</span>
-                  <span style={{ fontSize: 11, color: C.mut }}>{e.time}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <a
+                    href={gmailUrl(e)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open in Gmail"
+                    style={{ fontSize: 15, fontWeight: 700, color: C.tx, textDecoration: "none", flexShrink: 1 }}
+                  >{e.from}</a>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 }}>
+                    <span style={{ fontSize: 11, color: C.mut }}>{e.time}</span>
+                    <a href={gmailUrl(e)} target="_blank" rel="noopener noreferrer" title="Open in Gmail"
+                      style={{ fontSize: 13, color: C.blu, textDecoration: "none", lineHeight: 1 }}>✉</a>
+                  </div>
                 </div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>{e.subj}</div>
+                <a
+                  href={gmailUrl(e)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 14, fontWeight: 600, marginTop: 2, display: "block", color: C.tx, textDecoration: "none" }}
+                >{e.subj}</a>
                 <div style={{ fontSize: 12, color: C.red, marginTop: 4 }}>→ {e.why}</div>
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <SmartTip tipKey="suggestReply" tip={tip("suggestReply")} onSaved={onTipSaved}>
@@ -182,6 +207,19 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
           ))}
 
           {unresolved === 0 && <div style={{ padding: 16, textAlign: "center", color: C.grn, fontWeight: 700, background: C.grnBg, borderRadius: 10 }}>All handled ✓</div>}
+
+          {hiddenCount > 0 && !showAll && (
+            <button
+              onClick={() => setShowAll(true)}
+              style={{ ...btn2, width: "100%", marginTop: 4, fontSize: 12, color: C.blu, borderColor: C.blu, textAlign: "center" }}
+            >Show {hiddenCount} more important email{hiddenCount !== 1 ? "s" : ""} ▾</button>
+          )}
+          {showAll && unresolved > 3 && (
+            <button
+              onClick={() => setShowAll(false)}
+              style={{ ...btn2, width: "100%", marginTop: 4, fontSize: 12, color: C.mut, textAlign: "center" }}
+            >Show less ▴</button>
+          )}
         </div>
 
         <div style={{ ...card, marginBottom: 16 }}>

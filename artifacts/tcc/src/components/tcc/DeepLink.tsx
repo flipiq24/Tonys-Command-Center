@@ -16,6 +16,7 @@ function buildUrl(props: Props): string | null {
       return props.id ? `https://mail.google.com/mail/u/0/#inbox/${props.id}` : null;
     case "calendar": {
       if (!props.id) return null;
+      if (props.id.startsWith("http")) return props.id;
       const encoded = btoa(props.id).replace(/=+$/, "");
       return `https://www.google.com/calendar/event?eid=${encoded}`;
     }

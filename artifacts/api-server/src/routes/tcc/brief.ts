@@ -78,7 +78,7 @@ const DEFAULT_TASKS = [
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean; attendeeCount?: number };
+type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean; attendeeCount?: number; calendarEventId?: string; htmlLink?: string; };
 type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string; contactContext?: string };
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
@@ -196,6 +196,8 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
       };
       if (e.location) item.loc = e.location;
       if (e.description) item.note = e.description.slice(0, 120);
+      if (e.id) item.calendarEventId = e.id;
+      if (e.htmlLink) item.htmlLink = e.htmlLink;
       return item;
     });
   } catch (err) {

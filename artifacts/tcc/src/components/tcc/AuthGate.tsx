@@ -74,7 +74,7 @@ export function AuthGate({ children }: Props) {
               borderRadius: 8,
               padding: "12px 14px",
               fontSize: 15,
-              color: C.fg,
+              color: C.tx,
               fontFamily: F,
               boxSizing: "border-box",
               marginBottom: 8,
@@ -87,7 +87,7 @@ export function AuthGate({ children }: Props) {
             disabled={loading || !token.trim()}
             style={{
               width: "100%",
-              background: C.acc,
+              background: C.blu,
               color: "#fff",
               border: "none",
               borderRadius: 8,

@@ -16,10 +16,11 @@ import { SalesView } from "@/components/tcc/SalesView";
 import { TasksView } from "@/components/tcc/TasksView";
 import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
+import { DashboardView } from "@/components/tcc/DashboardView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks" | "chat";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "tasks" | "chat";
 
 const DEFAULT_CONTACTS: Contact[] = [
   { id: "1", name: "Mike Oyoque", company: "MR EXCELLENCE", status: "Warm", phone: "(555) 123-4567", nextStep: "Follow up demo", lastContactDate: "Mar 25" },
@@ -238,9 +239,9 @@ export default function App() {
           setCk(loaded);
 
           if (journal?.formattedText || journal?.rawText) {
-            const VALID_VIEWS: View[] = ["emails", "schedule", "sales", "tasks"];
+            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "tasks"];
             const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
-            const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "emails";
+            const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "dashboard";
             setView(restoredView);
           } else {
             setView("journal");
@@ -500,6 +501,24 @@ export default function App() {
         onFollowUpEmail={prefill => setEmailCompose(prefill)}
       />
     </>
+  );
+
+  // ═══ DASHBOARD VIEW ═══
+  if (view === "dashboard") return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#1A1A1A", fontFamily: F }}>
+      {sharedHeader}
+      {sharedModals}
+      <DashboardView
+        tasks={brief?.tasks || []}
+        tDone={tDone}
+        calendarData={brief?.calendarData || []}
+        emailsImportant={brief?.emailsImportant || []}
+        linearItems={(brief?.linearItems || []) as LinearItem[]}
+        contacts={contacts.map(c => ({ name: c.name, phone: c.phone, company: c.company, status: c.status }))}
+        onComplete={handleTaskComplete}
+        onNavigate={v => persistView(v as View)}
+      />
+    </div>
   );
 
   // ═══ EMAILS VIEW ═══

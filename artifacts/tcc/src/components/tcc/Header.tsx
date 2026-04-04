@@ -114,7 +114,7 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
       }}>
 
         {/* ── Left: Title + Date ── */}
-        <div style={{ cursor: "pointer" }} onClick={() => onSetView("schedule")}>
+        <div style={{ cursor: "pointer" }} onClick={() => onSetView("dashboard")}>
           <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 700, color: C.tx, lineHeight: 1.1 }}>
             Tony's Command Center
           </div>
@@ -206,6 +206,7 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
 
               {/* Navigate */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
+              {menuItem("🏠", "Dashboard", null, () => onSetView("dashboard"))}
               {menuItem("📞", "Sales", null, () => onSetView("sales"))}
               {menuItem("📅", "Calendar", null, () => onToggleCal(), calSide ? C.blu : undefined)}
               {menuItem("✉️", "Emails", unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}

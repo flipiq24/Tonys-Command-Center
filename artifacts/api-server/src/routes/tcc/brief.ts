@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, dailyBriefsTable } from "@workspace/db";
+import { eq, gte } from "drizzle-orm";
+import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
@@ -491,5 +491,87 @@ async function briefTodayHandler(
 
 router.get("/brief/today", briefTodayHandler);
 router.get("/morning-brief", briefTodayHandler);
+
+// ── Spiritual Anchor ────────────────────────────────────────────────────────
+router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
+  const today = todayPacific();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+
+  try {
+    const [spiritualCtx] = await db
+      .select()
+      .from(businessContextTable)
+      .where(eq(businessContextTable.documentType, "daily_spiritual"))
+      .limit(1);
+
+    const [yesterdayCk] = await db
+      .select()
+      .from(checkinsTable)
+      .where(eq(checkinsTable.date, yesterdayStr));
+
+    const yesterdayStart = new Date(yesterdayStr + "T00:00:00Z");
+    const yesterdayEnd = new Date(yesterdayStr + "T23:59:59Z");
+
+    const [yesterdayTasks] = await db
+      .select()
+      .from(taskCompletionsTable)
+      .where(gte(taskCompletionsTable.completedAt, yesterdayStart));
+
+    const yesterdayCallsRaw = await db
+      .select()
+      .from(callLogTable)
+      .where(gte(callLogTable.createdAt, yesterdayStart));
+
+    const yesterdayCalls = yesterdayCallsRaw.filter(c => {
+      const t = new Date(c.createdAt!);
+      return t >= yesterdayStart && t <= yesterdayEnd;
+    });
+
+    const spiritualContent = spiritualCtx?.content ?? "Commit your work to the Lord, and your plans will be established. — Proverbs 16:3\nFear is the enemy of action. Courage is the decision to move anyway.\nYour North Star: Help real estate entrepreneurs grow and scale with AI.";
+
+    const callsYesterday = yesterdayCalls.filter(c => c.type === "connected" || c.type === "attempt").length;
+    const tasksYesterday = yesterdayTasks.length;
+    const sleepHours = yesterdayCk?.sleepHours ? parseFloat(yesterdayCk.sleepHours) : null;
+    const bibleYesterday = yesterdayCk?.bible ?? false;
+
+    const perfSummary = [
+      callsYesterday > 0 ? `${callsYesterday} calls logged` : "no calls logged",
+      tasksYesterday > 0 ? `${tasksYesterday} tasks completed` : "no tasks completed",
+      sleepHours ? `${sleepHours}h sleep` : null,
+      bibleYesterday ? "Bible ✓" : null,
+    ].filter(Boolean).join(", ");
+
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 300,
+      messages: [{
+        role: "user",
+        content: `You are Tony Diaz's morning AI coach. Generate a SHORT (3-4 sentences max) morning spiritual anchor message.
+
+Tony's spiritual content / Daily Task doc:
+${spiritualContent.slice(0, 1200)}
+
+Yesterday's performance: ${perfSummary || "no data yet"}
+
+Rules:
+- Be direct, personal, non-preachy
+- Include ONE scripture or mindset line from the content above (rotate — don't always use the same one)
+- Reference yesterday's actual performance with honesty: celebrate wins, acknowledge misses without shame
+- End with ONE clear action directive for today (always starts with calls if no calls yesterday)
+- Max 4 sentences. No fluff. Tony's ADHD brain needs impact, not paragraphs.`,
+      }],
+    });
+
+    const block = message.content[0];
+    const anchor = block.type === "text" ? block.text : "Commit to your vision today. Start with your 10 calls.";
+
+    res.json({ anchor, perfSummary });
+  } catch (err) {
+    req.log.warn({ err }, "[brief] Spiritual anchor generation failed");
+    res.json({ anchor: "Today is a new day. Start with your 10 calls — that's the North Star.", perfSummary: "" });
+  }
+});
 
 export default router;

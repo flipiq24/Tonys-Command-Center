@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { post } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { post, get } from "@/lib/api";
 import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
+import { VoiceInput } from "./VoiceInput";
 
 interface Props {
   onComplete: (formatted: string) => void;
@@ -10,6 +11,15 @@ export function JournalGate({ onComplete }: Props) {
   const [jTxt, setJTxt] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [anchor, setAnchor] = useState("");
+  const [anchorLoading, setAnchorLoading] = useState(true);
+
+  useEffect(() => {
+    get<{ anchor: string; perfSummary: string }>("/brief/spiritual-anchor")
+      .then(r => setAnchor(r.anchor || ""))
+      .catch(() => setAnchor(""))
+      .finally(() => setAnchorLoading(false));
+  }, []);
 
   const submit = async (skip = false) => {
     setSaving(true);
@@ -30,22 +40,53 @@ export function JournalGate({ onComplete }: Props) {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ ...card, padding: "36px 40px", maxWidth: 540, width: "100%" }}>
-        <h1 style={{ fontFamily: FS, fontSize: 28, margin: 0 }}>Journal</h1>
-        <p style={{ color: C.mut, margin: "6px 0 20px", fontSize: 13 }}>Brain dump — speak or type. AI will format it.</p>
-        <textarea
-          value={jTxt}
-          onChange={e => setJTxt(e.target.value)}
-          placeholder="What's on your mind? What happened yesterday? What are you grateful for?"
-          style={{ ...inp, minHeight: 180, resize: "vertical", fontSize: 15, lineHeight: 1.7 }}
-        />
-        {error && <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 13 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button onClick={() => submit(true)} disabled={saving} style={{ ...btn2, flex: 1 }}>Skip</button>
-          <button onClick={() => submit(false)} disabled={saving || !jTxt.trim()}
-            style={{ ...btn1, flex: 2, opacity: saving || !jTxt.trim() ? 0.4 : 1 }}>
-            {saving ? "AI Formatting..." : "Save & Continue →"}
-          </button>
+      <div style={{ maxWidth: 560, width: "100%" }}>
+
+        {/* ── Spiritual Anchor (non-dismissable) ─── */}
+        <div style={{ ...card, marginBottom: 16, background: "#FDF8EF", border: `1px solid #D4A017`, borderLeft: `4px solid #D4A017` }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <span style={{ fontSize: 22, flexShrink: 0 }}>✝</span>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: "#9A7C0A", marginBottom: 6 }}>Morning Anchor</div>
+              {anchorLoading ? (
+                <div style={{ fontSize: 13, color: "#B8860B", fontStyle: "italic" }}>Generating your morning anchor...</div>
+              ) : anchor ? (
+                <div style={{ fontFamily: FS, fontSize: 15, color: "#5C4000", lineHeight: 1.6 }}>{anchor}</div>
+              ) : (
+                <div style={{ fontFamily: FS, fontSize: 15, color: "#5C4000", lineHeight: 1.6 }}>
+                  Commit your work to the Lord, and your plans will be established. — Proverbs 16:3<br />
+                  Start with your 10 calls today.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Journal Form ──────────────────────── */}
+        <div style={{ ...card, padding: "36px 40px" }}>
+          <h1 style={{ fontFamily: FS, fontSize: 28, margin: 0 }}>Journal</h1>
+          <p style={{ color: C.mut, margin: "6px 0 20px", fontSize: 13 }}>Brain dump — speak or type. AI will format it.</p>
+
+          <div style={{ position: "relative", marginBottom: 8 }}>
+            <textarea
+              value={jTxt}
+              onChange={e => setJTxt(e.target.value)}
+              placeholder="What's on your mind? What happened yesterday? What are you grateful for?"
+              style={{ ...inp, minHeight: 180, resize: "vertical", fontSize: 15, lineHeight: 1.7, paddingRight: 50 }}
+            />
+            <div style={{ position: "absolute", bottom: 12, right: 12 }}>
+              <VoiceInput onTranscript={t => setJTxt(prev => prev ? prev + " " + t : t)} size={34} />
+            </div>
+          </div>
+
+          {error && <div style={{ marginTop: 8, padding: "10px 14px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 13 }}>{error}</div>}
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button onClick={() => submit(true)} disabled={saving} style={{ ...btn2, flex: 1 }}>Skip</button>
+            <button onClick={() => submit(false)} disabled={saving || !jTxt.trim()}
+              style={{ ...btn1, flex: 2, opacity: saving || !jTxt.trim() ? 0.4 : 1 }}>
+              {saving ? "AI Formatting..." : "Save & Continue →"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

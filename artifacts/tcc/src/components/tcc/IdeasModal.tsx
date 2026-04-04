@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2, lbl } from "./constants";
+import { VoiceInput } from "./VoiceInput";
 import type { Idea } from "./types";
 
 const CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", "Product", "Personal"];
@@ -109,14 +110,17 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
           <>
             <h3 style={{ fontFamily: FS, fontSize: 20, margin: "0 0 4px" }}>What's your brilliant idea?</h3>
             <p style={{ fontSize: 13, color: C.mut, margin: "0 0 16px" }}>That'll be #{count + 1} — {count} parked ahead of it. AI will classify it.</p>
-            <textarea
-              value={text}
-              onChange={e => setText(e.target.value)}
-              placeholder="Speak or type your idea..."
-              autoFocus
-              onKeyDown={e => { if (e.key === "Enter" && e.metaKey) classify(); }}
-              style={{ ...inp, minHeight: 80, resize: "vertical", marginBottom: 14 }}
-            />
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 14 }}>
+              <textarea
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="Speak or type your idea..."
+                autoFocus
+                onKeyDown={e => { if (e.key === "Enter" && e.metaKey) classify(); }}
+                style={{ ...inp, minHeight: 80, resize: "vertical", flex: 1 }}
+              />
+              <VoiceInput onTranscript={t => setText(prev => prev ? prev + " " + t : t)} size={34} />
+            </div>
             {error && <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={handleClose} style={{ ...btn2, flex: 1 }}>Cancel</button>

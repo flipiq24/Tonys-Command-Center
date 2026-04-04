@@ -109,7 +109,7 @@ export const chatMessagesTable = pgTable("chat_messages", {
 
 export const taskWorkNotesTable = pgTable("task_work_notes", {
   id: uuid("id").defaultRandom().primaryKey(),
-  taskId: uuid("task_id").notNull(),
+  taskId: text("task_id").notNull(),
   date: date("date").notNull(),
   note: text("note").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
+import { VoiceInput } from "./VoiceInput";
 import type { CallEntry } from "./types";
 
 interface Props {
@@ -37,7 +38,15 @@ export function AttemptModal({ contact, onClose, onLog }: Props) {
       <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 14, padding: 24, width: 420, maxWidth: "90vw" }}>
         <h3 style={{ fontFamily: FS, fontSize: 18, margin: "0 0 4px" }}>Attempt — {contact.name}</h3>
         <p style={{ fontSize: 12, color: C.mut, margin: "0 0 12px" }}>Instructions for follow-up email:</p>
-        <textarea value={note} onChange={e => setNote(e.target.value)} placeholder='"No answer, send email about demo..."' style={{ ...inp, minHeight: 80, resize: "vertical" }} />
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder='"No answer, send email about demo..."'
+            style={{ ...inp, minHeight: 80, resize: "vertical", flex: 1 }}
+          />
+          <VoiceInput onTranscript={t => setNote(prev => prev ? prev + " " + t : t)} size={34} />
+        </div>
         {error && <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button onClick={onClose} style={btn2}>Cancel</button>

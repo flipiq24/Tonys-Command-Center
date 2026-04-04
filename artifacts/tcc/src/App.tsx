@@ -16,6 +16,7 @@ import { SalesView } from "@/components/tcc/SalesView";
 import { SalesMorning } from "@/components/tcc/SalesMorning";
 import { TasksView } from "@/components/tcc/TasksView";
 import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
+import { PrintView } from "@/components/tcc/PrintView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
@@ -76,6 +77,9 @@ export default function App() {
   const [chatContext, setChatContext] = useState<{
     contextType: string; contextId: string; contextLabel: string;
   } | null>(null);
+
+  // Print mode
+  const [printMode, setPrintMode] = useState(false);
 
   // UI state
   const [showChat, setShowChat] = useState(false);
@@ -275,7 +279,7 @@ export default function App() {
     setSnoozed(prev => ({ ...prev, [emailId]: until }));
   }, []);
 
-  const handleTaskToggle = useCallback(async (task: TaskItem) => {
+  const handleTaskComplete = useCallback(async (task: TaskItem) => {
     if (task.sales) { persistView("sales"); return; }
     const newVal = !tDone[task.id];
     setTDone(prev => ({ ...prev, [task.id]: newVal }));
@@ -453,13 +457,25 @@ export default function App() {
       {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
       {sharedModals}
+      {printMode && (
+        <PrintView
+          tasks={brief?.tasks || []}
+          tDone={tDone}
+          calendarData={brief?.calendarData || []}
+          emailsImportant={brief?.emailsImportant || []}
+          slackItems={brief?.slackItems || []}
+          linearItems={brief?.linearItems || []}
+          onClose={() => setPrintMode(false)}
+        />
+      )}
       <TasksView
         tasks={brief?.tasks || []}
         tDone={tDone}
         calSide={calSide}
-        onToggle={handleTaskToggle}
+        onComplete={handleTaskComplete}
         onSwitchToSales={() => persistView("sales")}
         onBackToSchedule={() => persistView("schedule")}
+        onPrint={() => setPrintMode(true)}
       />
     </div>
   );

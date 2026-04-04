@@ -3,6 +3,9 @@ import { eq, desc, lt } from "drizzle-orm";
 import { db, checkinsTable } from "@workspace/db";
 import { SaveCheckinBody } from "@workspace/api-zod";
 import { todayPacific } from "../../lib/dates.js";
+import { appendToSheet } from "../../lib/google-sheets.js";
+
+const CHECKIN_SHEET_ID = "1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw";
 
 const router: IRouter = Router();
 
@@ -101,6 +104,19 @@ router.post("/checkin", async (req, res): Promise<void> => {
       alerts.push({ type: "unplug", message: `Didn't unplug at 6PM for 3 days straight. Recovery is part of performance.`, level: "low" });
     }
   }
+
+  // Append to personal check-in Google Sheet (fire-and-forget, Tony only)
+  appendToSheet(CHECKIN_SHEET_ID, "Check-ins", [
+    checkin.date,
+    checkin.bedtime ?? "",
+    checkin.waketime ?? "",
+    checkin.sleepHours ?? "",
+    checkin.bible ? "Yes" : "No",
+    checkin.workout ? "Yes" : "No",
+    checkin.journal ? "Yes" : "No",
+    checkin.nutrition ?? "Good",
+    checkin.unplug ? "Yes" : "No",
+  ]).catch(err => req.log.warn({ err }, "[checkin] Sheet append failed (non-fatal)"));
 
   res.json({ ...checkin, done: true, patternAlerts: alerts });
 });

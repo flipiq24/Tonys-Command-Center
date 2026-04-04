@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, gte } from "drizzle-orm";
-import { db, manualScheduleEventsTable, callLogTable, ideasTable } from "@workspace/db";
-import { todayPacific } from "../../lib/dates.js";
+import { gte } from "drizzle-orm";
+import { db, callLogTable, ideasTable } from "@workspace/db";
+import { createEvent } from "../../lib/gcal.js";
 import z from "zod";
 
 const router: IRouter = Router();
@@ -10,15 +10,15 @@ const CALL_QUOTA = 10;
 const CALL_START_MIN = 9 * 60;   // 9:00 AM
 const CALL_END_MIN   = 16 * 60;  // 4:00 PM
 
-function parseTimeToMinutes(t: string): number | null {
-  const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+function timeToMinutes(t: string): number | null {
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
-  let h = parseInt(m[1]);
-  const min = parseInt(m[2]);
-  const ampm = m[3].toUpperCase();
-  if (ampm === "PM" && h < 12) h += 12;
-  if (ampm === "AM" && h === 12) h = 0;
-  return h * 60 + min;
+  return parseInt(m[1]) * 60 + parseInt(m[2]);
+}
+
+function buildISO(date: string, time: string): string {
+  // date = YYYY-MM-DD, time = HH:MM (24h)
+  return `${date}T${time}:00-07:00`; // Pacific (PT) — handles DST offset
 }
 
 async function getTodayCallCount(): Promise<number> {
@@ -31,30 +31,18 @@ async function getTodayCallCount(): Promise<number> {
 }
 
 const AddEventBody = z.object({
-  time: z.string().min(1),
-  timeEnd: z.string().optional(),
   title: z.string().min(1),
-  type: z.string().min(1),
-  category: z.string().min(1),
-  importance: z.enum(["high", "mid", "low"]).default("mid"),
-  person: z.string().optional(),
-  contactId: z.string().uuid().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  allDay: z.boolean().optional().default(false),
+  startTime: z.string().optional(),  // HH:MM (24h)
+  endTime: z.string().optional(),    // HH:MM (24h)
+  location: z.string().optional(),
   description: z.string().optional(),
-  briefing: z.string().optional(),
-  forceOverride: z.boolean().optional(),
+  notification: z.number().optional().default(10), // minutes
+  guests: z.array(z.string()).optional().default([]),
+  forceOverride: z.boolean().optional().default(false),
 });
 
-// GET today's manual events
-router.get("/schedule/manual", async (req, res): Promise<void> => {
-  const today = todayPacific();
-  const events = await db
-    .select()
-    .from(manualScheduleEventsTable)
-    .where(eq(manualScheduleEventsTable.date, today));
-  res.json(events);
-});
-
-// POST add schedule item (with guilt trip check)
 router.post("/schedule/add", async (req, res): Promise<void> => {
   const parsed = AddEventBody.safeParse(req.body);
   if (!parsed.success) {
@@ -62,61 +50,58 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
     return;
   }
 
-  const { time, timeEnd, title, type, category, importance, person, contactId, description, briefing, forceOverride } = parsed.data;
-  const today = todayPacific();
+  const { title, date, allDay, startTime, endTime, location, description, notification, guests, forceOverride } = parsed.data;
 
-  // ── Guilt trip logic ────────────────────────────────────────────────────────
+  // ── Guilt-trip check (only for timed events during call hours) ───────────
   let guiltTrip = false;
   let guiltTripMsg = "";
   let callsMade = 0;
 
-  if (importance !== "high" && !forceOverride) {
-    const eventMin = parseTimeToMinutes(time);
+  if (!allDay && !forceOverride && startTime) {
+    const eventMin = timeToMinutes(startTime);
     if (eventMin !== null && eventMin >= CALL_START_MIN && eventMin < CALL_END_MIN) {
       callsMade = await getTodayCallCount();
       if (callsMade < CALL_QUOTA) {
         guiltTrip = true;
-        guiltTripMsg = `You're scheduling a ${importance}-priority ${type} during call hours (${time}) and you've only made ${callsMade} of ${CALL_QUOTA} calls today. This will be flagged in your EOD report to Ethan.`;
+        guiltTripMsg = `You're scheduling "${title}" at ${startTime} during call hours and you've only made ${callsMade} of ${CALL_QUOTA} calls today. This will be flagged in your EOD report.`;
       }
     }
   }
 
-  // If guilt trip and not forcing, just return the warning — don't save yet
   if (guiltTrip && !forceOverride) {
     res.json({ ok: false, guiltTrip: true, guiltTripMsg, callsMade, quotaTarget: CALL_QUOTA });
     return;
   }
 
-  // Build override reason if forced
-  const overrideReason = forceOverride && guiltTripMsg
-    ? guiltTripMsg
-    : forceOverride
-    ? `Forced override: ${importance}-priority ${type} at ${time} during call hours (${callsMade} calls made)`
-    : null;
+  // ── Build Google Calendar event ──────────────────────────────────────────
+  let gcalStart: string;
+  let gcalEnd: string;
 
-  // Save the event
-  const [event] = await db
-    .insert(manualScheduleEventsTable)
-    .values({
-      date: today,
-      time,
-      timeEnd: timeEnd || null,
-      title,
-      type,
-      category,
-      importance,
-      person: person || null,
-      contactId: contactId || null,
-      description: description || null,
-      briefing: briefing || null,
-      forcedOverride: forceOverride ? 1 : 0,
-      overrideReason,
-    })
-    .returning();
+  if (allDay) {
+    gcalStart = date;
+    gcalEnd = date;
+  } else {
+    gcalStart = buildISO(date, startTime || "09:00");
+    gcalEnd   = buildISO(date, endTime   || "10:00");
+  }
 
-  // Log override to ideasTable so EOD Ethan report picks it up
-  if (forceOverride && overrideReason) {
-    const overrideText = `⚠️ FORCED MEETING: ${person ? `${person} — ` : ""}${title} at ${time} | ${importance.toUpperCase()} priority | Calls: ${callsMade}/${CALL_QUOTA}`;
+  const gcalResult = await createEvent({
+    summary: title,
+    start: gcalStart,
+    end: gcalEnd,
+    attendees: guests.length > 0 ? guests : undefined,
+    description: description,
+    location: location,
+  });
+
+  if (!gcalResult.ok) {
+    res.status(500).json({ ok: false, error: gcalResult.error || "Failed to create Google Calendar event" });
+    return;
+  }
+
+  // ── Log forced override to EOD ────────────────────────────────────────────
+  if (forceOverride && guiltTripMsg) {
+    const overrideText = `⚠️ FORCED MEETING: ${title} at ${startTime} on ${date} | Calls: ${callsMade}/${CALL_QUOTA}`;
     await db.insert(ideasTable).values({
       text: overrideText,
       category: "accountability",
@@ -125,7 +110,7 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
     }).catch(() => { /* non-critical */ });
   }
 
-  res.json({ ok: true, event, forcedOverride: forceOverride || false });
+  res.json({ ok: true, eventId: gcalResult.eventId, htmlLink: gcalResult.htmlLink });
 });
 
 export default router;

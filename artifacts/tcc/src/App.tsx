@@ -496,6 +496,7 @@ export default function App() {
         onSnooze={handleSnooze}
         onDone={() => persistView("schedule")}
         onTipSaved={handleTipSaved}
+        onRefresh={async () => { try { await get("/emails/poll"); } catch { /* ignore */ } await refreshBrief(["emails"]); }}
       />
     </div>
   );

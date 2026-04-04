@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, TIPS } from "./constants";
 import { SmartTip } from "./SmartTip";
@@ -13,6 +13,7 @@ interface Props {
   onSnooze: (emailId: number, until: string) => void;
   onDone: () => void;
   onTipSaved: (key: string, text: string) => void;
+  onRefresh?: () => Promise<void>;
 }
 
 interface TrainingState {
@@ -22,9 +23,20 @@ interface TrainingState {
   saved: boolean;
 }
 
-export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, onSnooze, onDone, onTipSaved }: Props) {
+export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh }: Props) {
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const [training, setTraining] = useState<TrainingState | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleRefresh = async () => {
+    if (refreshing || !onRefresh) return;
+    setRefreshing(true);
+    try { await onRefresh(); } finally {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(() => setRefreshing(false), 600);
+    }
+  };
   const unresolved = emailsImportant.filter(e => !snoozed[e.id]).length;
   const tip = (key: string) => (customTips ?? {})[key] ?? TIPS[key] ?? "";
 
@@ -54,7 +66,23 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
       <div style={{ maxWidth: 680, margin: "24px auto", padding: "0 20px" }}>
         <div style={{ ...card, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Important Emails</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Important Emails</h3>
+              {onRefresh && (
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  title="Refresh emails"
+                  style={{
+                    background: "none", border: "none", padding: 0, cursor: refreshing ? "default" : "pointer",
+                    color: refreshing ? C.blu : C.mut, fontSize: 16, lineHeight: 1,
+                    display: "flex", alignItems: "center",
+                    animation: refreshing ? "spin 0.7s linear infinite" : "none",
+                    transition: "color 0.2s",
+                  }}
+                >↻</button>
+              )}
+            </div>
             <span style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{unresolved} need attention</span>
           </div>
 

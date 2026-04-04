@@ -93,103 +93,91 @@ Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and
   res.json({ ...report, ok: true, emailsSent: sentResults });
 });
 
-// Auto-EOD endpoint: called by frontend timer at 4:30 PM Pacific
-// Guard: only sends once per day. Generates separate reports for Tony and Ethan.
-router.post("/eod-report/auto", async (req, res): Promise<void> => {
+// ── Shared auto-EOD logic (also called by Claude tool) ────────────────────────
+export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolean; error?: string; callsMade?: number; demosBooked?: number; tasksCompleted?: number }> {
   const today = todayPacific();
 
   const [existing] = await db.select().from(eodReportsTable).where(eq(eodReportsTable.date, today));
-  if (existing) {
-    res.json({ ok: true, alreadySent: true, date: today });
-    return;
-  }
+  if (existing) return { ok: true, alreadySent: true };
 
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+
+  const [calls, demoRows, taskCompletions, workedOnTasks] = await Promise.all([
+    db.select().from(callLogTable).where(gte(callLogTable.createdAt, todayDate)),
+    db.select().from(demosTable).where(eq(demosTable.scheduledDate, today)),
+    db.select().from(taskCompletionsTable).where(gte(taskCompletionsTable.completedAt, todayDate)),
+    db.select().from(taskWorkNotesTable).where(gte(taskWorkNotesTable.createdAt, todayDate)),
+  ]);
+
+  let emailsSent = 0;
   try {
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
+    const emailLogs = await db.select().from(communicationLogTable).where(gte(communicationLogTable.createdAt, todayDate));
+    emailsSent = emailLogs.filter(e => e.direction === "outbound").length;
+  } catch { /* non-critical */ }
 
-    const [calls, demoRows, taskCompletions, workedOnTasks] = await Promise.all([
-      db.select().from(callLogTable).where(gte(callLogTable.createdAt, todayDate)),
-      db.select().from(demosTable).where(eq(demosTable.scheduledDate, today)),
-      db.select().from(taskCompletionsTable).where(gte(taskCompletionsTable.completedAt, todayDate)),
-      db.select().from(taskWorkNotesTable).where(gte(taskWorkNotesTable.createdAt, todayDate)),
-    ]);
+  let ideasToday: string[] = [];
+  try {
+    const ideas = await db.select().from(ideasTable).where(gte(ideasTable.createdAt, todayDate));
+    ideasToday = ideas.map(i => i.text || "");
+  } catch { /* non-critical */ }
 
-    // Emails sent today
-    let emailsSent = 0;
-    try {
-      const emailLogs = await db.select().from(communicationLogTable).where(gte(communicationLogTable.createdAt, todayDate));
-      emailsSent = emailLogs.filter(e => e.direction === "outbound").length;
-    } catch { /* non-critical */ }
+  let overridesToday: string[] = [];
+  try {
+    const overrides = await db.select().from(ideasTable)
+      .where(sql`${ideasTable.createdAt} >= ${todayDate} AND ${ideasTable.status} = 'override'`);
+    overridesToday = overrides.map(o => o.text || "");
+  } catch { /* non-critical */ }
 
-    // Ideas submitted today
-    let ideasToday: string[] = [];
-    try {
-      const ideas = await db.select().from(ideasTable).where(gte(ideasTable.createdAt, todayDate));
-      ideasToday = ideas.map(i => i.text || "");
-    } catch { /* non-critical */ }
-
-    // Overrides today
-    let overridesToday: string[] = [];
-    try {
-      const overrides = await db.select().from(ideasTable)
-        .where(sql`${ideasTable.createdAt} >= ${todayDate} AND ${ideasTable.status} = 'override'`);
-      overridesToday = overrides.map(o => o.text || "");
-    } catch { /* non-critical */ }
-
-    // Out-of-sequence detection via 90-day plan
-    let outOfSequenceItems: string[] = [];
-    try {
-      const [businessCtx] = await db.select().from(businessContextTable).where(eq(businessContextTable.documentType, "90_day_plan"));
-      if (businessCtx?.content && taskCompletions.length > 0) {
-        const planContent = businessCtx.content.toLowerCase();
-        outOfSequenceItems = taskCompletions
-          .map(t => t.taskText || "")
-          .filter(t => t && !planContent.includes(t.toLowerCase().substring(0, 20)));
-      }
-    } catch { /* non-critical */ }
-
-    // Items without notes today (proxy for "no due date" — tasks done without context)
-    let noDueDateItems: string[] = [];
-    try {
-      const noteTaskIds = new Set(workedOnTasks.map(w => w.taskId));
-      noDueDateItems = taskCompletions
-        .filter(t => !noteTaskIds.has(t.taskId))
+  let outOfSequenceItems: string[] = [];
+  try {
+    const [businessCtx] = await db.select().from(businessContextTable).where(eq(businessContextTable.documentType, "90_day_plan"));
+    if (businessCtx?.content && taskCompletions.length > 0) {
+      const planContent = businessCtx.content.toLowerCase();
+      outOfSequenceItems = taskCompletions
         .map(t => t.taskText || "")
-        .filter(Boolean);
-    } catch { /* non-critical */ }
+        .filter(t => t && !planContent.includes(t.toLowerCase().substring(0, 20)));
+    }
+  } catch { /* non-critical */ }
 
-    // Demo feedback from recordings
-    let demoFeedback: string[] = [];
-    try {
-      const { analyzeDemoRecording } = await import("../../lib/demo-feedback");
-      const { listTodayEvents } = await import("../../lib/gcal");
-      const todayEvents = await listTodayEvents();
-      const demoEvents = todayEvents.filter(e =>
-        e.summary.toLowerCase().includes("flipiq demo") && new Date(e.end) < new Date()
-      );
-      for (const demoEvent of demoEvents) {
-        const feedback = await analyzeDemoRecording(demoEvent.summary, today);
-        if (feedback) demoFeedback.push(feedback);
-      }
-    } catch { /* non-critical */ }
+  let noDueDateItems: string[] = [];
+  try {
+    const noteTaskIds = new Set(workedOnTasks.map(w => w.taskId));
+    noDueDateItems = taskCompletions
+      .filter(t => !noteTaskIds.has(t.taskId))
+      .map(t => t.taskText || "")
+      .filter(Boolean);
+  } catch { /* non-critical */ }
 
-    const callsMade = calls.length;
-    const demosBooked = demoRows.length;
-    const tasksCompleted = taskCompletions.length;
-    const callList = calls.map(c => `- ${c.contactName}: ${c.type}`).join("\n") || "- No calls logged";
-    const workedOnSummary = workedOnTasks.map(t => `- ${t.taskId}: ${t.note || "no note"}`).join("\n") || "- None";
-    const completionRate = Math.min(100, Math.round(((tasksCompleted + workedOnTasks.length) / 10) * 100));
+  let demoFeedback: string[] = [];
+  try {
+    const { analyzeDemoRecording } = await import("../../lib/demo-feedback");
+    const { listTodayEvents } = await import("../../lib/gcal");
+    const todayEvents = await listTodayEvents();
+    const demoEvents = todayEvents.filter(e =>
+      e.summary.toLowerCase().includes("flipiq demo") && new Date(e.end) < new Date()
+    );
+    for (const demoEvent of demoEvents) {
+      const feedback = await analyzeDemoRecording(demoEvent.summary, today);
+      if (feedback) demoFeedback.push(feedback);
+    }
+  } catch { /* non-critical */ }
 
-    // ── Tony's Report ──
-    let tonyReportText = "";
-    try {
-      const tonyMsg = await anthropic.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        messages: [{
-          role: "user",
-          content: `Generate Tony Diaz's EOD report for ${today} (FlipIQ CEO).
+  const callsMade = calls.length;
+  const demosBooked = demoRows.length;
+  const tasksCompleted = taskCompletions.length;
+  const callList = calls.map(c => `- ${c.contactName}: ${c.type}`).join("\n") || "- No calls logged";
+  const workedOnSummary = workedOnTasks.map(t => `- ${t.taskId}: ${t.note || "no note"}`).join("\n") || "- None";
+  const completionRate = Math.min(100, Math.round(((tasksCompleted + workedOnTasks.length) / 10) * 100));
+
+  let tonyReportText = "";
+  try {
+    const tonyMsg = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [{
+        role: "user",
+        content: `Generate Tony Diaz's EOD report for ${today} (FlipIQ CEO).
 
 Today's Data:
 - Calls made: ${callsMade}
@@ -204,23 +192,22 @@ Format as a brief EOD (4 paragraphs max):
 2. Key metrics: calls, demos, tasks
 3. What needs follow-up tomorrow
 4. One closing thought in Tony's voice — direct and honest.`,
-        }],
-      });
-      const block = tonyMsg.content.find(b => b.type === "text");
-      if (block?.type === "text") tonyReportText = block.text;
-    } catch {
-      tonyReportText = `EOD Report — ${today}\n\nCalls: ${callsMade} | Demos: ${demosBooked} | Tasks: ${tasksCompleted}\n\n${callList}`;
-    }
+      }],
+    });
+    const block = tonyMsg.content.find(b => b.type === "text");
+    if (block?.type === "text") tonyReportText = block.text;
+  } catch {
+    tonyReportText = `EOD Report — ${today}\n\nCalls: ${callsMade} | Demos: ${demosBooked} | Tasks: ${tasksCompleted}\n\n${callList}`;
+  }
 
-    // ── Ethan's Report ──
-    let ethanReportText = "";
-    try {
-      const ethanMsg = await anthropic.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        messages: [{
-          role: "user",
-          content: `Generate Ethan's EOD brief for ${today}. Ethan is Tony Diaz's AI chief of staff for FlipIQ.
+  let ethanReportText = "";
+  try {
+    const ethanMsg = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      messages: [{
+        role: "user",
+        content: `Generate Ethan's EOD brief for ${today}. Ethan is Tony Diaz's AI chief of staff for FlipIQ.
 
 Tony's Activity:
 - Calls: ${callsMade}, Demos: ${demosBooked}, Emails: ${emailsSent}
@@ -247,31 +234,36 @@ Format Ethan's brief with:
 5. Demo feedback if available
 6. Accountability score: ${completionRate}%
 7. Dynamic action items for Ethan tomorrow`,
-        }],
-      });
-      const block = ethanMsg.content.find(b => b.type === "text");
-      if (block?.type === "text") ethanReportText = block.text;
-    } catch {
-      ethanReportText = `Ethan's EOD Brief — ${today}\n\nAccountability: ${completionRate}%\nNo-due-date items: ${noDueDateItems.length}\nOut-of-sequence: ${outOfSequenceItems.length}\nOverrides: ${overridesToday.length}`;
-    }
+      }],
+    });
+    const block = ethanMsg.content.find(b => b.type === "text");
+    if (block?.type === "text") ethanReportText = block.text;
+  } catch {
+    ethanReportText = `Ethan's EOD Brief — ${today}\n\nAccountability: ${completionRate}%\nNo-due-date items: ${noDueDateItems.length}\nOut-of-sequence: ${outOfSequenceItems.length}\nOverrides: ${overridesToday.length}`;
+  }
 
-    // Send Tony's report
-    const tonyResult = await sendViaAgentMail({ to: "tony@flipiq.com", subject: `FlipIQ EOD — ${today}`, body: tonyReportText });
-    // Send Ethan's specialized report
-    const ethanResult = await sendViaAgentMail({ to: "ethan@flipiq.com", subject: `Ethan's EOD Brief — ${today}`, body: ethanReportText });
+  const tonyResult = await sendViaAgentMail({ to: "tony@flipiq.com", subject: `FlipIQ EOD — ${today}`, body: tonyReportText });
+  const ethanResult = await sendViaAgentMail({ to: "ethan@flipiq.com", subject: `Ethan's EOD Brief — ${today}`, body: ethanReportText });
 
-    const sentTo = [tonyResult.ok ? "tony@flipiq.com" : "", ethanResult.ok ? "ethan@flipiq.com" : ""].filter(Boolean).join(",") || "failed";
+  const sentTo = [tonyResult.ok ? "tony@flipiq.com" : "", ethanResult.ok ? "ethan@flipiq.com" : ""].filter(Boolean).join(",") || "failed";
 
-    const [report] = await db
-      .insert(eodReportsTable)
-      .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText: tonyReportText, sentTo })
-      .onConflictDoUpdate({
-        target: eodReportsTable.date,
-        set: { callsMade, demosBooked, tasksCompleted, reportText: tonyReportText, sentTo },
-      })
-      .returning();
+  await db
+    .insert(eodReportsTable)
+    .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText: tonyReportText, sentTo })
+    .onConflictDoUpdate({
+      target: eodReportsTable.date,
+      set: { callsMade, demosBooked, tasksCompleted, reportText: tonyReportText, sentTo },
+    });
 
-    res.json({ ...report, ok: true, alreadySent: false, emailsSent: [tonyResult, ethanResult] });
+  return { ok: true, alreadySent: false, callsMade, demosBooked, tasksCompleted };
+}
+
+// Auto-EOD endpoint: called by frontend timer at 4:30 PM Pacific
+// Guard: only sends once per day. Generates separate reports for Tony and Ethan.
+router.post("/eod-report/auto", async (req, res): Promise<void> => {
+  try {
+    const result = await sendAutoEod();
+    res.json(result);
   } catch (err) {
     req.log.error({ err }, "Auto-EOD failed");
     res.status(500).json({ ok: false, error: "Auto-EOD failed" });

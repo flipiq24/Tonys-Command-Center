@@ -3,6 +3,7 @@ import { post, get } from "@/lib/api";
 import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
 import { VoiceField } from "./VoiceField";
 import { TimeRoutingBanner } from "./TimeRoutingBanner";
+import { CreateTaskModal } from "./CreateTaskModal";
 import type { TaskItem } from "./types";
 
 interface WorkNote {
@@ -12,6 +13,16 @@ interface WorkNote {
   note: string;
   progress: number;
   createdAt: string;
+}
+
+interface LocalTask {
+  id: string;
+  text: string;
+  dueDate?: string | null;
+  priority?: number | null;
+  status?: string;
+  overrideWarning?: string | null;
+  createdAt?: string;
 }
 
 interface Props {
@@ -61,6 +72,9 @@ function ProgressBar({ pct, size = "md" }: { pct: number; size?: "sm" | "md" }) 
 }
 
 export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, onBackToSchedule, onPrint }: Props) {
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
+  const [localTasksLoaded, setLocalTasksLoaded] = useState(false);
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
   const [workNotePct, setWorkNotePct] = useState<number>(25);
@@ -68,6 +82,14 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [savingNote, setSavingNote] = useState(false);
   const [noteHistory, setNoteHistory] = useState<Record<string, WorkNote[]>>({});
   const [noteError, setNoteError] = useState("");
+
+  useEffect(() => {
+    if (localTasksLoaded) return;
+    get<LocalTask[]>("/tasks/local").then(rows => {
+      setLocalTasks(rows);
+      setLocalTasksLoaded(true);
+    }).catch(() => setLocalTasksLoaded(true));
+  }, [localTasksLoaded]);
 
   const doneCount = Object.values(tDone).filter(Boolean).length;
   const activeTasks = tasks.filter(t => !tDone[t.id]);
@@ -141,10 +163,16 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                 {doneCount} of {tasks.length} done
               </div>
             </div>
-            <div style={{ textAlign: "right" }}>
+            <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
               <div style={{ fontSize: 32, fontWeight: 900, color: overallPct >= 75 ? "#34D399" : overallPct >= 40 ? "#FBBF24" : "#F87171" }}>
                 {overallPct}%
               </div>
+              <button
+                onClick={() => setShowCreateTask(true)}
+                style={{ padding: "5px 12px", borderRadius: 8, border: "2px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: F }}
+              >
+                + New Task
+              </button>
             </div>
           </div>
           <ProgressBar pct={overallPct} />
@@ -298,12 +326,47 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         )}
 
+        {/* ── Local Tasks ───────────────────────────────── */}
+        {localTasks.length > 0 && (
+          <div style={{ ...card, marginBottom: 16, border: `1px solid ${C.brd}` }}>
+            <h4 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 12px", color: C.sub }}>
+              My Tasks ({localTasks.length})
+            </h4>
+            {localTasks.map(t => (
+              <div key={t.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "11px 14px", marginBottom: 6, background: "#FAFAF8", borderRadius: 12, border: `1px solid ${C.brd}`, borderLeft: `3px solid ${C.blu}` }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>TASK</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.tx }}>{t.text}</div>
+                  {t.dueDate && (
+                    <div style={{ fontSize: 11, color: C.mut, marginTop: 3 }}>
+                      Due: {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </div>
+                  )}
+                  {t.overrideWarning && (
+                    <div style={{ fontSize: 11, color: C.amb, marginTop: 3 }}>⚠️ Added with priority override</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <button onClick={onSwitchToSales} style={{ ...btn2, width: "100%", marginBottom: 10, borderRadius: 12, padding: "12px 0", fontWeight: 700 }}>📞 Sales Mode</button>
         <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>
           <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1, borderRadius: 12, color: C.mut }}>← Schedule</button>
           {onPrint && <button onClick={onPrint} style={{ ...btn2, flex: 1, borderRadius: 12 }}>🖨 Print Sheet</button>}
         </div>
       </div>
+
+      {/* ── Create Task Modal ─────────────────────────────── */}
+      <CreateTaskModal
+        open={showCreateTask}
+        onClose={() => setShowCreateTask(false)}
+        onSave={task => {
+          setLocalTasks(prev => [...prev, task as LocalTask]);
+          setShowCreateTask(false);
+        }}
+      />
 
       {/* ── Work on it Modal ──────────────────────────── */}
       {workNoteTask && (

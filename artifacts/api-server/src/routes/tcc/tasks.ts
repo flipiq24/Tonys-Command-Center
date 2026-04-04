@@ -1,9 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db, taskCompletionsTable, taskWorkNotesTable } from "@workspace/db";
 import { MarkTaskCompleteBody } from "@workspace/api-zod";
-import { eq, gte, and } from "drizzle-orm";
+import { eq, gte, and, desc } from "drizzle-orm";
 import { getLinearIssues } from "../../lib/linear";
 import { todayPacific } from "../../lib/dates.js";
+import { localTasksTable } from "../../lib/schema-v2";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
@@ -115,6 +118,154 @@ router.get("/tasks/linear", async (req, res): Promise<void> => {
     req.log.warn({ err }, "Linear tasks fetch failed");
     res.json([]);
   }
+});
+
+// Get all active local tasks
+router.get("/tasks/local", async (req, res): Promise<void> => {
+  const tasks = await db
+    .select()
+    .from(localTasksTable)
+    .where(eq(localTasksTable.status, "active"))
+    .orderBy(localTasksTable.dueDate, localTasksTable.createdAt);
+  res.json(tasks);
+});
+
+const CreateTaskBody = z.object({
+  text: z.string().min(1, "text is required"),
+  dueDate: z.string().optional(),
+  checkOnly: z.boolean().optional(),
+  overrideWarning: z.string().optional(),
+});
+
+interface PriorityItem {
+  id: string;
+  text: string;
+  source: "linear" | "local";
+  priority?: number;
+}
+
+async function checkTaskPriority(
+  taskText: string,
+  linearIssues: PriorityItem[],
+  localTasks: PriorityItem[]
+): Promise<{ hasHigherPriority: boolean; count: number; items: PriorityItem[]; newTaskPriority: number }> {
+  const allTasks = [...linearIssues.slice(0, 5), ...localTasks.slice(0, 5)];
+
+  if (allTasks.length === 0) {
+    return { hasHigherPriority: false, count: 0, items: [], newTaskPriority: 50 };
+  }
+
+  const taskList = allTasks.map((t, i) => `${i + 1}. [${t.source}] ${t.text}`).join("\n");
+
+  const msg = await anthropic.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 512,
+    messages: [{
+      role: "user",
+      content: `You are Tony Diaz's priority checker for FlipIQ. Tony's top priority is always: Sales calls first, then ops support, then everything else.
+
+NEW TASK: "${taskText}"
+
+EXISTING ACTIVE TASKS:
+${taskList}
+
+Which of the existing tasks are higher priority than the new task? A task is higher priority if it's more urgent or directly moves revenue.
+
+Return ONLY valid JSON:
+{
+  "newTaskPriority": <number 1-100, lower = higher priority>,
+  "higherPriorityItems": [<array of 1-based indices of existing tasks that are HIGHER priority than the new task>]
+}
+
+Return ONLY the JSON object, no markdown.`
+    }]
+  });
+
+  const block = msg.content[0];
+  if (block.type !== "text") return { hasHigherPriority: false, count: 0, items: [], newTaskPriority: 50 };
+
+  const raw = block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+  const parsed = JSON.parse(raw);
+
+  const higherItems = (parsed.higherPriorityItems as number[] || [])
+    .filter((i: number) => i >= 1 && i <= allTasks.length)
+    .map((i: number) => allTasks[i - 1]);
+
+  return {
+    hasHigherPriority: higherItems.length > 0,
+    count: higherItems.length,
+    items: higherItems,
+    newTaskPriority: parsed.newTaskPriority ?? 50,
+  };
+}
+
+// Smart task creation with priority check
+router.post("/tasks/create-with-check", async (req, res): Promise<void> => {
+  const parsed = CreateTaskBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { text, dueDate, checkOnly, overrideWarning } = parsed.data;
+
+  // Fetch existing tasks for priority comparison
+  let linearIssues: PriorityItem[] = [];
+  let localTasks: PriorityItem[] = [];
+
+  try {
+    const issues = await getLinearIssues();
+    linearIssues = issues.slice(0, 8).map(issue => ({
+      id: `linear-${issue.id}`,
+      text: `[${issue.identifier}] ${issue.title}`,
+      source: "linear" as const,
+      priority: issue.priority,
+    }));
+  } catch { /* ok — Linear may not be connected */ }
+
+  try {
+    const rows = await db
+      .select()
+      .from(localTasksTable)
+      .where(eq(localTasksTable.status, "active"))
+      .orderBy(localTasksTable.priority, localTasksTable.createdAt)
+      .limit(8);
+    localTasks = rows.map(r => ({
+      id: r.id,
+      text: r.text,
+      source: "local" as const,
+      priority: r.priority ?? undefined,
+    }));
+  } catch { /* ok */ }
+
+  // Run priority check via Claude
+  let priorityCheck: { hasHigherPriority: boolean; count: number; items: PriorityItem[]; newTaskPriority: number };
+  try {
+    priorityCheck = await checkTaskPriority(text, linearIssues, localTasks);
+  } catch (err) {
+    req.log.warn({ err }, "Priority check failed — skipping");
+    priorityCheck = { hasHigherPriority: false, count: 0, items: [], newTaskPriority: 50 };
+  }
+
+  // If checkOnly, return the assessment without saving
+  if (checkOnly) {
+    res.json({ ok: true, priorityCheck });
+    return;
+  }
+
+  // Save the task
+  const [task] = await db
+    .insert(localTasksTable)
+    .values({
+      text,
+      dueDate: dueDate ?? null,
+      priority: priorityCheck.newTaskPriority,
+      status: "active",
+      overrideWarning: overrideWarning ?? null,
+    })
+    .returning();
+
+  res.status(201).json(task);
 });
 
 export default router;

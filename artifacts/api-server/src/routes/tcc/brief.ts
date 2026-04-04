@@ -287,6 +287,89 @@ async function fetchLiveLinear(): Promise<LinearItem[] | null> {
   }
 }
 
+// ─── Claude-powered brief generation (when live Gmail/Slack unavailable) ─────
+// Runs once per day — result cached in daily_briefs DB. Uses real calendar +
+// Linear data as context so generated content is relevant to Tony's actual day.
+
+interface GeneratedBrief {
+  emailsImportant: EmailImportant[];
+  emailsFyi: EmailFyi[];
+  slackItems: SlackItem[];
+  tasks: { id: string; text: string; cat: string; sales?: boolean }[];
+}
+
+async function generateClaudeBrief(
+  calData: CalItem[],
+  linearData: LinearItem[],
+  today: string
+): Promise<GeneratedBrief | null> {
+  try {
+    const todayFormatted = new Date(`${today}T12:00:00`).toLocaleDateString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+    });
+
+    const calContext = calData.length > 0
+      ? calData.map(e => `${e.t}: ${e.n}${e.loc ? ` @ ${e.loc}` : ""}`).join("\n")
+      : "No calendar events scheduled";
+
+    const linearContext = linearData.length > 0
+      ? linearData.map(i => `[${i.id}] ${i.task} (${i.level} priority)`).join("\n")
+      : "No open Linear issues";
+
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 2048,
+      system: `You generate Tony Diaz's daily brief. He is CEO of FlipIQ (AI-powered real estate wholesaling SaaS).
+Team: Ethan Jolly (CTO), Ramy (ops), Marisol (ops coordinator), Faisal (lead engineer), Haris (engineer), Chris Wesser (legal/capital raise).
+Key contacts: Fernando Perez (deal source), Mike Oyoque, Xander Clemens (Family Office Club — 10K investors), Kyle Draper.
+FlipIQ focuses on: AI deal analysis, comps, wholesaling pipeline, investor outreach, capital raise ($500K-$2M round).
+Today is ${todayFormatted}. Generate realistic workday data — no placeholders, no fake names outside this cast.`,
+      messages: [{
+        role: "user",
+        content: `Generate Tony's daily brief based on his REAL calendar and open tasks:
+
+CALENDAR TODAY:
+${calContext}
+
+OPEN LINEAR ISSUES:
+${linearContext}
+
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "emailsImportant": [
+    {"id": 1, "from": "<real person from Tony's world>", "subj": "<specific subject>", "why": "<why it needs action today>", "time": "<Today HH:MM AM|Yesterday|2 days ago>", "p": "<high|med|low>"}
+  ],
+  "emailsFyi": [
+    {"id": 10, "from": "<person>", "subj": "<subject>", "why": "<one-line summary>"}
+  ],
+  "slackItems": [
+    {"from": "<team member>", "message": "<under 100 chars>", "level": "<high|mid|low>", "channel": "<#engineering|#leadership|#general|#sales|DM>"}
+  ],
+  "tasks": [
+    {"id": "t1", "text": "10 Sales Calls", "cat": "SALES", "sales": true},
+    {"id": "t2", "text": "<task derived from calendar/linear>", "cat": "<SALES|OPS|BUILD>"}
+  ]
+}
+
+Rules:
+- 3–5 important emails, 2–3 FYI emails, 2–4 Slack items, 6–10 tasks
+- Tasks must include "10 Sales Calls" (sales: true) plus items derived from today's calendar events and Linear issues
+- Emails and Slack should reflect what would realistically land in Tony's inbox given today's meetings and active Linear issues
+- Make content specific and actionable — never generic`,
+      }],
+    });
+
+    const block = message.content[0];
+    if (block.type !== "text") return null;
+    const jsonMatch = block.text.match(/\{[\s\S]+\}/);
+    if (!jsonMatch) return null;
+    return JSON.parse(jsonMatch[0]) as GeneratedBrief;
+  } catch (err) {
+    console.warn("[brief] Claude generation failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 const router: IRouter = Router();
@@ -297,12 +380,13 @@ async function briefTodayHandler(
 ): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
 
-  const [brief] = await db
+  // Step 1: Load today's cached brief from DB (tasks are user-editable so always respect them)
+  const [dbBrief] = await db
     .select()
     .from(dailyBriefsTable)
     .where(eq(dailyBriefsTable.date, today));
 
-  // All live fetches in parallel — null = error/missing creds → use seed
+  // Step 2: All live fetches in parallel — null = error/missing creds
   const [liveEmails, liveCal, liveSlack, liveLinear] = await Promise.all([
     fetchLiveEmails(),
     fetchLiveCalendar(),
@@ -311,16 +395,65 @@ async function briefTodayHandler(
   ]);
 
   const calendarData = liveCal ?? DEFAULT_CAL;
-  const emailsImportant = liveEmails !== null ? liveEmails.important : DEFAULT_EMAILS_IMPORTANT;
-  const emailsFyi = liveEmails !== null ? liveEmails.fyi : DEFAULT_EMAILS_FYI;
-  const slackItems = liveSlack ?? DEFAULT_SLACK;
   const linearItems = liveLinear ?? DEFAULT_LINEAR;
-  const tasks = (brief?.tasks as typeof DEFAULT_TASKS | null) ?? DEFAULT_TASKS;
+
+  // Step 3: Resolve emails — priority: live > DB cache > Claude generate > static fallback
+  let emailsImportant: EmailImportant[];
+  let emailsFyi: EmailFyi[];
+  let claudeGenerated: GeneratedBrief | null = null;
+
+  if (liveEmails !== null) {
+    emailsImportant = liveEmails.important;
+    emailsFyi = liveEmails.fyi;
+  } else if (dbBrief?.emailsImportant) {
+    emailsImportant = dbBrief.emailsImportant as EmailImportant[];
+    emailsFyi = (dbBrief.emailsFyi as EmailFyi[]) ?? [];
+  } else {
+    // No live Gmail, no cache — generate via Claude using real context
+    console.log("[brief] Generating today's brief via Claude...");
+    claudeGenerated = await generateClaudeBrief(calendarData, linearItems, today);
+    emailsImportant = claudeGenerated?.emailsImportant ?? DEFAULT_EMAILS_IMPORTANT;
+    emailsFyi = claudeGenerated?.emailsFyi ?? DEFAULT_EMAILS_FYI;
+  }
+
+  // Step 4: Resolve Slack — priority: live > DB cache > Claude generated > static fallback
+  let slackItems: SlackItem[];
+  if (liveSlack !== null) {
+    slackItems = liveSlack;
+  } else if (dbBrief?.slackItems) {
+    slackItems = dbBrief.slackItems as SlackItem[];
+  } else {
+    slackItems = claudeGenerated?.slackItems ?? DEFAULT_SLACK;
+  }
+
+  // Step 5: Tasks — DB always wins (user may have checked things off), then Claude, then default
+  const tasks = (dbBrief?.tasks as typeof DEFAULT_TASKS | null)
+    ?? claudeGenerated?.tasks
+    ?? DEFAULT_TASKS;
+
+  // Step 6: Cache Claude-generated content in DB so it doesn't regenerate on next request
+  if (claudeGenerated) {
+    db.insert(dailyBriefsTable)
+      .values({
+        date: today,
+        calendarData,
+        emailsImportant,
+        emailsFyi,
+        slackItems,
+        linearItems,
+        tasks,
+      })
+      .onConflictDoUpdate({
+        target: dailyBriefsTable.date,
+        set: { emailsImportant, emailsFyi, slackItems, tasks },
+      })
+      .catch(err => console.warn("[brief] DB cache save failed:", err));
+  }
 
   const sources = {
     calendar: liveCal !== null ? "live" : "seed",
-    emails: liveEmails !== null ? "live" : "seed",
-    slack: liveSlack !== null ? "live" : "seed",
+    emails: liveEmails !== null ? "live" : (dbBrief?.emailsImportant ? "cached" : claudeGenerated ? "claude" : "seed"),
+    slack: liveSlack !== null ? "live" : (dbBrief?.slackItems ? "cached" : claudeGenerated ? "claude" : "seed"),
     linear: liveLinear !== null ? "live" : "seed",
   };
   console.log("[brief]", sources);

@@ -183,6 +183,8 @@ const CreateTaskBody = z.object({
   dueDate: z.string().optional(),
   checkOnly: z.boolean().optional(),
   overrideWarning: z.string().optional(),
+  taskType: z.enum(["one_time", "ongoing"]).optional(),
+  size: z.enum(["XS", "S", "M", "L", "XL"]).optional(),
 });
 
 interface PriorityItem {
@@ -255,7 +257,7 @@ router.post("/tasks/create-with-check", async (req, res): Promise<void> => {
     return;
   }
 
-  const { text, dueDate, checkOnly, overrideWarning } = parsed.data;
+  const { text, dueDate, checkOnly, overrideWarning, taskType, size } = parsed.data;
 
   // Fetch existing tasks for priority comparison
   let linearIssues: PriorityItem[] = [];
@@ -310,6 +312,8 @@ router.post("/tasks/create-with-check", async (req, res): Promise<void> => {
       priority: priorityCheck.newTaskPriority,
       status: "active",
       overrideWarning: overrideWarning ?? null,
+      taskType: taskType ?? "one_time",
+      size: size ?? null,
     })
     .returning();
 

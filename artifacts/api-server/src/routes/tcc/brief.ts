@@ -46,7 +46,7 @@ const DEFAULT_TASKS = [
 
 const router: IRouter = Router();
 
-router.get("/brief/today", async (req, res): Promise<void> => {
+async function briefTodayHandler(req: Parameters<Parameters<typeof router.get>[1]>[0], res: Parameters<Parameters<typeof router.get>[1]>[1]): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
   const [brief] = await db
     .select()
@@ -75,6 +75,9 @@ router.get("/brief/today", async (req, res): Promise<void> => {
     linearItems: [],
     tasks: DEFAULT_TASKS,
   });
-});
+}
+
+router.get("/brief/today", briefTodayHandler);
+router.get("/morning-brief", briefTodayHandler);
 
 export default router;

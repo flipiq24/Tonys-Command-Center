@@ -15,14 +15,14 @@ export function JournalGate({ onComplete }: Props) {
   const submit = async (skip = false) => {
     setSaving(true);
     setError("");
-    if (skip) {
-      onComplete("");
-      setSaving(false);
-      return;
-    }
     try {
-      const j = await post<{ formattedText?: string; rawText?: string }>("/journal", { rawText: jTxt });
-      onComplete(j.formattedText || j.rawText || jTxt);
+      if (skip) {
+        await post("/journal", { rawText: "[skipped]" });
+        onComplete("");
+      } else {
+        const j = await post<{ formattedText?: string; rawText?: string }>("/journal", { rawText: jTxt });
+        onComplete(j.formattedText || j.rawText || jTxt);
+      }
     } catch {
       setError("Failed to save journal. Please try again.");
     }

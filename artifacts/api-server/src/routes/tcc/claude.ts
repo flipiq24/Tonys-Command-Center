@@ -24,7 +24,14 @@ YOUR JOB:
 
 SCRIPTURE ANCHORS:
 - "Seek first the kingdom of God" — Matthew 6:33
-- "Commit your work to the Lord" — Proverbs 16:3`;
+- "Commit your work to the Lord" — Proverbs 16:3
+
+EXTERNAL INTEGRATIONS (via MCP when tokens are provided):
+- Gmail: https://gmail.mcp.claude.com/mcp
+- Google Calendar: https://gcal.mcp.claude.com/mcp
+- Slack: https://mcp.slack.com/mcp
+- Linear: https://mcp.linear.app/mcp
+- AgentMail inboxes: flipiq@agentmail.to (system), tony-diaz@agentmail.to (Tony-facing)`;
 
 const router: IRouter = Router();
 
@@ -43,7 +50,7 @@ router.post("/claude", async (req, res): Promise<void> => {
       max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: [
-        ...(context ? [{ role: "user" as const, content: `Context: ${context}` }, { role: "assistant" as const, content: "Understood, I have that context." }] : []),
+        ...(context ? [{ role: "user" as const, content: `Context: ${context}` }, { role: "assistant" as const, content: "Understood." }] : []),
         { role: "user", content: prompt },
       ],
     });

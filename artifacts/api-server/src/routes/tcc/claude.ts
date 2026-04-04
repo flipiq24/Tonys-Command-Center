@@ -423,7 +423,7 @@ TOOLS AVAILABLE:
 - list_recent_emails: Read Tony's unread Gmail inbox
 - draft_gmail_reply: Create a Gmail draft Tony can review and send
 - get_today_calendar: See what's on Tony's Google Calendar today
-- create_calendar_event: Schedule a meeting on Tony's calendar
+- create_calendar_event: Schedule a meeting on Tony's calendar (blocked before noon for external meetings)
 - send_slack_message: Post to any Slack channel
 - read_slack_channel: Read recent messages from a Slack channel
 - list_slack_channels: List all channels in Tony's Slack workspace
@@ -431,6 +431,9 @@ TOOLS AVAILABLE:
 - create_linear_issue: Create tech tasks in Linear
 - send_email: Send emails via AgentMail (automated inbox)
 - get_email_brain: Check Tony's learned email priority rules
+- get_meeting_history: Look up past meeting notes for a contact before a follow-up call
+- log_meeting_context: Save meeting notes, next steps, and outcome after a call or meeting
+- analyze_transcript: Analyze a call/meeting transcript to extract action items, decisions, and follow-ups
 
 SCRIPTURE ANCHORS:
 - "Seek first the kingdom of God" — Matthew 6:33

@@ -28,6 +28,24 @@ export async function appendToDoc(documentId: string, text: string) {
   });
 }
 
+export async function prependToDoc(documentId: string, text: string) {
+  const docs = getDocs();
+
+  await docs.documents.batchUpdate({
+    documentId,
+    requestBody: {
+      requests: [
+        {
+          insertText: {
+            location: { index: 1 },
+            text: text + "\n\n",
+          },
+        },
+      ],
+    },
+  });
+}
+
 export async function getDocText(documentId: string): Promise<string> {
   const docs = getDocs();
   const res = await docs.documents.get({ documentId });

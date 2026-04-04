@@ -1,27 +1,40 @@
 import { Router, type IRouter } from "express";
 import { db, contactsTable } from "@workspace/db";
 import { contactIntelligenceTable, communicationLogTable } from "../../lib/schema-v2";
-import { eq, desc, gte, lte, and, sql, isNotNull, or, isNull } from "drizzle-orm";
+import { eq, desc, gte, lt, lte, and, sql, isNotNull, or, isNull } from "drizzle-orm";
+import { todayPacific } from "../../lib/dates";
 
 const router: IRouter = Router();
 
 router.get("/sales/morning", async (_req, res): Promise<void> => {
   try {
+    const todayStr = todayPacific();
     const now = new Date();
-    const todayStr = now.toISOString().split("T")[0];
     const hours48Ago = new Date(now.getTime() - 48 * 60 * 60 * 1000);
     const hours24Ago = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    const urgentComms = await db
+    // Tier 1: Urgent inbound comms — LEFT JOIN contacts + intel in a single query
+    const urgentRows = await db
       .selectDistinctOn([communicationLogTable.contactId], {
         contactId: communicationLogTable.contactId,
-        contactName: communicationLogTable.contactName,
         channel: communicationLogTable.channel,
         summary: communicationLogTable.summary,
         subject: communicationLogTable.subject,
         loggedAt: communicationLogTable.loggedAt,
+        contactName: contactsTable.name,
+        contactCompany: contactsTable.company,
+        contactStatus: contactsTable.status,
+        contactPhone: contactsTable.phone,
+        contactEmail: contactsTable.email,
+        contactType: contactsTable.type,
+        contactNextStep: contactsTable.nextStep,
+        aiScore: contactIntelligenceTable.aiScore,
+        aiScoreReason: contactIntelligenceTable.aiScoreReason,
+        stage: contactIntelligenceTable.stage,
       })
       .from(communicationLogTable)
+      .leftJoin(contactsTable, eq(contactsTable.id, communicationLogTable.contactId))
+      .leftJoin(contactIntelligenceTable, eq(contactIntelligenceTable.contactId, communicationLogTable.contactId))
       .where(
         and(
           gte(communicationLogTable.loggedAt, hours48Ago),
@@ -35,22 +48,29 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
       )
       .orderBy(communicationLogTable.contactId, desc(communicationLogTable.loggedAt));
 
+    const seenContactIds = new Set<string>();
     const urgentResponses = [];
-    for (const u of urgentComms) {
-      if (!u.contactId) continue;
-      const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, u.contactId)).limit(1);
-      const [intel] = await db.select().from(contactIntelligenceTable).where(eq(contactIntelligenceTable.contactId, u.contactId)).limit(1);
-      if (contact) {
-        urgentResponses.push({
-          ...contact,
-          aiScore: intel?.aiScore || null,
-          aiScoreReason: intel?.aiScoreReason || null,
-          stage: intel?.stage || "new",
-          lastComm: { channel: u.channel, summary: u.summary || u.subject, loggedAt: u.loggedAt },
-        });
-      }
+    for (const u of urgentRows) {
+      if (!u.contactId || !u.contactName) continue;
+      if (seenContactIds.has(u.contactId)) continue;
+      seenContactIds.add(u.contactId);
+      urgentResponses.push({
+        id: u.contactId,
+        name: u.contactName,
+        company: u.contactCompany,
+        status: u.contactStatus,
+        phone: u.contactPhone,
+        email: u.contactEmail,
+        type: u.contactType,
+        nextStep: u.contactNextStep,
+        aiScore: u.aiScore || null,
+        aiScoreReason: u.aiScoreReason || null,
+        stage: u.stage || "new",
+        lastComm: { channel: u.channel, summary: u.summary || u.subject, loggedAt: u.loggedAt },
+      });
     }
 
+    // Tier 2: Follow-ups due today — LEFT JOIN contacts + intel in a single query
     const followUpRows = await db
       .select({
         contactId: contactIntelligenceTable.contactId,
@@ -62,8 +82,16 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
         lastCommunicationDate: contactIntelligenceTable.lastCommunicationDate,
         lastCommunicationType: contactIntelligenceTable.lastCommunicationType,
         lastCommunicationSummary: contactIntelligenceTable.lastCommunicationSummary,
+        contactName: contactsTable.name,
+        contactCompany: contactsTable.company,
+        contactStatus: contactsTable.status,
+        contactPhone: contactsTable.phone,
+        contactEmail: contactsTable.email,
+        contactType: contactsTable.type,
+        contactNextStep: contactsTable.nextStep,
       })
       .from(contactIntelligenceTable)
+      .leftJoin(contactsTable, eq(contactsTable.id, contactIntelligenceTable.contactId))
       .where(
         and(
           isNotNull(contactIntelligenceTable.nextActionDate),
@@ -74,25 +102,32 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
 
     const followUps = [];
     for (const f of followUpRows) {
-      if (!f.contactId) continue;
-      const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, f.contactId)).limit(1);
-      if (contact) {
-        followUps.push({
-          ...contact,
-          aiScore: f.aiScore,
-          aiScoreReason: f.aiScoreReason,
-          stage: f.stage || "new",
-          nextAction: f.nextAction,
-          nextActionDate: f.nextActionDate,
-          lastComm: {
-            date: f.lastCommunicationDate,
-            type: f.lastCommunicationType,
-            summary: f.lastCommunicationSummary,
-          },
-        });
-      }
+      if (!f.contactId || !f.contactName) continue;
+      if (seenContactIds.has(f.contactId)) continue;
+      seenContactIds.add(f.contactId);
+      followUps.push({
+        id: f.contactId,
+        name: f.contactName,
+        company: f.contactCompany,
+        status: f.contactStatus,
+        phone: f.contactPhone,
+        email: f.contactEmail,
+        type: f.contactType,
+        nextStep: f.contactNextStep,
+        aiScore: f.aiScore,
+        aiScoreReason: f.aiScoreReason,
+        stage: f.stage || "new",
+        nextAction: f.nextAction,
+        nextActionDate: f.nextActionDate,
+        lastComm: {
+          date: f.lastCommunicationDate,
+          type: f.lastCommunicationType,
+          summary: f.lastCommunicationSummary,
+        },
+      });
     }
 
+    // Tier 3: Top prospects by AI score — LEFT JOIN contacts, sorted by broker/investor in SQL
     const top10Rows = await db
       .select({
         contactId: contactIntelligenceTable.contactId,
@@ -102,42 +137,52 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
         lastCommunicationDate: contactIntelligenceTable.lastCommunicationDate,
         lastCommunicationType: contactIntelligenceTable.lastCommunicationType,
         lastCommunicationSummary: contactIntelligenceTable.lastCommunicationSummary,
+        contactName: contactsTable.name,
+        contactCompany: contactsTable.company,
+        contactStatus: contactsTable.status,
+        contactPhone: contactsTable.phone,
+        contactEmail: contactsTable.email,
+        contactType: contactsTable.type,
+        contactNextStep: contactsTable.nextStep,
       })
       .from(contactIntelligenceTable)
+      .leftJoin(contactsTable, eq(contactsTable.id, contactIntelligenceTable.contactId))
       .where(
         or(
           isNull(contactIntelligenceTable.lastCommunicationDate),
-          lte(contactIntelligenceTable.lastCommunicationDate, hours24Ago)
+          lt(contactIntelligenceTable.lastCommunicationDate, hours24Ago)
         )
       )
-      .orderBy(desc(contactIntelligenceTable.aiScore))
+      .orderBy(
+        sql`CASE WHEN LOWER(${contactsTable.type}) LIKE '%broker%' OR LOWER(${contactsTable.type}) LIKE '%investor%' THEN 0 ELSE 1 END`,
+        desc(contactIntelligenceTable.aiScore)
+      )
       .limit(20);
 
     const top10New = [];
     for (const t of top10Rows) {
-      if (!t.contactId) continue;
-      const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, t.contactId)).limit(1);
-      if (contact) {
-        top10New.push({
-          ...contact,
-          aiScore: t.aiScore,
-          aiScoreReason: t.aiScoreReason,
-          stage: t.stage || "new",
-          lastComm: {
-            date: t.lastCommunicationDate,
-            type: t.lastCommunicationType,
-            summary: t.lastCommunicationSummary,
-          },
-        });
-      }
+      if (!t.contactId || !t.contactName) continue;
+      if (seenContactIds.has(t.contactId)) continue;
+      seenContactIds.add(t.contactId);
+      top10New.push({
+        id: t.contactId,
+        name: t.contactName,
+        company: t.contactCompany,
+        status: t.contactStatus,
+        phone: t.contactPhone,
+        email: t.contactEmail,
+        type: t.contactType,
+        nextStep: t.contactNextStep,
+        aiScore: t.aiScore,
+        aiScoreReason: t.aiScoreReason,
+        stage: t.stage || "new",
+        lastComm: {
+          date: t.lastCommunicationDate,
+          type: t.lastCommunicationType,
+          summary: t.lastCommunicationSummary,
+        },
+      });
     }
-
-    top10New.sort((a, b) => {
-      const aIsBroker = (a.type || "").toLowerCase().includes("broker") ? 0 : 1;
-      const bIsBroker = (b.type || "").toLowerCase().includes("broker") ? 0 : 1;
-      if (aIsBroker !== bIsBroker) return aIsBroker - bIsBroker;
-      return (Number(b.aiScore) || 0) - (Number(a.aiScore) || 0);
-    });
 
     const stageCounts = await db
       .select({
@@ -161,7 +206,7 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
       .where(
         and(
           isNotNull(contactIntelligenceTable.nextActionDate),
-          lte(contactIntelligenceTable.nextActionDate, todayStr)
+          lt(contactIntelligenceTable.nextActionDate, todayStr)
         )
       );
 

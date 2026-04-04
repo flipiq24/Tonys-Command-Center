@@ -63,10 +63,29 @@ export async function analyzeRecording(fileId: string, fileName: string): Promis
   try {
     const { getDrive } = await import("./google-auth");
     const drive = getDrive();
-    const exported = await drive.files.export({ fileId, mimeType: "text/plain" });
-    transcriptContent = typeof exported.data === "string" ? exported.data : JSON.stringify(exported.data);
-  } catch {
-    console.log(`[plaud-processor] Could not export transcript for ${fileName}, using metadata-only analysis`);
+
+    // First, try to export as Google Doc (text/plain)
+    try {
+      const exported = await drive.files.export({ fileId, mimeType: "text/plain" });
+      transcriptContent = typeof exported.data === "string" ? exported.data : JSON.stringify(exported.data);
+    } catch {
+      // If export fails (e.g., not a Google Doc format), try downloading raw content
+      try {
+        const downloaded = await drive.files.get({ fileId, alt: "media" }, { responseType: "text" });
+        transcriptContent = typeof downloaded.data === "string" ? downloaded.data : "";
+        console.log(`[plaud-processor] Downloaded raw content for ${fileName} (${transcriptContent.length} chars)`);
+      } catch (downloadErr) {
+        console.log(`[plaud-processor] Could not download ${fileName}: ${downloadErr instanceof Error ? downloadErr.message : downloadErr}`);
+      }
+    }
+
+    if (!transcriptContent) {
+      console.log(`[plaud-processor] No transcript text obtained for ${fileName} — proceeding with metadata-only analysis`);
+    } else {
+      console.log(`[plaud-processor] Got transcript for ${fileName} (${transcriptContent.length} chars)`);
+    }
+  } catch (err) {
+    console.log(`[plaud-processor] Drive access failed for ${fileName}: ${err instanceof Error ? err.message : err}`);
   }
 
   const contactName = extractContactName(fileName);

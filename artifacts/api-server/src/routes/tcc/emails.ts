@@ -126,13 +126,21 @@ router.post("/emails/action", async (req, res): Promise<void> => {
       reason: reason || null,
     });
 
-    // Regenerate brain async (don't block response)
-    res.json({ ok: true, message: "Training saved — brain updating" });
+    // Count total training samples
+    const countResult = await db.select().from(emailTrainingTable);
+    const totalSamples = countResult.length;
 
-    // Fire and forget brain regeneration
-    regenerateBrain()
-      .then(brain => brain ? saveBrain(brain) : Promise.resolve())
-      .catch(err => console.error("[emails] Brain regeneration failed:", err));
+    if (totalSamples >= 20) {
+      // Regenerate brain async (don't block response)
+      res.json({ ok: true, message: `Training saved — brain updating (${totalSamples} samples)` });
+
+      // Fire and forget brain regeneration
+      regenerateBrain()
+        .then(brain => brain ? saveBrain(brain) : Promise.resolve())
+        .catch(err => console.error("[emails] Brain regeneration failed:", err));
+    } else {
+      res.json({ ok: true, message: `Training saved (${totalSamples}/20 samples — brain regenerates at 20+)` });
+    }
     return;
   }
 

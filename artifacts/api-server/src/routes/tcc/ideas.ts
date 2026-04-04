@@ -58,12 +58,14 @@ Return EXACTLY this JSON:
 {
   "category": "Tech|Sales|Marketing|Strategic Partners|Operations|Product|Personal",
   "urgency": "Now|This Week|This Month|Someday",
-  "techType": "Bug|Feature|Idea|null",
+  "techType": "Bug|Feature|Idea|Task|Strategic|null",
   "reason": "One sentence explaining why this category fits",
   "businessFit": "One sentence on how this moves the FlipIQ needle",
   "priority": "high|medium|low",
   "warningIfDistraction": "Optional: one sentence warning if this might distract Tony from sales"
 }
+
+IMPORTANT: Use techType "Task" when the idea is a concrete action item that should be checked against the 90-day plan. Use "Strategic" when the idea is a high-level strategic direction that Ethan should review. Use "Bug", "Feature", or "Idea" only for tech-related submissions.
 
 Return ONLY the JSON object, no markdown, no explanation.`
     }]
@@ -194,7 +196,28 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
     }
   } catch { /* non-critical — pushback stays null */ }
 
-  res.json({ ok: true, classification: { ...classification, pushback } });
+  // ── Special handling: Task type → check 90-day plan ──
+  let additionalContext: string | null = null;
+  if (classification.techType === "Task") {
+    try {
+      const ninetyDayDoc = await db.select().from(businessContextTable).limit(10);
+      const plan = ninetyDayDoc.find(d => d.documentType === "90_day_plan");
+      if (plan?.content) {
+        additionalContext = `This idea was classified as a "Task". It has been checked against your 90-day plan:\n${plan.content.substring(0, 1500)}`;
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // ── Special handling: Strategic type → flag for Ethan review ──
+  if (classification.techType === "Strategic" && !pushback) {
+    pushback = {
+      message: "This is a strategic-level idea. It has been flagged for Ethan review — park it and schedule time to discuss.",
+      priorityRank: null,
+      action: "escalate",
+    };
+  }
+
+  res.json({ ok: true, classification: { ...classification, pushback, additionalContext } });
 });
 
 router.post("/ideas/notify-override", async (req, res): Promise<void> => {

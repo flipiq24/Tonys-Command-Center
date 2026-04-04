@@ -9,7 +9,7 @@ let cacheExpiry = 0;
 
 router.get("/contacts/autocomplete", async (req, res): Promise<void> => {
   const query = String(req.query.q || "").toLowerCase().trim();
-  if (!query || query.length < 2) {
+  if (!query || query.length < 3) {
     res.json([]);
     return;
   }

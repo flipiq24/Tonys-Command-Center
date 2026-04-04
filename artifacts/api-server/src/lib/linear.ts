@@ -21,12 +21,12 @@ export async function linearGraphQL<T = unknown>(query: string, variables?: Reco
   return (res as unknown as { data: T }).data;
 }
 
-export async function getLinearIssues(teamId?: string): Promise<{ id: string; title: string; state: { name: string }; priority: number; identifier: string }[]> {
+export async function getLinearIssues(teamId?: string): Promise<{ id: string; title: string; state: { name: string }; priority: number; identifier: string; dueDate?: string | null }[]> {
   try {
-    const data = await linearGraphQL<{ issues?: { nodes: { id: string; title: string; state: { name: string }; priority: number; identifier: string }[] } }>(
+    const data = await linearGraphQL<{ issues?: { nodes: { id: string; title: string; state: { name: string }; priority: number; identifier: string; dueDate?: string | null }[] } }>(
       `query Issues($teamId: ID) {
         issues(filter: { team: { id: { eq: $teamId } }, state: { name: { nin: ["Done", "Cancelled"] } } }, first: 50) {
-          nodes { id title identifier priority state { name } }
+          nodes { id title identifier priority dueDate state { name } }
         }
       }`,
       teamId ? { teamId } : {}

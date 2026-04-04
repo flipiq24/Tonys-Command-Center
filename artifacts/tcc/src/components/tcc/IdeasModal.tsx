@@ -309,27 +309,25 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
             </div>
 
             {/* Tech type override if applicable */}
-            {finalCat === "Tech" && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={lbl}>Type</label>
-                <div style={{ display: "flex", gap: 5 }}>
-                  {["Bug", "Feature", "Idea"].map(t => (
-                    <button key={t} onClick={() => setOverrides(o => ({ ...o, techType: t }))}
-                      style={{
-                        padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-                        border: `2px solid ${finalTt === t ? C.blu : C.brd}`,
-                        background: finalTt === t ? C.bluBg : C.card,
-                        color: finalTt === t ? C.blu : C.sub,
-                      }}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>
-                  Tech ideas auto-create a Linear issue
-                </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={lbl}>Type (Manual Override)</label>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {["Bug", "Feature", "Idea", "Task", "Strategic"].map(t => (
+                  <button key={t} onClick={() => setOverrides(o => ({ ...o, techType: t }))}
+                    style={{
+                      padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
+                      border: `2px solid ${finalTt === t ? C.blu : C.brd}`,
+                      background: finalTt === t ? C.bluBg : C.card,
+                      color: finalTt === t ? C.blu : C.sub,
+                    }}>
+                    {t}
+                  </button>
+                ))}
               </div>
-            )}
+              <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>
+                {finalTt === "Task" ? "Task ideas check against the 90-day plan." : finalTt === "Strategic" ? "Strategic ideas are flagged for Ethan review." : finalCat === "Tech" ? "Tech ideas auto-create a Linear issue." : "Override the AI-detected type if needed."}
+              </div>
+            </div>
 
             {error && <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
 

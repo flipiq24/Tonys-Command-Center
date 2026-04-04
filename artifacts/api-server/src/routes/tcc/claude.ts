@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, desc, ilike } from "drizzle-orm";
 import { ClaudePromptBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { db, systemInstructionsTable } from "@workspace/db";
+import { db, systemInstructionsTable, meetingHistoryTable } from "@workspace/db";
 import { createLinearIssue } from "../../lib/linear";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendViaAgentMail } from "../../lib/agentmail";
@@ -137,6 +137,45 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
         attendees: { type: "array", items: { type: "string" }, description: "List of attendee email addresses" },
       },
       required: ["summary", "start", "end"],
+    },
+  },
+  {
+    name: "get_meeting_history",
+    description: "Retrieve past meeting notes and context for a specific contact. Use before a follow-up call or meeting to recall what was discussed previously.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        contact_name: { type: "string", description: "Name of the contact to look up meeting history for" },
+        limit: { type: "number", description: "Max number of meetings to return (default 5)" },
+      },
+      required: ["contact_name"],
+    },
+  },
+  {
+    name: "log_meeting_context",
+    description: "Save the context and outcomes of a meeting or call. Use after a meeting to record what was discussed, next steps, and deal outcome.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        contact_name: { type: "string", description: "Name of the contact you met with" },
+        date: { type: "string", description: "Date of the meeting in YYYY-MM-DD format" },
+        summary: { type: "string", description: "What was discussed in the meeting" },
+        next_steps: { type: "string", description: "Agreed next actions and follow-up items" },
+        outcome: { type: "string", description: "Result of the meeting (e.g. 'demo scheduled', 'not interested', 'send proposal')" },
+      },
+      required: ["contact_name", "date", "summary"],
+    },
+  },
+  {
+    name: "analyze_transcript",
+    description: "Analyze a meeting or call transcript to extract key decisions, action items, contact mentions, and follow-up tasks. Use when Tony pastes in a Plaud or other recording transcript.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        transcript: { type: "string", description: "The full text transcript to analyze" },
+        context: { type: "string", description: "Optional: who was on the call, what the call was about" },
+      },
+      required: ["transcript"],
     },
   },
 ];
@@ -278,6 +317,69 @@ async function executeTool(
       if (result.ok) return `✓ Calendar event created: "${input.summary}" (id: ${result.eventId})`;
       if (result.error?.includes("not connected")) return `⚠️ Google Calendar not yet authorized`;
       return `✗ Event creation failed: ${result.error}`;
+    }
+
+    case "get_meeting_history": {
+      const name = String(input.contact_name);
+      const lim = typeof input.limit === "number" ? Math.min(input.limit, 20) : 5;
+      const rows = await db
+        .select()
+        .from(meetingHistoryTable)
+        .where(ilike(meetingHistoryTable.contactName, `%${name}%`))
+        .orderBy(desc(meetingHistoryTable.date))
+        .limit(lim);
+      if (rows.length === 0) return `No meeting history found for "${name}".`;
+      return rows.map((r, i) => {
+        const parts = [`${i + 1}. [${r.date}] ${r.contactName ?? name}`];
+        if (r.summary) parts.push(`   Summary: ${r.summary}`);
+        if (r.nextSteps) parts.push(`   Next Steps: ${r.nextSteps}`);
+        if (r.outcome) parts.push(`   Outcome: ${r.outcome}`);
+        return parts.join("\n");
+      }).join("\n\n");
+    }
+
+    case "log_meeting_context": {
+      const [row] = await db
+        .insert(meetingHistoryTable)
+        .values({
+          date: String(input.date),
+          contactName: String(input.contact_name),
+          summary: input.summary ? String(input.summary) : null,
+          nextSteps: input.next_steps ? String(input.next_steps) : null,
+          outcome: input.outcome ? String(input.outcome) : null,
+        })
+        .returning();
+      return `✓ Meeting context logged for ${input.contact_name} on ${input.date} (id: ${row.id})`;
+    }
+
+    case "analyze_transcript": {
+      const transcript = String(input.transcript);
+      const context = input.context ? String(input.context) : "";
+      const prompt = `You are analyzing a business meeting/call transcript for Tony Diaz (FlipIQ CEO).
+
+${context ? `Context: ${context}\n\n` : ""}TRANSCRIPT:
+${transcript.slice(0, 8000)}
+
+Extract and organize the following in a clear, bulleted format:
+1. **Key Decisions Made** - What was agreed/decided
+2. **Action Items** - Specific tasks with owners (Tony vs. others)
+3. **Contact/Company Mentions** - People or companies discussed with context
+4. **Follow-up Required** - What needs to happen next and when
+5. **Deal/Opportunity Notes** - Any sales/deal-relevant information
+6. **Meeting Summary** - 2-3 sentence overview
+
+Be concise and action-oriented. Tony has ADHD — make it scannable.`;
+
+      const analysisResponse = await anthropic.messages.create({
+        model: "claude-opus-4-5",
+        max_tokens: 1500,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const analysisText = analysisResponse.content
+        .filter(b => b.type === "text")
+        .map(b => b.text)
+        .join("");
+      return `📋 TRANSCRIPT ANALYSIS\n\n${analysisText}`;
     }
 
     default:

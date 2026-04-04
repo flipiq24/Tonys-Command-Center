@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { get, post, del } from "@/lib/api";
+import { get, post, del, API_BASE as _API_BASE } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, inp } from "./constants";
 
 interface Thread {
@@ -46,7 +46,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
+  const API_BASE = _API_BASE;
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -130,7 +130,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
     try {
       const response = await fetch(`${API_BASE}/chat/threads/${activeThread.id}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-tcc-token": localStorage.getItem("tcc_token") || "" },
+        headers: { "Content-Type": "application/json", "x-tcc-token": sessionStorage.getItem("tcc_auth_token") || "" },
         body: JSON.stringify({ content: userMsg.content }),
       });
 

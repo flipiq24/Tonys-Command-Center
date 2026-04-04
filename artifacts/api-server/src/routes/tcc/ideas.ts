@@ -5,6 +5,7 @@ import { desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { createLinearIssue } from "../../lib/linear";
 import { postTechIdeaToSlack } from "../../lib/slack";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
@@ -72,19 +73,18 @@ async function notifyTechIdeaViaClaude(idea: {
   techType: string | null;
   linearIdentifier?: string;
 }): Promise<void> {
-  // Use the Slack lib directly (which uses the Replit connector)
-  // Claude's full tool-use loop is available via /api/claude for interactive sessions;
-  // for server-side fire-and-forget, we call the Slack lib directly with the same
-  // connector infrastructure that Claude's tools use.
   const result = await postTechIdeaToSlack(idea);
 
   if (!result.ok) {
-    // Slack not connected yet — that's okay, just log
     console.info("[Ideas] Slack notification skipped (not connected):", idea.text.slice(0, 60));
   } else {
     console.info("[Ideas] Posted tech idea to #tech-ideas Slack channel");
   }
 }
+
+const ClassifyIdeaBody = z.object({
+  text: z.string().min(1, "text is required"),
+});
 
 router.get("/ideas", async (req, res): Promise<void> => {
   const ideas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt));
@@ -93,12 +93,13 @@ router.get("/ideas", async (req, res): Promise<void> => {
 
 // Pre-classify an idea before saving (so user can review and override)
 router.post("/ideas/classify", async (req, res): Promise<void> => {
-  const { text } = req.body as { text?: string };
-  if (!text?.trim()) {
-    res.status(400).json({ error: "text is required" });
+  const parsed = ClassifyIdeaBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
     return;
   }
 
+  const { text } = parsed.data;
   const recentIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt)).limit(5);
 
   try {
@@ -161,7 +162,7 @@ router.post("/ideas", async (req, res): Promise<void> => {
       urgency,
       techType: techType ?? null,
       linearIdentifier: linearIssue.identifier,
-    }).catch(() => {});
+    }).catch(err => console.error("[ideas] Slack notification failed:", err));
   }
 
   res.status(201).json({

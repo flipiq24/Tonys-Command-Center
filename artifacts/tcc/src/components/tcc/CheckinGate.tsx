@@ -2,12 +2,7 @@ import { useState } from "react";
 import { post } from "@/lib/api";
 import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR, card, inp, btn1, btn2, lbl } from "./constants";
-
-interface CheckinState {
-  bed: string; wake: string; sleep: string;
-  bible: boolean; workout: boolean; journal: boolean;
-  nut: string; unplug: boolean; done: boolean;
-}
+import type { CheckinState } from "./types";
 
 interface Props {
   initial: CheckinState;

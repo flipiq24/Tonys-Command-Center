@@ -26,7 +26,15 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+const frontendUrl = process.env.FRONTEND_URL;
+app.use(
+  cors(
+    frontendUrl
+      ? { origin: frontendUrl, credentials: true }
+      : { origin: true, credentials: true }
+  )
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

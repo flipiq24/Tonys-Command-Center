@@ -1,34 +1,47 @@
 import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
+const SendSmsBody = z.object({
+  phone_number: z.string().min(1, "phone_number is required"),
+  message: z.string().min(1, "message is required"),
+  contact_id: z.string().optional(),
+});
+
 // ─── POST /send-sms — triggers MacroDroid to send SMS from Tony's phone ───────
 router.post("/send-sms", async (req, res): Promise<void> => {
-  const body = req.body as Record<string, unknown>;
-  const phone_number = body["phone_number"] as string;
-  const message = body["message"] as string;
-  const contact_id = body["contact_id"] as string | undefined;
-
-  if (!phone_number || !message) {
-    res.status(400).json({ error: "phone_number and message required" });
+  const parsed = SendSmsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  const { phone_number, message, contact_id } = parsed.data;
+
   const webhookUrl = process.env.MACRODROID_WEBHOOK_URL;
+  const validWebhookUrl = webhookUrl && webhookUrl.startsWith("https://trigger.macrodroid.com/")
+    ? webhookUrl
+    : null;
+
+  if (webhookUrl && !validWebhookUrl) {
+    console.warn("[send-sms] MACRODROID_WEBHOOK_URL does not start with expected domain — skipping webhook");
+  }
 
   let macrodroidOk = false;
-  if (webhookUrl) {
+  if (validWebhookUrl) {
     try {
-      const resp = await fetch(webhookUrl, {
+      const resp = await fetch(validWebhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_number, message }),
         signal: AbortSignal.timeout(8000),
       });
       macrodroidOk = resp.ok;
-    } catch {
-      // MacroDroid webhook may not return — log the SMS anyway
+    } catch (err) {
+      console.error("[send-sms] MacroDroid webhook error:", err);
       macrodroidOk = false;
     }
   }
@@ -57,7 +70,7 @@ router.post("/send-sms", async (req, res): Promise<void> => {
   res.status(201).json({
     sent: true,
     macrodroid_triggered: macrodroidOk,
-    macrodroid_configured: !!webhookUrl,
+    macrodroid_configured: !!validWebhookUrl,
     log_id: entry.id,
   });
 });

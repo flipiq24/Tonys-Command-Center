@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db, taskCompletionsTable } from "@workspace/db";
 import { MarkTaskCompleteBody } from "@workspace/api-zod";
-import { gte } from "drizzle-orm";
+import { eq, gte } from "drizzle-orm";
 import { getLinearIssues } from "../../lib/linear";
+import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
 
@@ -34,6 +35,20 @@ router.post("/tasks/completed", async (req, res): Promise<void> => {
     .returning();
 
   res.status(201).json(completion);
+});
+
+router.delete("/tasks/completed/:taskId", async (req, res): Promise<void> => {
+  const { taskId } = req.params;
+  if (!taskId) {
+    res.status(400).json({ error: "taskId is required" });
+    return;
+  }
+
+  await db
+    .delete(taskCompletionsTable)
+    .where(eq(taskCompletionsTable.taskId, taskId));
+
+  res.json({ ok: true, taskId });
 });
 
 // Pull active issues from Linear to surface as tasks in TCC checklist

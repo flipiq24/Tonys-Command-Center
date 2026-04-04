@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { get, post } from "@/lib/api";
+import { get, post, del } from "@/lib/api";
 import { FontLink } from "@/components/tcc/FontLink";
 import { CheckinGate } from "@/components/tcc/CheckinGate";
 import { JournalGate } from "@/components/tcc/JournalGate";
@@ -13,15 +13,9 @@ import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
 import { TasksView } from "@/components/tcc/TasksView";
 import { C, F, FS } from "@/components/tcc/constants";
-import type { CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief } from "@/components/tcc/types";
+import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief } from "@/components/tcc/types";
 
 type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks";
-
-interface CheckinState {
-  bed: string; wake: string; sleep: string;
-  bible: boolean; workout: boolean; journal: boolean;
-  nut: string; unplug: boolean; done: boolean;
-}
 
 const DEFAULT_CONTACTS: Contact[] = [
   { id: "1", name: "Mike Oyoque", company: "MR EXCELLENCE", status: "Warm", phone: "(555) 123-4567", nextStep: "Follow up demo", lastContactDate: "Mar 25" },
@@ -201,7 +195,9 @@ export default function App() {
     const newVal = !tDone[task.id];
     setTDone(prev => ({ ...prev, [task.id]: newVal }));
     if (newVal) {
-      post("/tasks/completed", { taskId: task.id, taskText: task.text }).catch(() => {});
+      post("/tasks/completed", { taskId: task.id, taskText: task.text }).catch(err => console.error("[TCC] Task complete failed:", err));
+    } else {
+      del(`/tasks/completed/${encodeURIComponent(task.id)}`).catch(err => console.error("[TCC] Task uncomplete failed:", err));
     }
   }, [tDone]);
 

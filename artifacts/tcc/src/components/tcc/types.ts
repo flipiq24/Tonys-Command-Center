@@ -1,3 +1,9 @@
+export interface CheckinState {
+  bed: string; wake: string; sleep: string;
+  bible: boolean; workout: boolean; journal: boolean;
+  nut: string; unplug: boolean; done: boolean;
+}
+
 export interface CalItem { t: string; n: string; loc?: string; note?: string; real?: boolean; }
 export interface EmailItem { id: number; from: string; subj: string; why: string; time?: string; p?: string; }
 export interface TaskItem { id: string; text: string; cat: string; sales?: boolean; }

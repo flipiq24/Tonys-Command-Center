@@ -15,7 +15,9 @@ export const checkinsTable = pgTable("checkins", {
   nutrition: text("nutrition"),
   unplug: boolean("unplug").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("checkins_date_idx").on(t.date),
+]);
 
 export const journalsTable = pgTable("journals", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -26,7 +28,9 @@ export const journalsTable = pgTable("journals", {
   keyEvents: text("key_events"),
   reflection: text("reflection"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("journals_date_idx").on(t.date),
+]);
 
 export const ideasTable = pgTable("ideas", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -122,6 +126,7 @@ export const emailSnoozesTable = pgTable("email_snoozes", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("email_snoozes_date_idx").on(t.date),
+  uniqueIndex("email_snoozes_date_email_id_uniq").on(t.date, t.emailId),
 ]);
 
 export const dailyBriefsTable = pgTable("daily_briefs", {

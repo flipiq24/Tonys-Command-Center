@@ -6,6 +6,8 @@ import { db, systemInstructionsTable } from "@workspace/db";
 import { createLinearIssue } from "../../lib/linear";
 import { postSlackMessage } from "../../lib/slack";
 import { sendViaAgentMail } from "../../lib/agentmail";
+import { listRecentEmails, draftReply } from "../../lib/gmail";
+import { getTodayEvents, createEvent } from "../../lib/gcal";
 
 // ─── Tool definitions for Claude ─────────────────────────────────────────────
 const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
@@ -56,6 +58,55 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
       required: [],
     },
   },
+  {
+    name: "list_recent_emails",
+    description: "Fetch Tony's most recent unread Gmail messages. Use to check inbox, triage emails, or get context before drafting a reply.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        max_results: { type: "number", description: "How many emails to fetch (default 5, max 10)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "draft_gmail_reply",
+    description: "Create a Gmail draft reply to an email. Tony will review and send manually. Use when asked to draft or prepare a reply.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string", description: "Email subject (add 'Re: ' prefix for replies)" },
+        body: { type: "string", description: "Full email body text" },
+        thread_id: { type: "string", description: "Gmail thread ID to reply to (optional)" },
+      },
+      required: ["to", "subject", "body"],
+    },
+  },
+  {
+    name: "get_today_calendar",
+    description: "Fetch Tony's Google Calendar events for today. Use to check his schedule, find meeting times, or give him a schedule overview.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "create_calendar_event",
+    description: "Create a new event on Tony's Google Calendar. Use when Tony asks to schedule a meeting or block time.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        summary: { type: "string", description: "Event title" },
+        description: { type: "string", description: "Event notes or agenda" },
+        start: { type: "string", description: "ISO 8601 datetime string, e.g. 2026-04-04T10:00:00-07:00" },
+        end: { type: "string", description: "ISO 8601 datetime string, e.g. 2026-04-04T11:00:00-07:00" },
+        attendees: { type: "array", items: { type: "string" }, description: "List of attendee email addresses" },
+      },
+      required: ["summary", "start", "end"],
+    },
+  },
 ];
 
 // ─── Tool executor ────────────────────────────────────────────────────────────
@@ -81,7 +132,7 @@ async function executeTool(
         priority: typeof input.priority === "number" ? input.priority : 3,
       });
       if (result.ok) return `✓ Linear issue created: ${result.identifier ?? result.id}`;
-      return `✗ Linear issue creation failed`;
+      return `✗ Linear issue creation failed (team connection may not be set up yet)`;
     }
 
     case "send_email": {
@@ -103,6 +154,50 @@ async function executeTool(
       return "No email brain yet — no training data available.";
     }
 
+    case "list_recent_emails": {
+      const maxResults = typeof input.max_results === "number" ? input.max_results : 5;
+      const emails = await listRecentEmails(Math.min(maxResults, 10));
+      if (emails.length === 0) return "No recent unread emails (or Gmail not yet authorized).";
+      return emails.map((e, i) =>
+        `${i + 1}. From: ${e.from}\n   Subject: ${e.subject}\n   Snippet: ${e.snippet}\n   Date: ${e.date}`
+      ).join("\n\n");
+    }
+
+    case "draft_gmail_reply": {
+      const result = await draftReply({
+        to: String(input.to),
+        subject: String(input.subject),
+        body: String(input.body),
+        threadId: input.thread_id ? String(input.thread_id) : undefined,
+      });
+      if (result.ok) return `✓ Gmail draft created (id: ${result.draftId}) — Tony will see it in his Drafts folder`;
+      if (result.error?.includes("not connected")) return `⚠️ Gmail not yet authorized — Tony needs to connect his Google account`;
+      return `✗ Draft creation failed: ${result.error}`;
+    }
+
+    case "get_today_calendar": {
+      const events = await getTodayEvents();
+      if (events.length === 0) return "No events on Tony's calendar today (or Google Calendar not yet authorized).";
+      return events.map((e, i) => {
+        const start = new Date(e.start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+        const end = new Date(e.end).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+        return `${i + 1}. ${e.summary}\n   ${start} – ${end}${e.location ? `\n   📍 ${e.location}` : ""}${e.description ? `\n   ${e.description.slice(0, 100)}` : ""}`;
+      }).join("\n\n");
+    }
+
+    case "create_calendar_event": {
+      const result = await createEvent({
+        summary: String(input.summary),
+        description: input.description ? String(input.description) : undefined,
+        start: String(input.start),
+        end: String(input.end),
+        attendees: Array.isArray(input.attendees) ? input.attendees.map(String) : undefined,
+      });
+      if (result.ok) return `✓ Calendar event created: "${input.summary}" (id: ${result.eventId})`;
+      if (result.error?.includes("not connected")) return `⚠️ Google Calendar not yet authorized`;
+      return `✗ Event creation failed: ${result.error}`;
+    }
+
     default:
       return `Unknown tool: ${name}`;
   }
@@ -116,7 +211,7 @@ async function buildSystemPrompt(): Promise<string> {
     .where(eq(systemInstructionsTable.section, "email_brain"));
 
   const brainSection = brainRow?.content
-    ? `\n\nEMAIL BRAIN (Tony's learned priorities):\n${brainRow.content}`
+    ? `\n\nEMAIL BRAIN (Tony's learned email priorities):\n${brainRow.content}`
     : "";
 
   return `You are Tony Diaz's Command Center AI — his personal daily operating system assistant for running FlipIQ.
@@ -135,15 +230,19 @@ TONY'S RULES:
 
 YOUR JOB:
 - Keep Tony focused on SALES and EXECUTION
-- Draft emails, suggest replies, format journal entries
+- Draft emails, suggest replies, check and summarize calendar
 - Provide accountability — redirect Tony if he's drifting
-- Use your tools to take real actions: post to Slack, create Linear issues, send emails
+- Use your tools to take real actions when asked
 - Be brief and direct — Tony does NOT like to read
 
 TOOLS AVAILABLE:
+- list_recent_emails: Read Tony's unread Gmail inbox
+- draft_gmail_reply: Create a Gmail draft Tony can review and send
+- get_today_calendar: See what's on Tony's Google Calendar today
+- create_calendar_event: Schedule a meeting on Tony's calendar
 - send_slack_message: Post to #tech-ideas, #sales, #general, etc.
 - create_linear_issue: Create tech tasks in Linear
-- send_email: Send emails via AgentMail
+- send_email: Send emails via AgentMail (automated inbox)
 - get_email_brain: Check Tony's learned email priority rules
 
 SCRIPTURE ANCHORS:
@@ -191,18 +290,14 @@ router.post("/claude", async (req, res): Promise<void> => {
         finalText = textBlocks.map(b => b.type === "text" ? b.text : "").join("\n");
       }
 
-      // If Claude is done, stop
       if (response.stop_reason === "end_turn") break;
 
-      // If Claude wants to use tools
       if (response.stop_reason === "tool_use") {
         const toolUseBlocks = response.content.filter(b => b.type === "tool_use");
         if (toolUseBlocks.length === 0) break;
 
-        // Add Claude's response to messages
         messages.push({ role: "assistant" as const, content: response.content });
 
-        // Execute each tool and collect results
         const toolResultContent: {
           type: "tool_result";
           tool_use_id: string;
@@ -220,7 +315,6 @@ router.post("/claude", async (req, res): Promise<void> => {
           });
         }
 
-        // Feed results back to Claude
         messages.push({ role: "user" as const, content: toolResultContent });
         continue;
       }

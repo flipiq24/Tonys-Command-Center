@@ -4,6 +4,20 @@ import type { CalItem } from "./types";
 import { DeepLink } from "./DeepLink";
 import { AddScheduleItemWizard } from "./AddScheduleItemWizard";
 
+const CAL_COLORS: Record<string, string> = {
+  "1":  "#7986CB", // Lavender  — FINANCE
+  "2":  "#33B679", // Sage      — SALES Tech
+  "3":  "#8E24AA", // Grape     — PERSONAL
+  "4":  "#E67C73", // Flamingo  — OPERATIONS
+  "5":  "#F6BF26", // Banana    — PROJECTS
+  "6":  "#F4511E", // Tangerine — MEETING
+  "7":  "#039BE5", // Peacock
+  "8":  "#3F51B5", // Blueberry — NEEDS PLANNING
+  "9":  "#0B8043", // Basil     — TECH
+  "10": "#D50000", // Tomato    — IMPORTANT
+  "11": "#616161", // Graphite  — DONE
+};
+
 interface Props {
   items: CalItem[];
   onEnterSales: () => void;
@@ -263,8 +277,9 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
             const total = ev.endMin - ev.startMin;
             const remaining = isCurrent ? ev.endMin - nowMin : 0;
 
-            const bgColor = isCurrent ? "#E8F5E9" : ev.item.real ? C.bluBg : "#fff";
-            const borderColor = isCurrent ? "#2E7D32" : ev.item.real ? C.blu : C.brd;
+            const calColor = ev.item.colorId ? CAL_COLORS[ev.item.colorId] : null;
+            const bgColor = isCurrent && !calColor ? "#E8F5E9" : calColor ? `${calColor}18` : ev.item.real ? C.bluBg : "#fff";
+            const borderColor = isCurrent ? (calColor || "#2E7D32") : calColor || (ev.item.real ? C.blu : C.brd);
             const calUrl = getCalendarUrl(ev.item);
 
             return (
@@ -308,7 +323,7 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
                 <div style={{ position: "relative", zIndex: 1 }}>
                   <div style={{
                     fontSize: 13, fontWeight: 700,
-                    color: isCurrent ? "#2E7D32" : ev.item.real ? C.blu : C.tx,
+                    color: calColor || (isCurrent ? "#2E7D32" : ev.item.real ? C.blu : C.tx),
                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                   }}>
                     {ev.item.n}
@@ -317,6 +332,18 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
                     <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
                       {ev.item.t}{ev.item.tEnd ? ` – ${ev.item.tEnd}` : ""}
                       {ev.item.loc && <span> · 📍 {ev.item.loc}</span>}
+                    </div>
+                  )}
+                  {ev.item.meetLink && height > 40 && (
+                    <div style={{ marginTop: 3 }} onClick={e => e.stopPropagation()}>
+                      <a
+                        href={ev.item.meetLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 10, fontWeight: 700, color: "#1a73e8", textDecoration: "none", background: "#e8f0fe", padding: "1px 5px", borderRadius: 3 }}
+                      >
+                        Join Meet ↗
+                      </a>
                     </div>
                   )}
                   {isCurrent && height > 50 && (

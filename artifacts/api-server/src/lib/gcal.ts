@@ -47,11 +47,15 @@ export async function createEvent(params: {
   attendees?: string[];
   description?: string;
   location?: string;
-}): Promise<{ ok: boolean; eventId?: string; htmlLink?: string; error?: string }> {
+  colorId?: string;
+  createMeetLink?: boolean;
+}): Promise<{ ok: boolean; eventId?: string; htmlLink?: string; meetLink?: string; error?: string }> {
   try {
     const calendar = getCalendar();
+    const withMeet = params.createMeetLink || (params.attendees && params.attendees.length > 0);
     const event = await calendar.events.insert({
       calendarId: "primary",
+      conferenceDataVersion: withMeet ? 1 : 0,
       requestBody: {
         summary: params.summary,
         start: { dateTime: params.start },
@@ -59,9 +63,24 @@ export async function createEvent(params: {
         attendees: params.attendees?.map(email => ({ email })),
         description: params.description,
         location: params.location,
+        colorId: params.colorId,
+        ...(withMeet ? {
+          conferenceData: {
+            createRequest: {
+              requestId: `tcc-${Date.now()}`,
+              conferenceSolutionKey: { type: "hangoutsMeet" },
+            },
+          },
+        } : {}),
       },
     });
-    return { ok: true, eventId: event.data.id || undefined, htmlLink: event.data.htmlLink || undefined };
+    const meetLink = event.data.conferenceData?.entryPoints?.find(ep => ep.entryPointType === "video")?.uri;
+    return {
+      ok: true,
+      eventId: event.data.id || undefined,
+      htmlLink: event.data.htmlLink || undefined,
+      meetLink: meetLink || undefined,
+    };
   } catch (err) {
     console.warn("[Calendar] createEvent failed:", err instanceof Error ? err.message : err);
     return { ok: false, error: String(err) };

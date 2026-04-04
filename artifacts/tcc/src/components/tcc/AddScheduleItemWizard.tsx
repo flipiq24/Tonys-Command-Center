@@ -7,6 +7,19 @@ interface Props {
   onSaved: () => void;
 }
 
+const CATEGORIES = [
+  { name: "TECH",           color: "#0B8043" },
+  { name: "OPERATIONS",     color: "#E67C73" },
+  { name: "DONE",           color: "#616161" },
+  { name: "FINANCE",        color: "#7986CB" },
+  { name: "IMPORTANT",      color: "#D50000" },
+  { name: "PROJECTS",       color: "#F6BF26" },
+  { name: "PERSONAL",       color: "#8E24AA" },
+  { name: "MEETING",        color: "#F4511E" },
+  { name: "NEEDS PLANNING", color: "#3F51B5" },
+  { name: "SALES Tech",     color: "#33B679" },
+];
+
 interface Contact { name: string; email: string; }
 
 interface EmailThread {
@@ -60,6 +73,8 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [guiltTrip, setGuiltTrip] = useState<GuiltTrip | null>(null);
+  const [category, setCategory] = useState("");
+  const [priority, setPriority] = useState("Mid");
   const [guestEmailHistory, setGuestEmailHistory] = useState<Record<string, EmailThread[]>>({});
   const [emailHistoryLoading, setEmailHistoryLoading] = useState<Set<string>>(new Set());
   const guestRef = useRef<HTMLDivElement>(null);
@@ -132,6 +147,8 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
         notification,
         guests: guests.map(g => g.email),
         forceOverride,
+        category: category || undefined,
+        priority: priority || undefined,
       });
 
       if (!result.ok && result.guiltTrip) {
@@ -343,6 +360,58 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
               placeholder="Add location"
               style={{ ...inp, flex: 1, fontSize: 14 }}
             />
+          </div>
+
+          {/* Category (color label) */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 16 }}>🏷</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: category ? 6 : 0 }}>
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat.name}
+                    title={cat.name}
+                    onClick={() => setCategory(prev => prev === cat.name ? "" : cat.name)}
+                    style={{
+                      width: 22, height: 22, borderRadius: "50%",
+                      background: cat.color, border: category === cat.name ? "3px solid #000" : "2px solid transparent",
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                      padding: 0, flexShrink: 0,
+                    }}
+                  >
+                    {category === cat.name && <span style={{ fontSize: 11, color: "#fff", fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+              {category && (
+                <div style={{ fontSize: 12, color: "#555" }}>
+                  {CATEGORIES.find(c => c.name === category)?.color && (
+                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: CATEGORIES.find(c => c.name === category)!.color, marginRight: 5 }} />
+                  )}
+                  {category}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Priority */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16 }}>⬆</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["High", "Mid", "Low"].map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPriority(p)}
+                  style={{
+                    padding: "5px 14px", fontSize: 12, fontWeight: 600,
+                    border: `1px solid ${priority === p ? C.tx : C.brd}`,
+                    borderRadius: 20, cursor: "pointer",
+                    background: priority === p ? C.tx : "transparent",
+                    color: priority === p ? "#fff" : C.sub,
+                  }}
+                >{p}</button>
+              ))}
+            </div>
           </div>
 
           {/* Notification */}

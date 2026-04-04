@@ -76,16 +76,17 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
 
-  const refreshBrief = useCallback(async () => {
+  const refreshBrief = useCallback(async (sources?: string[]) => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const data = await get<DailyBrief>("/brief/today");
+      const qs = sources?.length ? `?refresh=${sources.join(",")}` : "";
+      const data = await get<DailyBrief>(`/brief/today${qs}`);
       if (!data || (data as { error?: string }).error) return;
       // ONLY update data arrays — NEVER reset view/gates/modals
       setBrief(data);
       setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
-      console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString());
+      console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString(), "sources:", sources ?? "all");
     } catch (err) {
       console.warn("[TCC] Auto-refresh failed (skipping):", err);
       // Silent fail — do NOT show error, do NOT crash

@@ -380,6 +380,14 @@ async function briefTodayHandler(
 ): Promise<void> {
   const today = new Date().toISOString().split("T")[0];
 
+  // Which sources to force-refresh (bypass DB cache), e.g. ?refresh=emails,calendar,slack,ai
+  const refreshSet = new Set(
+    ((req.query.refresh as string) || "").split(",").filter(Boolean)
+  );
+  const forceRefreshEmails = refreshSet.has("emails") || refreshSet.has("ai");
+  const forceRefreshSlack  = refreshSet.has("slack")  || refreshSet.has("ai");
+  const forceRefreshTasks  = refreshSet.has("ai");
+
   // Step 1: Load today's cached brief from DB (tasks are user-editable so always respect them)
   const [dbBrief] = await db
     .select()
@@ -397,7 +405,7 @@ async function briefTodayHandler(
   const calendarData = liveCal ?? DEFAULT_CAL;
   const linearItems = liveLinear ?? DEFAULT_LINEAR;
 
-  // Step 3: Resolve emails — priority: live > DB cache > Claude generate > static fallback
+  // Step 3: Resolve emails — priority: live > DB cache (unless forced refresh) > Claude > fallback
   let emailsImportant: EmailImportant[];
   let emailsFyi: EmailFyi[];
   let claudeGenerated: GeneratedBrief | null = null;
@@ -405,31 +413,31 @@ async function briefTodayHandler(
   if (liveEmails !== null) {
     emailsImportant = liveEmails.important;
     emailsFyi = liveEmails.fyi;
-  } else if (dbBrief?.emailsImportant) {
+  } else if (dbBrief?.emailsImportant && !forceRefreshEmails) {
     emailsImportant = dbBrief.emailsImportant as EmailImportant[];
     emailsFyi = (dbBrief.emailsFyi as EmailFyi[]) ?? [];
   } else {
-    // No live Gmail, no cache — generate via Claude using real context
-    console.log("[brief] Generating today's brief via Claude...");
+    // No live Gmail, no cache (or refresh forced) — generate via Claude using real context
+    console.log("[brief] Generating brief via Claude" + (forceRefreshEmails ? " (forced refresh)" : "") + "...");
     claudeGenerated = await generateClaudeBrief(calendarData, linearItems, today);
     emailsImportant = claudeGenerated?.emailsImportant ?? DEFAULT_EMAILS_IMPORTANT;
     emailsFyi = claudeGenerated?.emailsFyi ?? DEFAULT_EMAILS_FYI;
   }
 
-  // Step 4: Resolve Slack — priority: live > DB cache > Claude generated > static fallback
+  // Step 4: Resolve Slack — priority: live > DB cache (unless forced) > Claude generated > fallback
   let slackItems: SlackItem[];
   if (liveSlack !== null) {
     slackItems = liveSlack;
-  } else if (dbBrief?.slackItems) {
+  } else if (dbBrief?.slackItems && !forceRefreshSlack) {
     slackItems = dbBrief.slackItems as SlackItem[];
   } else {
     slackItems = claudeGenerated?.slackItems ?? DEFAULT_SLACK;
   }
 
-  // Step 5: Tasks — DB always wins (user may have checked things off), then Claude, then default
-  const tasks = (dbBrief?.tasks as typeof DEFAULT_TASKS | null)
-    ?? claudeGenerated?.tasks
-    ?? DEFAULT_TASKS;
+  // Step 5: Tasks — DB always wins unless "ai" force refresh; then Claude, then default
+  const tasks = (!forceRefreshTasks && dbBrief?.tasks)
+    ? (dbBrief.tasks as typeof DEFAULT_TASKS)
+    : (claudeGenerated?.tasks ?? DEFAULT_TASKS);
 
   // Step 6: Cache Claude-generated content in DB so it doesn't regenerate on next request
   if (claudeGenerated) {
@@ -450,10 +458,20 @@ async function briefTodayHandler(
       .catch(err => console.warn("[brief] DB cache save failed:", err));
   }
 
+  const emailSource = liveEmails !== null ? "live"
+    : forceRefreshEmails && claudeGenerated ? "claude"
+    : dbBrief?.emailsImportant && !forceRefreshEmails ? "cached"
+    : claudeGenerated ? "claude" : "seed";
+
+  const slackSource = liveSlack !== null ? "live"
+    : forceRefreshSlack && claudeGenerated ? "claude"
+    : dbBrief?.slackItems && !forceRefreshSlack ? "cached"
+    : claudeGenerated ? "claude" : "seed";
+
   const sources = {
     calendar: liveCal !== null ? "live" : "seed",
-    emails: liveEmails !== null ? "live" : (dbBrief?.emailsImportant ? "cached" : claudeGenerated ? "claude" : "seed"),
-    slack: liveSlack !== null ? "live" : (dbBrief?.slackItems ? "cached" : claudeGenerated ? "claude" : "seed"),
+    emails: emailSource,
+    slack: slackSource,
     linear: liveLinear !== null ? "live" : "seed",
   };
   console.log("[brief]", sources);

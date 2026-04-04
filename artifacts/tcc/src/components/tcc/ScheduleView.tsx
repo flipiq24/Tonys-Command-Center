@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { C, F, FS, btn1, btn2 } from "./constants";
 import type { CalItem } from "./types";
 import { DeepLink } from "./DeepLink";
+import { AddScheduleItemWizard } from "./AddScheduleItemWizard";
 
 interface Props {
   items: CalItem[];
@@ -101,12 +102,17 @@ function getCalendarUrl(ev: CalItem): string {
 export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: Props) {
   const [nowMin, setNowMin] = useState(getNowMinutes);
   const [refreshing, setRefreshing] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const nowRef = useRef<HTMLDivElement>(null);
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
     setRefreshing(true);
     try { await onRefresh(); } finally { setRefreshing(false); }
+  };
+
+  const handleWizardSaved = async () => {
+    if (onRefresh) await onRefresh();
   };
 
   useEffect(() => {
@@ -179,6 +185,15 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
             </span>
           )}
           <span style={{ fontSize: 12, color: C.mut }}>{items.length} events</span>
+          <button
+            onClick={() => setShowWizard(true)}
+            title="Add schedule item"
+            style={{
+              padding: "6px 14px", borderRadius: 8,
+              background: C.tx, color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F,
+            }}
+          >+ Add</button>
           {onRefresh && (
             <button
               onClick={handleRefresh}
@@ -194,6 +209,13 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
           )}
         </div>
       </div>
+
+      {showWizard && (
+        <AddScheduleItemWizard
+          onClose={() => setShowWizard(false)}
+          onSaved={handleWizardSaved}
+        />
+      )}
 
       {items.length === 0 ? (
         <div style={{

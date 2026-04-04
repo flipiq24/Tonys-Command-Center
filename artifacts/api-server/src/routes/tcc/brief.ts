@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, ilike, desc as descOrder, sql as sqlExpr } from "drizzle-orm";
-import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable } from "@workspace/db";
+import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable, manualScheduleEventsTable } from "@workspace/db";
 import { communicationLogTable } from "../../lib/schema-v2.js";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { getGmail } from "../../lib/google-auth.js";
@@ -452,7 +452,7 @@ async function briefTodayHandler(
     fetchLiveLinear(),
   ]);
 
-  const calendarData = liveCal ?? DEFAULT_CAL;
+  let calendarData = liveCal ?? DEFAULT_CAL;
   const linearItems = liveLinear ?? DEFAULT_LINEAR;
 
   // Step 3: Resolve emails — priority: live > DB cache (unless forced refresh) > Claude > fallback
@@ -564,6 +564,42 @@ async function briefTodayHandler(
     linear: liveLinear !== null ? "live" : "seed",
   };
   console.log("[brief]", sources);
+
+  // Merge manual schedule events from DB into calendarData
+  try {
+    const manualEvents = await db
+      .select()
+      .from(manualScheduleEventsTable)
+      .where(eq(manualScheduleEventsTable.date, today));
+
+    if (manualEvents.length > 0) {
+      const manualCalItems = manualEvents.map(ev => ({
+        t: ev.time,
+        tEnd: ev.timeEnd || undefined,
+        n: ev.title + (ev.person ? ` — ${ev.person}` : ""),
+        note: [ev.category, ev.importance?.toUpperCase(), ev.description].filter(Boolean).join(" · "),
+        real: true,
+        _manualEventId: ev.id,
+      }));
+      const allItems = [...(calendarData || []), ...manualCalItems];
+      allItems.sort((a, b) => {
+        const toMin = (t: string) => {
+          const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+          if (!m) return 9999;
+          let h = parseInt(m[1]);
+          const min = parseInt(m[2]);
+          if (m[3].toUpperCase() === "PM" && h < 12) h += 12;
+          if (m[3].toUpperCase() === "AM" && h === 12) h = 0;
+          return h * 60 + min;
+        };
+        return toMin(a.t) - toMin(b.t);
+      });
+      // @ts-ignore – calendarData is typed from CalItem[] but we're adding extra fields
+      calendarData = allItems;
+    }
+  } catch (err) {
+    console.warn("[brief] failed to merge manual events:", err);
+  }
 
   res.json({
     date: today,

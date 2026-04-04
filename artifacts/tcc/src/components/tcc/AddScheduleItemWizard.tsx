@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import { C, F, FS, inp, lbl, btn1, btn2 } from "./constants";
 import { post, get } from "../../lib/api";
 
@@ -84,7 +84,7 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
 
   const removeGuest = (email: string) => setGuests(prev => prev.filter(g => g.email !== email));
 
-  const handleGuestKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleGuestKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === "Enter" || e.key === ",") && guestInput.includes("@")) {
       e.preventDefault();
       addGuest({ name: guestInput, email: guestInput });

@@ -13,7 +13,7 @@ import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
 import { TasksView } from "@/components/tcc/TasksView";
 import { C, F, FS } from "@/components/tcc/constants";
-import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief } from "@/components/tcc/types";
+import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
 type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks";
 
@@ -58,6 +58,7 @@ export default function App() {
   // UI state
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
+  const [meetingWarning, setMeetingWarning] = useState<{ title: string; time: string; location?: string } | null>(null);
 
   // Custom instructions (Ctrl+hover editable tooltips)
   const [customTips, setCustomTips] = useState<Record<string, string>>({});
@@ -106,6 +107,33 @@ export default function App() {
     const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
     return () => clearInterval(i);
   }, []);
+
+  // 5-min meeting warnings: fire a setTimeout for each upcoming real meeting
+  useEffect(() => {
+    if (!brief?.calendarData) return;
+    const now = new Date();
+    const parseTime = (t: string) => {
+      const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!m) return null;
+      let h = parseInt(m[1]); const min = parseInt(m[2]); const ampm = m[3].toUpperCase();
+      if (ampm === "PM" && h < 12) h += 12;
+      if (ampm === "AM" && h === 12) h = 0;
+      const d = new Date(now);
+      d.setHours(h, min, 0, 0);
+      return d;
+    };
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const item of brief.calendarData) {
+      if (!item.real) continue;
+      const start = parseTime(item.t);
+      if (!start) continue;
+      const msUntilWarning = start.getTime() - now.getTime() - 5 * 60 * 1000;
+      if (msUntilWarning > 0 && msUntilWarning < 8 * 60 * 60 * 1000) {
+        timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc }), msUntilWarning));
+      }
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [brief?.calendarData]);
 
   // Load all state from DB on mount
   useEffect(() => {
@@ -265,6 +293,9 @@ export default function App() {
       customTips={customTips}
       lastRefresh={lastRefresh}
       refreshing={refreshing}
+      slackItems={(brief?.slackItems || []) as SlackItem[]}
+      linearItems={(brief?.linearItems || []) as LinearItem[]}
+      meetingWarning={meetingWarning}
       onSetView={v => persistView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
@@ -272,6 +303,7 @@ export default function App() {
       onEod={handleEod}
       onTipSaved={handleTipSaved}
       onRefresh={refreshBrief}
+      onDismissWarning={() => setMeetingWarning(null)}
     />
   );
 

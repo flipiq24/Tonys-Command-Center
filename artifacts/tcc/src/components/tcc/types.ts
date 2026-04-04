@@ -58,10 +58,26 @@ export interface Idea {
   techType?: string;
   priorityPosition?: number;
 }
+export interface SlackItem {
+  from: string;
+  message: string;
+  level: "high" | "mid" | "low";
+  channel: string;
+}
+
+export interface LinearItem {
+  who: string;
+  task: string;
+  id: string;
+  level: "high" | "mid" | "low";
+}
+
 export interface DailyBrief {
   date: string;
   calendarData: CalItem[];
   emailsImportant: EmailItem[];
   emailsFyi: EmailItem[];
+  slackItems?: SlackItem[];
+  linearItems?: LinearItem[];
   tasks: TaskItem[];
 }

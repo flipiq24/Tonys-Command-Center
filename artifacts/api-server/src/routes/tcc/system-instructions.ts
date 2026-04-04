@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
 import { db, systemInstructionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -20,19 +19,14 @@ router.post("/system-instructions", async (req, res): Promise<void> => {
     return;
   }
 
-  const [existing] = await db
-    .select()
-    .from(systemInstructionsTable)
-    .where(eq(systemInstructionsTable.section, key));
-
-  if (existing) {
-    await db
-      .update(systemInstructionsTable)
-      .set({ content: text, updatedAt: new Date() })
-      .where(eq(systemInstructionsTable.section, key));
-  } else {
-    await db.insert(systemInstructionsTable).values({ section: key, content: text });
-  }
+  // Use ON CONFLICT DO UPDATE to avoid select-then-insert race condition
+  await db
+    .insert(systemInstructionsTable)
+    .values({ section: key, content: text })
+    .onConflictDoUpdate({
+      target: systemInstructionsTable.section,
+      set: { content: text, updatedAt: new Date() },
+    });
 
   res.json({ ok: true, key, text });
 });

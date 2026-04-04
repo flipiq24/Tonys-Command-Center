@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, numeric, integer, jsonb, date, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, numeric, integer, jsonb, date, timestamp, uuid, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -37,7 +37,10 @@ export const ideasTable = pgTable("ideas", {
   status: text("status").default("parked"),
   override: boolean("override").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("ideas_status_idx").on(t.status),
+  index("ideas_created_idx").on(t.createdAt),
+]);
 
 export const contactsTable = pgTable("contacts", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -53,18 +56,25 @@ export const contactsTable = pgTable("contacts", {
   source: text("source"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("contacts_status_idx").on(t.status),
+  index("contacts_name_idx").on(t.name),
+  index("contacts_email_idx").on(t.email),
+]);
 
 export const callLogTable = pgTable("call_log", {
   id: uuid("id").defaultRandom().primaryKey(),
-  contactId: uuid("contact_id"),
+  contactId: uuid("contact_id").references(() => contactsTable.id, { onDelete: "set null" }),
   contactName: text("contact_name").notNull(),
   type: text("type").notNull(),
   notes: text("notes"),
   followUpSent: boolean("follow_up_sent").default(false),
   followUpText: text("follow_up_text"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("call_log_contact_id_idx").on(t.contactId),
+  index("call_log_created_idx").on(t.createdAt),
+]);
 
 export const emailTrainingTable = pgTable("email_training", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -73,7 +83,9 @@ export const emailTrainingTable = pgTable("email_training", {
   action: text("action").notNull(),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("email_training_sender_idx").on(t.sender),
+]);
 
 export const emailSnoozesTable = pgTable("email_snoozes", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -81,7 +93,9 @@ export const emailSnoozesTable = pgTable("email_snoozes", {
   emailId: integer("email_id").notNull(),
   snoozeUntil: text("snooze_until").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("email_snoozes_date_idx").on(t.date),
+]);
 
 export const dailyBriefsTable = pgTable("daily_briefs", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -100,7 +114,10 @@ export const taskCompletionsTable = pgTable("task_completions", {
   taskId: text("task_id").notNull(),
   taskText: text("task_text").notNull(),
   completedAt: timestamp("completed_at").defaultNow(),
-});
+}, (t) => [
+  index("task_completions_task_id_idx").on(t.taskId),
+  index("task_completions_completed_idx").on(t.completedAt),
+]);
 
 export const demosTable = pgTable("demos", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -109,7 +126,10 @@ export const demosTable = pgTable("demos", {
   status: text("status").default("scheduled"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("demos_status_idx").on(t.status),
+  index("demos_scheduled_idx").on(t.scheduledDate),
+]);
 
 export const systemInstructionsTable = pgTable("system_instructions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -126,7 +146,9 @@ export const meetingHistoryTable = pgTable("meeting_history", {
   nextSteps: text("next_steps"),
   outcome: text("outcome"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("meeting_history_date_idx").on(t.date),
+]);
 
 export const eodReportsTable = pgTable("eod_reports", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -141,7 +163,7 @@ export const eodReportsTable = pgTable("eod_reports", {
 
 export const phoneLogTable = pgTable("phone_log", {
   id: uuid("id").defaultRandom().primaryKey(),
-  contactId: uuid("contact_id").references(() => contactsTable.id),
+  contactId: uuid("contact_id").references(() => contactsTable.id, { onDelete: "set null" }),
   contactName: text("contact_name"),
   phoneNumber: text("phone_number").notNull(),
   type: text("type").notNull(), // 'call_outbound' | 'call_inbound' | 'sms_outbound' | 'sms_inbound'
@@ -150,7 +172,11 @@ export const phoneLogTable = pgTable("phone_log", {
   matched: boolean("matched").default(false),
   loggedAt: timestamp("logged_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("phone_log_phone_number_idx").on(t.phoneNumber),
+  index("phone_log_logged_at_idx").on(t.loggedAt),
+  index("phone_log_contact_id_idx").on(t.contactId),
+]);
 
 export const insertCheckinSchema = createInsertSchema(checkinsTable).omit({ id: true, createdAt: true });
 export const insertJournalSchema = createInsertSchema(journalsTable).omit({ id: true, createdAt: true });

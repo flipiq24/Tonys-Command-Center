@@ -30,13 +30,23 @@ router.post("/checkin", async (req, res): Promise<void> => {
   const today = new Date().toISOString().split("T")[0];
   const data = parsed.data;
 
-  const [existing] = await db.select().from(checkinsTable).where(eq(checkinsTable.date, today));
-
-  let checkin;
-  if (existing) {
-    [checkin] = await db
-      .update(checkinsTable)
-      .set({
+  // Use ON CONFLICT DO UPDATE to avoid select-then-insert race condition
+  const [checkin] = await db
+    .insert(checkinsTable)
+    .values({
+      date: today,
+      bedtime: data.bedtime ?? undefined,
+      waketime: data.waketime ?? undefined,
+      sleepHours: data.sleepHours ?? undefined,
+      bible: data.bible ?? false,
+      workout: data.workout ?? false,
+      journal: data.journal ?? false,
+      nutrition: data.nutrition ?? "Good",
+      unplug: data.unplug ?? false,
+    })
+    .onConflictDoUpdate({
+      target: checkinsTable.date,
+      set: {
         bedtime: data.bedtime ?? undefined,
         waketime: data.waketime ?? undefined,
         sleepHours: data.sleepHours ?? undefined,
@@ -45,25 +55,9 @@ router.post("/checkin", async (req, res): Promise<void> => {
         journal: data.journal ?? undefined,
         nutrition: data.nutrition ?? undefined,
         unplug: data.unplug ?? undefined,
-      })
-      .where(eq(checkinsTable.date, today))
-      .returning();
-  } else {
-    [checkin] = await db
-      .insert(checkinsTable)
-      .values({
-        date: today,
-        bedtime: data.bedtime ?? undefined,
-        waketime: data.waketime ?? undefined,
-        sleepHours: data.sleepHours ?? undefined,
-        bible: data.bible ?? false,
-        workout: data.workout ?? false,
-        journal: data.journal ?? false,
-        nutrition: data.nutrition ?? "Good",
-        unplug: data.unplug ?? false,
-      })
-      .returning();
-  }
+      },
+    })
+    .returning();
 
   res.json({ ...checkin, done: true });
 });

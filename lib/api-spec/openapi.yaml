@@ -30,6 +30,8 @@ tags:
     description: Task completions
   - name: demos
     description: Demo tracking
+  - name: linear
+    description: Linear project management operations
 
 paths:
   /healthz:
@@ -319,6 +321,146 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskCompletion"
+
+  /linear/me:
+    get:
+      operationId: getLinearMe
+      tags: [linear]
+      summary: Get authenticated Linear user
+      responses:
+        "200":
+          description: Current Linear user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinearUser"
+
+  /linear/teams:
+    get:
+      operationId: getLinearTeams
+      tags: [linear]
+      summary: List all Linear teams
+      responses:
+        "200":
+          description: Array of teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LinearTeam"
+
+  /linear/projects:
+    get:
+      operationId: getLinearProjects
+      tags: [linear]
+      summary: List all Linear projects
+      responses:
+        "200":
+          description: Array of projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LinearProject"
+
+  /linear/issues:
+    get:
+      operationId: getLinearIssues
+      tags: [linear]
+      summary: List Linear issues
+      parameters:
+        - in: query
+          name: teamId
+          schema:
+            type: string
+          description: Filter by team ID
+        - in: query
+          name: assigneeId
+          schema:
+            type: string
+          description: Filter by assignee ID
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: Filter by state name
+        - in: query
+          name: first
+          schema:
+            type: integer
+          description: Max number of issues to return (default 50)
+      responses:
+        "200":
+          description: Array of issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LinearIssue"
+
+    post:
+      operationId: createLinearIssue
+      tags: [linear]
+      summary: Create a new Linear issue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinearIssueCreateBody"
+      responses:
+        "201":
+          description: Created issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinearIssueRef"
+
+  /linear/issues/{id}:
+    get:
+      operationId: getLinearIssue
+      tags: [linear]
+      summary: Get a single Linear issue by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Linear issue detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinearIssue"
+
+    patch:
+      operationId: updateLinearIssue
+      tags: [linear]
+      summary: Update a Linear issue
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinearIssueUpdateBody"
+      responses:
+        "200":
+          description: Updated issue reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LinearIssueRef"
 
 components:
   schemas:
@@ -647,3 +789,157 @@ components:
       required:
         - taskId
         - taskText
+
+    LinearUser:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: ["string", "null"]
+
+    LinearTeam:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        key:
+          type: string
+        description:
+          type: ["string", "null"]
+
+    LinearProject:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        state:
+          type: string
+        progress:
+          type: number
+
+    LinearIssueState:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        type:
+          type: string
+
+    LinearIssueAssignee:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+
+    LinearIssueTeam:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        key:
+          type: string
+
+    LinearIssue:
+      type: object
+      properties:
+        id:
+          type: string
+        identifier:
+          type: string
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        priority:
+          type: number
+        priorityLabel:
+          type: string
+        url:
+          type: string
+        state:
+          oneOf:
+            - $ref: "#/components/schemas/LinearIssueState"
+            - type: "null"
+        assignee:
+          oneOf:
+            - $ref: "#/components/schemas/LinearIssueAssignee"
+            - type: "null"
+        team:
+          oneOf:
+            - $ref: "#/components/schemas/LinearIssueTeam"
+            - type: "null"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        dueDate:
+          type: ["string", "null"]
+
+    LinearIssueRef:
+      type: object
+      properties:
+        id:
+          type: string
+        identifier:
+          type: string
+        url:
+          type: string
+        title:
+          type: string
+
+    LinearIssueCreateBody:
+      type: object
+      required:
+        - teamId
+        - title
+      properties:
+        teamId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: integer
+          description: "0=No, 1=Urgent, 2=High, 3=Medium, 4=Low"
+        assigneeId:
+          type: string
+        dueDate:
+          type: string
+
+    LinearIssueUpdateBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: integer
+        assigneeId:
+          type: string
+        stateId:
+          type: string
+        dueDate:
+          type: string

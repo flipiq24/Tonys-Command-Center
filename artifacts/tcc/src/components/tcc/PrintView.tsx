@@ -72,6 +72,63 @@ const SAMPLE_LINEAR: LinearItem[] = [
   { id: "OMS-045", task: "OMS auto-sequence triggers", who: "Anas", level: "mid" },
 ];
 
+// ─────────────────────────────────────────────────────────────────
+// TIME SCHEDULING — compute free work blocks from today's meetings
+// ─────────────────────────────────────────────────────────────────
+function parseTimeMins(t: string): number | null {
+  const m = t?.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!m) return null;
+  let h = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const p = m[3].toUpperCase();
+  if (p === "PM" && h !== 12) h += 12;
+  if (p === "AM" && h === 12) h = 0;
+  return h * 60 + min;
+}
+
+function fmtMins(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const p = h >= 12 ? "PM" : "AM";
+  const dh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${dh}:${m.toString().padStart(2, "0")} ${p}`;
+}
+
+interface WorkBlocks { salesCalls?: string; tasks?: string; emails?: string; }
+
+function computeWorkBlocks(meetingList: CalItem[]): WorkBlocks {
+  const WORK_START = 7 * 60;  // 7:00 AM
+  const WORK_END   = 18 * 60; // 6:00 PM
+  const MIN_USEFUL = 30;
+
+  const busy = meetingList
+    .map(m => {
+      const start = parseTimeMins(m.t);
+      const end   = m.tEnd ? parseTimeMins(m.tEnd) : (start !== null ? start + 30 : null);
+      return start !== null && end !== null ? { start, end } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a!.start - b!.start) as { start: number; end: number }[];
+
+  const free: { start: number; end: number }[] = [];
+  let cursor = WORK_START;
+  for (const b of busy) {
+    if (b.start > cursor + MIN_USEFUL) free.push({ start: cursor, end: b.start });
+    cursor = Math.max(cursor, b.end);
+  }
+  if (cursor < WORK_END - MIN_USEFUL) free.push({ start: cursor, end: WORK_END });
+
+  const fmt = (b: { start: number; end: number }) => `${fmtMins(b.start)} – ${fmtMins(b.end)}`;
+  const morning   = free.filter(b => b.start < 12 * 60 && (b.end - b.start) >= MIN_USEFUL);
+  const afternoon = free.filter(b => b.start >= 11 * 60 && (b.end - b.start) >= MIN_USEFUL);
+
+  return {
+    salesCalls: morning[0]   ? fmt(morning[0])   : free[0] ? fmt(free[0]) : undefined,
+    tasks:      morning[1]   ? fmt(morning[1])   : afternoon[0] ? fmt(afternoon[0]) : undefined,
+    emails:     afternoon[0] ? fmt(afternoon[0]) : free[2]  ? fmt(free[2])  : undefined,
+  };
+}
+
 // ── Shared palette ──
 const BLK = "#111";
 const BORDER = "1px solid #bbb";
@@ -126,12 +183,23 @@ function TD({ children, center, bold, small, dim, strike }: {
 }
 
 // ── Section label ──
-function SL({ text, color = "#444" }: { text: string; color?: string }) {
+function SL({ text, color = "#444", time }: { text: string; color?: string; time?: string }) {
   return (
     <div style={{
-      fontSize: 9, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.5,
-      color, marginBottom: 4, marginTop: 14,
-    }}>{text}</div>
+      display: "flex", alignItems: "center", gap: 8,
+      marginBottom: 4, marginTop: 14,
+    }}>
+      <div style={{
+        fontSize: 9, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.5, color,
+      }}>{text}</div>
+      {time && (
+        <div style={{
+          fontSize: 9, fontWeight: 700, color: "#888",
+          background: "#F2F2F2", border: "1px solid #DDD", borderRadius: 4,
+          padding: "1px 6px", letterSpacing: 0.3, fontFamily: "monospace",
+        }}>{time}</div>
+      )}
+    </div>
   );
 }
 
@@ -217,6 +285,9 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
   const linActive = realLinear.length > 0 ? realLinear : SAMPLE_LINEAR;
   const linHigh = linActive.filter(l => l.level === "high").slice(0, 4);
 
+  // Compute free-window schedule from meeting times
+  const workBlocks = computeWorkBlocks(meetings);
+
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 20000, background: "#1C1C1E",
@@ -290,7 +361,7 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
             {/* My Tasks */}
             {activeLocals.length > 0 && (
               <>
-                <SL text="My Tasks" color="#555" />
+                <SL text="My Tasks" color="#555" time={workBlocks.tasks} />
                 <div style={{ marginBottom: 10 }}>
                   {activeLocals.map(t => {
                     const id = `local-${t.id}`;
@@ -311,7 +382,7 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
 
               {/* Sales Calls */}
               <div>
-                <SL text="📞 Sales Calls" color="#C62828" />
+                <SL text="📞 Sales Calls" color="#C62828" time={workBlocks.salesCalls} />
                 <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
                   <thead>
                     <tr>
@@ -387,7 +458,7 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
             </div>
 
             {/* Priority Emails */}
-            <SL text="📧 Priority Emails" color="#E65100" />
+            <SL text="📧 Priority Emails" color="#E65100" time={workBlocks.emails} />
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
               <thead>
                 <tr>
@@ -463,7 +534,8 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
               </tbody>
             </table>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* ── Flags & Blockers + Soft Sequence side by side ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 10 }}>
 
               {/* Flags & Blockers */}
               <div>
@@ -478,55 +550,62 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
                       <div style={{ fontSize: 11, fontWeight: 600, color: "#C62828" }}>{l.task}</div>
                     </div>
                   ))}
-                  {/* Extra warning lines */}
                   {Array.from({ length: Math.max(0, 3 - linHigh.length) }).map((_, i) => (
-                    <div key={i} style={{ padding: "7px 10px", borderTop: "1px solid #E8E8E8", display: "flex", gap: 6, alignItems: "center" }}>
+                    <div key={i} style={{ padding: "8px 10px", borderTop: i > 0 || linHigh.length > 0 ? "1px solid #E8E8E8" : undefined, display: "flex", gap: 6, alignItems: "center" }}>
                       <span style={{ fontSize: 10, color: "#E65100" }}>⚠</span>
                       <div style={{ flex: 1, height: 1, background: "#E8E8E8" }} />
                     </div>
                   ))}
                 </div>
-
-                {/* Soft Sequence / Next Up */}
-                <SL text="○ Soft Sequence — Next Up" color="#555" />
-                {[1, 2, 3].map(n => (
-                  <div key={n} style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0", borderBottom: "1px solid #EBEBEB" }}>
-                    <div style={{ width: 14, height: 14, border: "1.5px solid #ccc", borderRadius: "50%", flexShrink: 0 }} />
-                    <div style={{ flex: 1, height: 1, background: "#E8E8E8" }} />
-                  </div>
-                ))}
               </div>
 
-              {/* Today's Win + Notes */}
+              {/* Soft Sequence — Next Up */}
               <div>
-                <SL text="🏆 Today's Win" color="#B7791F" />
-                <div style={{ border: BORDER, borderRadius: 2, padding: "8px 10px", background: "#FFFBF2", marginBottom: 8 }}>
-                  {[1, 2, 3].map(n => (
-                    <div key={n} style={{ display: "flex", gap: 6, alignItems: "center", padding: "5px 0", borderBottom: n < 3 ? "1px solid #EBEBEB" : "none" }}>
-                      <span style={{ fontSize: 10, color: "#B7791F", fontWeight: 700, width: 12 }}>{n}.</span>
+                <SL text="○ Soft Sequence — Next Up" color="#555" />
+                <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <div key={n} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", borderBottom: n < 5 ? "1px solid #E8E8E8" : "none" }}>
+                      <div style={{ width: 14, height: 14, border: "1.5px solid #ccc", borderRadius: "50%", flexShrink: 0 }} />
                       <div style={{ flex: 1, height: 1, background: "#E8E8E8" }} />
                     </div>
                   ))}
                 </div>
-
-                <SL text="📝 Scratch Notes" color="#555" />
-                <div style={{ border: BORDER, borderRadius: 2, padding: "8px 10px" }}>
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} style={{ height: 20, borderBottom: "1px solid #E8E8E8" }} />
-                  ))}
-                </div>
-
-                {/* North Star */}
-                <div style={{
-                  marginTop: 12, padding: "10px 12px",
-                  background: "#F8F8F6", border: "1.5px solid #222", borderRadius: 3,
-                }}>
-                  <div style={{ fontSize: 8, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "#888", marginBottom: 4 }}>TODAY'S REMINDER</div>
-                  <div style={{ fontSize: 10, color: "#333", fontStyle: "italic", fontWeight: 600, lineHeight: 1.5 }}>
-                    "Follow the plan that I gave you!" — God
-                  </div>
-                </div>
               </div>
+            </div>
+
+            {/* ── Scratch Notes — HUGE ── */}
+            <SL text="📝 Scratch Notes" color="#555" />
+            <div style={{
+              border: HEAVY, borderRadius: 2, padding: "10px 14px",
+              background: "#FDFDFC", marginBottom: 10,
+            }}>
+              {Array.from({ length: 22 }).map((_, i) => (
+                <div key={i} style={{
+                  height: 26,
+                  borderBottom: i < 21 ? "1px solid #E4E4E4" : "none",
+                  display: "flex", alignItems: "flex-end",
+                }}>
+                  <span style={{ fontSize: 8, color: "#DDD", marginBottom: 2, width: 14, flexShrink: 0, userSelect: "none" }}>{i + 1}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── 3 Wins for Today — bottom strip ── */}
+            <SL text="🏆 3 Wins for Today" color="#B7791F" />
+            <div style={{
+              border: "2px solid #B7791F33", borderRadius: 4,
+              background: "#FFFBF2", padding: "4px 10px",
+            }}>
+              {[1, 2, 3].map(n => (
+                <div key={n} style={{
+                  display: "flex", gap: 10, alignItems: "center",
+                  padding: "9px 0",
+                  borderBottom: n < 3 ? "1px solid #EEE4CC" : "none",
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: "#B7791F", width: 18, flexShrink: 0 }}>{n}.</span>
+                  <div style={{ flex: 1, height: 1, background: "#E8D5A3" }} />
+                </div>
+              ))}
             </div>
 
           </div>

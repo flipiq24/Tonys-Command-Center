@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS } from "./constants";
+import { VoiceInput } from "./VoiceInput";
 import type { Contact } from "./types";
 
 interface Props {
@@ -53,18 +54,21 @@ export function SmsModal({ contact, onClose }: Props) {
           </div>
         ) : (
           <>
-            <textarea
-              value={message}
-              onChange={e => setMessage(e.target.value)}
-              placeholder="Type your message..."
-              style={{
-                width: "100%", border: `1px solid ${C.brd}`, borderRadius: 10, padding: 12,
-                fontFamily: F, fontSize: 14, height: 110, resize: "vertical",
-                outline: "none", boxSizing: "border-box", marginBottom: 12,
-              }}
-              autoFocus
-              onKeyDown={e => { if (e.key === "Enter" && e.metaKey) handleSend(); }}
-            />
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 12 }}>
+              <textarea
+                value={message}
+                onChange={e => setMessage(e.target.value)}
+                placeholder="Type your message..."
+                style={{
+                  flex: 1, border: `1px solid ${C.brd}`, borderRadius: 10, padding: 12,
+                  fontFamily: F, fontSize: 14, height: 110, resize: "vertical",
+                  outline: "none", boxSizing: "border-box",
+                }}
+                autoFocus
+                onKeyDown={e => { if (e.key === "Enter" && e.metaKey) handleSend(); }}
+              />
+              <VoiceInput onTranscript={t => setMessage(prev => prev ? prev + " " + t : t)} size={34} />
+            </div>
             {error && <div style={{ fontSize: 12, color: "#E05", marginBottom: 8 }}>{error}</div>}
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", cursor: "pointer", fontFamily: F, fontSize: 13, color: C.mut }}>
@@ -79,7 +83,7 @@ export function SmsModal({ contact, onClose }: Props) {
               </button>
             </div>
             <div style={{ fontSize: 11, color: C.mut, marginTop: 10, textAlign: "center" }}>
-              ⌘↵ to send · Triggers MacroDroid on your Android
+              🎙 Voice input · ⌘↵ to send · Triggers MacroDroid on your Android
             </div>
           </>
         )}

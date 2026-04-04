@@ -47,26 +47,11 @@ export function CalendarSidebar({ items, onClose, onSchedule }: Props) {
     }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <button
-          onClick={onSchedule}
-          style={{
-            fontFamily: FS, fontSize: 15, margin: 0, background: "none", border: "none",
-            cursor: "pointer", color: C.tx, padding: 0, fontWeight: 700,
-            display: "flex", alignItems: "center", gap: 6,
-          }}
-          title="Open full schedule"
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = C.blu; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = C.tx; }}
-        >
-          Schedule
-          <span style={{ fontSize: 11, color: C.mut, fontFamily: F, fontWeight: 400 }}>↗</span>
-        </button>
+        <span style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: C.tx }}>Today's Schedule</span>
         <button
           onClick={onClose}
           style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: C.mut }}
-        >
-          ✕
-        </button>
+        >✕</button>
       </div>
 
       {/* Items */}
@@ -152,6 +137,21 @@ export function CalendarSidebar({ items, onClose, onSchedule }: Props) {
           No events loaded
         </div>
       )}
+
+      {/* View full schedule CTA */}
+      <button
+        onClick={onSchedule}
+        style={{
+          width: "100%", marginTop: 16, padding: "10px 0",
+          background: C.blu, color: "#fff", border: "none", borderRadius: 10,
+          fontFamily: F, fontSize: 13, fontWeight: 700, cursor: "pointer",
+          letterSpacing: 0.2,
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = "0.88"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = "1"; }}
+      >
+        View Full Schedule →
+      </button>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import ideasRouter from "./tcc/ideas";
 import claudeRouter from "./tcc/claude";
 import demosRouter from "./tcc/demos";
 import tasksRouter from "./tcc/tasks";
+import eodRouter from "./tcc/eod";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(ideasRouter);
 router.use(claudeRouter);
 router.use(demosRouter);
 router.use(tasksRouter);
+router.use(eodRouter);
 
 export default router;

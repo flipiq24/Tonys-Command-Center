@@ -1,5 +1,5 @@
 import { pgTable, text, boolean, numeric, integer, jsonb, date, timestamp, uuid } from "drizzle-orm/pg-core";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const checkinsTable = pgTable("checkins", {
@@ -75,6 +75,14 @@ export const emailTrainingTable = pgTable("email_training", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const emailSnoozesTable = pgTable("email_snoozes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull(),
+  emailId: integer("email_id").notNull(),
+  snoozeUntil: text("snooze_until").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const dailyBriefsTable = pgTable("daily_briefs", {
   id: uuid("id").defaultRandom().primaryKey(),
   date: date("date").notNull().unique(),
@@ -103,6 +111,34 @@ export const demosTable = pgTable("demos", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const systemInstructionsTable = pgTable("system_instructions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  section: text("section").notNull().unique(),
+  content: text("content").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const meetingHistoryTable = pgTable("meeting_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull(),
+  contactName: text("contact_name"),
+  summary: text("summary"),
+  nextSteps: text("next_steps"),
+  outcome: text("outcome"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const eodReportsTable = pgTable("eod_reports", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull().unique(),
+  callsMade: integer("calls_made").default(0),
+  demosBooked: integer("demos_booked").default(0),
+  tasksCompleted: integer("tasks_completed").default(0),
+  reportText: text("report_text"),
+  sentTo: text("sent_to"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertCheckinSchema = createInsertSchema(checkinsTable).omit({ id: true, createdAt: true });
 export const insertJournalSchema = createInsertSchema(journalsTable).omit({ id: true, createdAt: true });
 export const insertIdeaSchema = createInsertSchema(ideasTable).omit({ id: true, createdAt: true });
@@ -124,3 +160,4 @@ export type CallLog = typeof callLogTable.$inferSelect;
 export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
 export type DailyBrief = typeof dailyBriefsTable.$inferSelect;
 export type Demo = typeof demosTable.$inferSelect;
+export type EodReport = typeof eodReportsTable.$inferSelect;

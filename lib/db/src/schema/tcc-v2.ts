@@ -113,6 +113,10 @@ export const taskWorkNotesTable = pgTable("task_work_notes", {
   date: date("date").notNull(),
   note: text("note").notNull(),
   progress: integer("progress").default(0),
+  nextSessionDate: date("next_session_date"),
+  driveFileId: text("drive_file_id"),
+  driveFileName: text("drive_file_name"),
+  driveLinkUrl: text("drive_link_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => [
   index("idx_twn_task").on(table.taskId),

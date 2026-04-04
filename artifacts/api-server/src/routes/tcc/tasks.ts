@@ -57,16 +57,41 @@ router.delete("/tasks/completed/:taskId", async (req, res): Promise<void> => {
 // ── Work Notes ──────────────────────────────────────────────────────────────
 
 router.post("/tasks/work-note", async (req, res): Promise<void> => {
-  const { taskId, note, progress } = req.body as { taskId?: string; note?: string; progress?: number };
+  const { taskId, note, progress, nextSessionDate, driveFileId, driveFileName, driveLinkUrl } = req.body as {
+    taskId?: string;
+    note?: string;
+    progress?: number;
+    nextSessionDate?: string;
+    driveFileId?: string;
+    driveFileName?: string;
+    driveLinkUrl?: string;
+  };
+
   if (!taskId || !note?.trim()) {
     res.status(400).json({ error: "taskId and note are required" });
+    return;
+  }
+
+  // Require nextSessionDate when progress < 100
+  const pct = progress ?? 0;
+  if (pct < 100 && !nextSessionDate) {
+    res.status(400).json({ error: "nextSessionDate is required when task is not 100% complete" });
     return;
   }
 
   const today = todayPacific();
   const [record] = await db
     .insert(taskWorkNotesTable)
-    .values({ taskId, date: today, note: note.trim(), progress: progress ?? 0 })
+    .values({
+      taskId,
+      date: today,
+      note: note.trim(),
+      progress: pct,
+      nextSessionDate: pct < 100 ? (nextSessionDate || null) : null,
+      driveFileId: driveFileId || null,
+      driveFileName: driveFileName || null,
+      driveLinkUrl: driveLinkUrl || null,
+    })
     .returning();
 
   res.status(201).json(record);

@@ -131,6 +131,7 @@ export const localTasksTable = pgTable("local_tasks", {
   priority: integer("priority").default(50),
   status: text("status").default("active"),
   overrideWarning: text("override_warning"),
+  googleTaskId: text("google_task_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => [
   index("idx_lt_status").on(table.status),

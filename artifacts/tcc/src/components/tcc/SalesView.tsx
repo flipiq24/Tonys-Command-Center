@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { C, F, FS, card, btn2, TIPS, SC } from "./constants";
 import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
@@ -17,14 +17,47 @@ interface Props {
   onBackToSchedule: () => void;
 }
 
-export function SalesView({ contacts, calls, demos, calSide, apiBase, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule }: Props) {
+export function SalesView({ contacts: initialContacts, calls, demos, calSide, apiBase, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<Contact[]>(initialContacts);
+  const [total, setTotal] = useState<number | null>(null);
+  const [searching, setSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Update results when initial contacts change (first load)
+  useEffect(() => { if (!search) setResults(initialContacts); }, [initialContacts, search]);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!search.trim()) {
+      setResults(initialContacts);
+      setTotal(null);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`${apiBase}/contacts?search=${encodeURIComponent(search)}&limit=100`);
+        const data = await res.json() as { contacts: Contact[]; total: number } | Contact[];
+        const list = Array.isArray(data) ? data : data.contacts;
+        const tot = Array.isArray(data) ? list.length : data.total;
+        setResults(list);
+        setTotal(tot);
+      } catch { /* keep existing */ }
+      finally { setSearching(false); }
+    }, 300);
+  }, [search, apiBase, initialContacts]);
+
+  const displayedContacts = results;
+
   return (
     <>
     {smsContact && <SmsModal contact={smsContact} apiBase={apiBase} onClose={() => setSmsContact(null)} />}
     <div style={{ maxWidth: 760, margin: "24px auto", padding: "0 20px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
       <div style={{ ...card, marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Sales Mode</h3>
           <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 13, fontWeight: 700 }}>
             <span>Calls: {calls.length}</span>
@@ -35,7 +68,28 @@ export function SalesView({ contacts, calls, demos, calSide, apiBase, onAttempt,
             </div>
           </div>
         </div>
-        {contacts.map(c => (
+
+        {/* Search bar */}
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search contacts by name, company, phone, email…"
+            style={{ width: "100%", border: `1px solid ${C.brd}`, borderRadius: 10, padding: "9px 36px 9px 12px", fontFamily: F, fontSize: 13, outline: "none", boxSizing: "border-box", background: "#FAFAF8" }}
+          />
+          {searching && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: C.mut }}>…</span>}
+          {search && !searching && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: C.mut, padding: 2 }}>✕</button>}
+        </div>
+
+        {/* Result count */}
+        <div style={{ fontSize: 11, color: C.mut, marginBottom: 8 }}>
+          {search.trim()
+            ? `${displayedContacts.length} result${displayedContacts.length !== 1 ? "s" : ""}${total && total > displayedContacts.length ? ` of ${total}` : ""}`
+            : `Showing ${displayedContacts.length} contacts (Hot → Warm → New)`}
+        </div>
+
+        {displayedContacts.map(c => (
           <div key={c.id} style={{ display: "flex", gap: 12, padding: 14, marginBottom: 6, background: "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${SC[c.status || "New"] || C.mut}`, alignItems: "center" }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

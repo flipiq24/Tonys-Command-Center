@@ -112,6 +112,7 @@ export const taskWorkNotesTable = pgTable("task_work_notes", {
   taskId: text("task_id").notNull(),
   date: date("date").notNull(),
   note: text("note").notNull(),
+  progress: integer("progress").default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (table) => [
   index("idx_twn_task").on(table.taskId),

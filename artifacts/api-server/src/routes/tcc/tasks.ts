@@ -54,7 +54,7 @@ router.delete("/tasks/completed/:taskId", async (req, res): Promise<void> => {
 // ── Work Notes ──────────────────────────────────────────────────────────────
 
 router.post("/tasks/work-note", async (req, res): Promise<void> => {
-  const { taskId, note } = req.body as { taskId?: string; note?: string };
+  const { taskId, note, progress } = req.body as { taskId?: string; note?: string; progress?: number };
   if (!taskId || !note?.trim()) {
     res.status(400).json({ error: "taskId and note are required" });
     return;
@@ -63,7 +63,7 @@ router.post("/tasks/work-note", async (req, res): Promise<void> => {
   const today = todayPacific();
   const [record] = await db
     .insert(taskWorkNotesTable)
-    .values({ taskId, date: today, note: note.trim() })
+    .values({ taskId, date: today, note: note.trim(), progress: progress ?? 0 })
     .returning();
 
   res.status(201).json(record);

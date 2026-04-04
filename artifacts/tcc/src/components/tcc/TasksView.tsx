@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { post, get } from "@/lib/api";
 import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
-import { VoiceInput } from "./VoiceInput";
+import { VoiceField } from "./VoiceField";
 import { TimeRoutingBanner } from "./TimeRoutingBanner";
 import type { TaskItem } from "./types";
 
@@ -10,6 +10,7 @@ interface WorkNote {
   taskId: string;
   date: string;
   note: string;
+  progress: number;
   createdAt: string;
 }
 
@@ -23,32 +24,76 @@ interface Props {
   onPrint?: () => void;
 }
 
+const PCT_PRESETS = [10, 25, 50, 75, 90, 100];
+
+function pctColor(p: number) {
+  if (p >= 75) return C.grn;
+  if (p >= 40) return C.amb;
+  return C.red;
+}
+function pctBg(p: number) {
+  if (p >= 75) return C.grnBg;
+  if (p >= 40) return C.ambBg;
+  return C.redBg;
+}
+
+const CAT_STYLE: Record<string, { bg: string; color: string }> = {
+  SALES: { bg: "#D1FAE5", color: "#059669" },
+  OPS:   { bg: "#FEF3C7", color: "#D97706" },
+  TECH:  { bg: "#EDE9FE", color: "#7C3AED" },
+  ADMIN: { bg: "#DBEAFE", color: "#2563EB" },
+};
+function catStyle(cat: string) {
+  return CAT_STYLE[cat] ?? { bg: "#E0F2FE", color: "#0284C7" };
+}
+
+function ProgressBar({ pct, size = "md" }: { pct: number; size?: "sm" | "md" }) {
+  const h = size === "sm" ? 5 : 7;
+  return (
+    <div style={{ background: "#E8E6E1", borderRadius: 99, overflow: "hidden", height: h }}>
+      <div style={{
+        height: "100%", width: `${Math.min(100, Math.max(0, pct))}%`,
+        background: pct >= 75 ? C.grn : pct >= 40 ? C.amb : C.red,
+        borderRadius: 99, transition: "width 0.5s ease",
+      }} />
+    </div>
+  );
+}
+
 export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, onBackToSchedule, onPrint }: Props) {
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
+  const [workNotePct, setWorkNotePct] = useState<number>(25);
+  const [customPct, setCustomPct] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [noteHistory, setNoteHistory] = useState<Record<string, WorkNote[]>>({});
   const [noteError, setNoteError] = useState("");
-  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
 
   const doneCount = Object.values(tDone).filter(Boolean).length;
   const activeTasks = tasks.filter(t => !tDone[t.id]);
   const doneTasks = tasks.filter(t => tDone[t.id]);
-
   const focusTasks = activeTasks.slice(0, 3);
   const queueTasks = activeTasks.slice(3);
 
-  const catColor = (cat: string) =>
-    cat === "SALES" ? C.grn : cat === "OPS" ? C.amb : cat === "TECH" ? "#7B1FA2" : C.blu;
+  const latestPct = (taskId: string) => {
+    const notes = noteHistory[taskId];
+    if (!notes || notes.length === 0) return 0;
+    return notes[notes.length - 1].progress ?? 0;
+  };
 
-  const openWorkNote = async (task: TaskItem) => {
+  const openWork = async (task: TaskItem) => {
     setWorkNoteTask(task);
     setWorkNoteText("");
     setNoteError("");
+    const cur = latestPct(task.id);
+    setWorkNotePct(cur || 25);
+    setCustomPct("");
     if (!noteHistory[task.id]) {
       try {
         const notes = await get<WorkNote[]>(`/tasks/work-notes/${encodeURIComponent(task.id)}`);
         setNoteHistory(prev => ({ ...prev, [task.id]: notes }));
+        const latest = notes.length ? (notes[notes.length - 1].progress ?? 0) : 25;
+        setWorkNotePct(latest || 25);
       } catch { /* ok */ }
     }
   };
@@ -57,10 +102,12 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
     if (!workNoteTask || !workNoteText.trim()) return;
     setSavingNote(true);
     setNoteError("");
+    const finalPct = customPct !== "" ? Math.min(100, Math.max(0, parseInt(customPct) || 0)) : workNotePct;
     try {
       const note = await post<WorkNote>("/tasks/work-note", {
         taskId: workNoteTask.id,
         note: workNoteText.trim(),
+        progress: finalPct,
       });
       setNoteHistory(prev => ({
         ...prev,
@@ -69,151 +116,307 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
       setWorkNoteText("");
       setWorkNoteTask(null);
     } catch {
-      setNoteError("Failed to save note. Try again.");
+      setNoteError("Failed to save — try again.");
     }
     setSavingNote(false);
   };
 
-  const historyCount = (taskId: string) => (noteHistory[taskId] || []).length;
+  const overallPct = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0;
 
   return (
     <>
       <div style={{ maxWidth: 580, margin: "24px auto", padding: "0 20px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
         <TimeRoutingBanner />
 
-        {/* ── Focus Zone (Top 3) ─────────────────────────── */}
-        <div style={{ ...card, marginBottom: 16, border: `2px solid ${C.grn}22`, background: C.grnBg }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        {/* ── Overall header card ─────────────────────────── */}
+        <div style={{
+          ...card, marginBottom: 18,
+          background: "linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)",
+          border: "none", color: "#fff",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div>
-              <h3 style={{ fontFamily: FS, fontSize: 18, margin: 0 }}>Focus Zone</h3>
-              <div style={{ fontSize: 12, color: C.grn, fontWeight: 700, marginTop: 2 }}>Your next 3 — execute in order</div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.5)", marginBottom: 2 }}>Today's Tasks</div>
+              <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 800, color: "#fff" }}>
+                {doneCount} of {tasks.length} done
+              </div>
             </div>
-            <span style={{ fontSize: 13, color: C.mut }}>{doneCount}/{tasks.length} done</span>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 32, fontWeight: 900, color: overallPct >= 75 ? "#34D399" : overallPct >= 40 ? "#FBBF24" : "#F87171" }}>
+                {overallPct}%
+              </div>
+            </div>
+          </div>
+          <ProgressBar pct={overallPct} />
+        </div>
+
+        {/* ── Focus Zone ─────────────────────────────────── */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.sub, marginBottom: 10, paddingLeft: 4 }}>
+            🎯 Focus Zone — top {Math.min(3, focusTasks.length)}
           </div>
 
           {focusTasks.length === 0 && (
-            <div style={{ textAlign: "center", padding: "20px 0", color: C.grn, fontWeight: 700, fontSize: 15 }}>
-              🎉 All tasks complete!
+            <div style={{ ...card, textAlign: "center", padding: "32px 20px", background: C.grnBg, border: `2px solid ${C.grn}33` }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🎉</div>
+              <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: C.grn }}>All clear!</div>
+              <div style={{ fontSize: 13, color: C.sub, marginTop: 4 }}>Every task is done for today.</div>
             </div>
           )}
 
-          {focusTasks.map((t, idx) => (
-            <div key={t.id} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "14px 16px", background: C.card, borderRadius: 12, borderLeft: `4px solid ${catColor(t.cat)}` }}>
-                <div style={{ width: 26, height: 26, borderRadius: 8, background: catColor(t.cat), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0, marginTop: 1 }}>
-                  {idx + 1}
+          {focusTasks.map((t, idx) => {
+            const pct = latestPct(t.id);
+            const cs = catStyle(t.cat);
+            return (
+              <div key={t.id} style={{
+                ...card,
+                marginBottom: 12,
+                border: `1.5px solid ${cs.color}22`,
+                padding: "16px 18px",
+              }}>
+                {/* Top row: category pill + priority number */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "3px 10px", borderRadius: 99,
+                    background: cs.bg, color: cs.color,
+                    fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
+                  }}>
+                    {t.cat}
+                  </span>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: 99,
+                    background: cs.color, color: "#fff",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 13, fontWeight: 900, flexShrink: 0,
+                  }}>
+                    {idx + 1}
+                  </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: catColor(t.cat), textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>{t.cat}</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: C.tx, lineHeight: 1.4 }}>{t.text}</div>
-                  {historyCount(t.id) > 0 && (
-                    <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>
-                      📝 Last worked: {noteHistory[t.id]?.[noteHistory[t.id].length - 1]?.date}
-                      <span style={{ marginLeft: 6, cursor: "pointer", color: C.blu, textDecoration: "underline" }}
-                        onClick={() => setExpandedHistory(p => ({ ...p, [t.id]: !p[t.id] }))}>
-                        {expandedHistory[t.id] ? "hide" : `${historyCount(t.id)} note${historyCount(t.id) > 1 ? "s" : ""}`}
+
+                {/* Task text */}
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.tx, lineHeight: 1.4, marginBottom: 12 }}>{t.text}</div>
+
+                {/* Progress bar */}
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                    <span style={{ fontSize: 11, color: C.mut, fontWeight: 600 }}>Progress</span>
+                    {pct > 0 && (
+                      <span style={{
+                        fontSize: 12, fontWeight: 800,
+                        color: pctColor(pct),
+                        background: pctBg(pct),
+                        padding: "1px 8px", borderRadius: 99,
+                      }}>
+                        {pct}%
                       </span>
-                    </div>
-                  )}
-                  {expandedHistory[t.id] && (noteHistory[t.id] || []).map(n => (
-                    <div key={n.id} style={{ fontSize: 11, color: C.sub, marginTop: 4, paddingLeft: 8, borderLeft: `2px solid ${C.brd}` }}>
-                      <span style={{ fontWeight: 700 }}>{n.date}:</span> {n.note}
-                    </div>
-                  ))}
+                    )}
+                    {pct === 0 && <span style={{ fontSize: 11, color: C.mut }}>Not started</span>}
+                  </div>
+                  <ProgressBar pct={pct} />
                 </div>
-                {t.sales && <span style={{ fontSize: 11, color: C.red, fontWeight: 700, flexShrink: 0 }}>→ Sales</span>}
-              </div>
-              <div style={{ display: "flex", gap: 6, marginTop: 5, paddingLeft: 4 }}>
-                <button
-                  onClick={() => t.sales ? onSwitchToSales() : onComplete(t)}
-                  style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: `2px solid ${C.grn}`, background: C.grnBg, color: C.grn, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: F }}>
-                  ✅ {t.sales ? "Go to Sales" : "Completed"}
-                </button>
-                {!t.sales && (
+
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <button
-                    onClick={() => openWorkNote(t)}
-                    style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: `2px solid ${C.brd}`, background: C.card, color: C.tx, cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: F }}>
-                    📝 Worked on it
+                    onClick={() => t.sales ? onSwitchToSales() : onComplete(t)}
+                    style={{
+                      flex: 1, padding: "10px 0", borderRadius: 12,
+                      border: "none", background: C.grn, color: "#fff",
+                      fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: F,
+                      boxShadow: `0 4px 12px ${C.grn}44`,
+                    }}>
+                    {t.sales ? "→ Sales" : "✅ Done"}
                   </button>
-                )}
+                  {!t.sales && (
+                    <button
+                      onClick={() => openWork(t)}
+                      style={{
+                        flex: 1, padding: "10px 0", borderRadius: 12,
+                        border: `2px solid ${cs.color}`,
+                        background: cs.bg, color: cs.color,
+                        fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: F,
+                      }}>
+                      ⚡ Work on it
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* ── Queue (tasks 4+) ───────────────────────────── */}
+        {/* ── Queue ──────────────────────────────────────── */}
         {queueTasks.length > 0 && (
-          <div style={{ ...card, marginBottom: 16 }}>
-            <h4 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 12px", color: C.sub }}>Up Next ({queueTasks.length})</h4>
-            {queueTasks.map(t => (
-              <div key={t.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "11px 14px", marginBottom: 6, background: "#FAFAF8", borderRadius: 10, borderLeft: `3px solid ${catColor(t.cat)}` }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: catColor(t.cat), textTransform: "uppercase", letterSpacing: 1 }}>{t.cat}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: C.sub }}>{t.text}</div>
+          <div style={{ ...card, marginBottom: 16, padding: "14px 18px" }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.sub, marginBottom: 10 }}>
+              ⏳ Up Next ({queueTasks.length})
+            </div>
+            {queueTasks.map(t => {
+              const cs = catStyle(t.cat);
+              const pct = latestPct(t.id);
+              return (
+                <div key={t.id} style={{
+                  display: "flex", gap: 10, alignItems: "center",
+                  padding: "10px 12px", marginBottom: 6,
+                  background: "#FAFAF8", borderRadius: 12,
+                  border: `1px solid ${C.brd}`,
+                }}>
+                  <span style={{
+                    padding: "2px 8px", borderRadius: 99,
+                    background: cs.bg, color: cs.color,
+                    fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8,
+                    flexShrink: 0,
+                  }}>{t.cat}</span>
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.sub, lineHeight: 1.3 }}>{t.text}</div>
+                  {pct > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 800, color: pctColor(pct), flexShrink: 0 }}>{pct}%</span>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         {/* ── Done ──────────────────────────────────────── */}
         {doneTasks.length > 0 && (
-          <div style={{ ...card, marginBottom: 16, opacity: 0.7 }}>
-            <h4 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 10px", color: C.mut }}>Done Today ({doneTasks.length})</h4>
+          <div style={{ ...card, marginBottom: 16, padding: "14px 18px", opacity: 0.75 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.grn, marginBottom: 10 }}>
+              ✅ Done Today ({doneTasks.length})
+            </div>
             {doneTasks.map(t => (
-              <div key={t.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 12px", marginBottom: 4, background: C.grnBg, borderRadius: 8, opacity: 0.7 }}>
-                <span style={{ color: C.grn, fontSize: 14 }}>✓</span>
+              <div key={t.id} style={{
+                display: "flex", gap: 10, alignItems: "center",
+                padding: "9px 12px", marginBottom: 5,
+                background: C.grnBg, borderRadius: 10,
+              }}>
+                <span style={{ color: C.grn, fontSize: 15, flexShrink: 0 }}>✓</span>
                 <div style={{ fontSize: 13, color: C.sub, textDecoration: "line-through", flex: 1 }}>{t.text}</div>
-                <button onClick={() => onComplete(t)} style={{ fontSize: 10, color: C.mut, background: "none", border: "none", cursor: "pointer", fontFamily: F }}>undo</button>
+                <button onClick={() => onComplete(t)} style={{ fontSize: 11, color: C.mut, background: "none", border: "none", cursor: "pointer", fontFamily: F, flexShrink: 0 }}>undo</button>
               </div>
             ))}
           </div>
         )}
 
-        <button onClick={onSwitchToSales} style={{ ...btn2, width: "100%", marginBottom: 10 }}>📞 Sales Mode</button>
+        <button onClick={onSwitchToSales} style={{ ...btn2, width: "100%", marginBottom: 10, borderRadius: 12, padding: "12px 0", fontWeight: 700 }}>📞 Sales Mode</button>
         <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>
-          <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1, color: C.mut }}>← Schedule</button>
-          {onPrint && <button onClick={onPrint} style={{ ...btn2, flex: 1 }}>🖨 Print Sheet</button>}
+          <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1, borderRadius: 12, color: C.mut }}>← Schedule</button>
+          {onPrint && <button onClick={onPrint} style={{ ...btn2, flex: 1, borderRadius: 12 }}>🖨 Print Sheet</button>}
         </div>
       </div>
 
-      {/* ── Work Note Modal ──────────────────────────────── */}
+      {/* ── Work on it Modal ──────────────────────────── */}
       {workNoteTask && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setWorkNoteTask(null)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 16, padding: 28, width: 460, maxWidth: "92vw" }}>
-            <h3 style={{ fontFamily: FS, fontSize: 18, margin: "0 0 4px" }}>📝 Worked on it</h3>
-            <div style={{ fontSize: 12, color: C.mut, marginBottom: 4 }}>{workNoteTask.text}</div>
-            <div style={{ fontSize: 11, color: C.sub, marginBottom: 16 }}>Task stays active. Note logged with today's date.</div>
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 10000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+          onClick={() => setWorkNoteTask(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: C.card, borderRadius: "24px 24px 0 0",
+              padding: "28px 24px 36px", width: "100%", maxWidth: 540,
+              maxHeight: "90vh", overflowY: "auto",
+            }}
+          >
+            {/* Handle bar */}
+            <div style={{ width: 40, height: 4, borderRadius: 99, background: "#D0CEC8", margin: "0 auto 20px" }} />
 
-            {(noteHistory[workNoteTask.id] || []).length > 0 && (
-              <div style={{ background: "#FAFAF8", borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Previous notes</div>
-                {noteHistory[workNoteTask.id].slice(-3).map(n => (
-                  <div key={n.id} style={{ fontSize: 12, color: C.sub, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.brd}` }}>
-                    <span style={{ fontWeight: 700, color: C.tx }}>{n.date}: </span>{n.note}
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.sub, marginBottom: 4 }}>⚡ Log Progress</div>
+            <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 700, color: C.tx, lineHeight: 1.4, marginBottom: 20 }}>
+              {workNoteTask.text}
+            </div>
+
+            {/* Current progress preview */}
+            {(() => {
+              const cur = latestPct(workNoteTask.id);
+              const finalPct = customPct !== "" ? Math.min(100, Math.max(0, parseInt(customPct) || 0)) : workNotePct;
+              return (
+                <div style={{ marginBottom: 20, padding: "14px 16px", borderRadius: 14, background: pctBg(finalPct), border: `1.5px solid ${pctColor(finalPct)}33` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: pctColor(finalPct) }}>
+                      {cur > 0 ? `Was ${cur}% → now` : "Setting progress to"}
+                    </span>
+                    <span style={{ fontSize: 28, fontWeight: 900, color: pctColor(finalPct) }}>{finalPct}%</span>
                   </div>
-                ))}
+                  <ProgressBar pct={finalPct} />
+                </div>
+              );
+            })()}
+
+            {/* Preset % pills */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 10 }}>How far along?</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+              {PCT_PRESETS.map(p => {
+                const selected = customPct === "" && workNotePct === p;
+                const cs = catStyle(workNoteTask.cat);
+                return (
+                  <button
+                    key={p}
+                    onClick={() => { setWorkNotePct(p); setCustomPct(""); }}
+                    style={{
+                      padding: "12px 0", borderRadius: 12, fontFamily: F,
+                      fontSize: 16, fontWeight: 900,
+                      border: selected ? `2.5px solid ${cs.color}` : `2px solid ${C.brd}`,
+                      background: selected ? cs.bg : "#FAFAF8",
+                      color: selected ? cs.color : C.sub,
+                      cursor: "pointer", transition: "all 0.12s",
+                    }}>
+                    {p}%
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom % input */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
+              <span style={{ fontSize: 12, color: C.mut, flexShrink: 0 }}>Custom:</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={customPct}
+                onChange={e => setCustomPct(e.target.value)}
+                placeholder="0–100"
+                style={{ ...inp, width: 80, textAlign: "center", fontWeight: 700, fontSize: 15 }}
+              />
+              <span style={{ fontSize: 13, color: C.sub }}>%</span>
+            </div>
+
+            {/* Notes */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 8 }}>What did you work on?</div>
+            <VoiceField
+              as="textarea"
+              value={workNoteText}
+              onChange={setWorkNoteText}
+              placeholder="e.g. Called Fernando, he's reviewing the contract…"
+              autoFocus
+              style={{ ...inp, minHeight: 80, resize: "vertical", marginBottom: 12, fontSize: 14 }}
+            />
+
+            {noteError && (
+              <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 12, fontWeight: 600 }}>
+                {noteError}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}>
-              <textarea
-                value={workNoteText}
-                onChange={e => setWorkNoteText(e.target.value)}
-                placeholder="What did you do today? e.g. Called Fernando, he's reviewing the contract..."
-                autoFocus
-                style={{ ...inp, minHeight: 80, resize: "vertical", flex: 1 }}
-              />
-              <VoiceInput onTranscript={t => setWorkNoteText(prev => prev ? prev + " " + t : t)} size={36} />
-            </div>
-
-            {noteError && <div style={{ marginBottom: 10, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{noteError}</div>}
-
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setWorkNoteTask(null)} style={{ ...btn2, flex: 1 }}>Cancel</button>
-              <button onClick={saveWorkNote} disabled={savingNote || !workNoteText.trim()}
-                style={{ ...btn1, flex: 2, opacity: savingNote || !workNoteText.trim() ? 0.5 : 1 }}>
-                {savingNote ? "Saving..." : "Log Progress"}
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setWorkNoteTask(null)}
+                style={{ ...btn2, flex: 1, borderRadius: 14, padding: "13px 0", fontWeight: 700 }}>
+                Cancel
+              </button>
+              <button
+                onClick={saveWorkNote}
+                disabled={savingNote || !workNoteText.trim()}
+                style={{
+                  ...btn1, flex: 2, borderRadius: 14, padding: "13px 0",
+                  fontWeight: 800, fontSize: 15,
+                  opacity: savingNote || !workNoteText.trim() ? 0.5 : 1,
+                  cursor: savingNote || !workNoteText.trim() ? "not-allowed" : "pointer",
+                  boxShadow: workNoteText.trim() ? `0 4px 16px ${C.tx}33` : "none",
+                }}>
+                {savingNote ? "Saving…" : "Log Progress →"}
               </button>
             </div>
           </div>

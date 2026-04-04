@@ -50,16 +50,28 @@ export const contactsTable = pgTable("contacts", {
   phone: text("phone"),
   email: text("email"),
   type: text("type"),
+  title: text("title"),
   nextStep: text("next_step"),
   lastContactDate: date("last_contact_date"),
   notes: text("notes"),
   source: text("source"),
+  pipelineStage: text("pipeline_stage").default("Lead"),
+  dealValue: numeric("deal_value", { precision: 12, scale: 2 }),
+  leadSource: text("lead_source"),
+  linkedinUrl: text("linkedin_url"),
+  website: text("website"),
+  tags: jsonb("tags").$type<string[]>(),
+  followUpDate: date("follow_up_date"),
+  expectedCloseDate: date("expected_close_date"),
+  dealProbability: integer("deal_probability"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
   index("contacts_status_idx").on(t.status),
   index("contacts_name_idx").on(t.name),
   index("contacts_email_idx").on(t.email),
+  index("contacts_pipeline_stage_idx").on(t.pipelineStage),
+  index("contacts_follow_up_idx").on(t.followUpDate),
 ]);
 
 export const callLogTable = pgTable("call_log", {
@@ -74,6 +86,16 @@ export const callLogTable = pgTable("call_log", {
 }, (t) => [
   index("call_log_contact_id_idx").on(t.contactId),
   index("call_log_created_idx").on(t.createdAt),
+]);
+
+export const contactNotesTable = pgTable("contact_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contactId: uuid("contact_id").notNull().references(() => contactsTable.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("contact_notes_contact_id_idx").on(t.contactId),
+  index("contact_notes_created_idx").on(t.createdAt),
 ]);
 
 export const emailTrainingTable = pgTable("email_training", {
@@ -195,6 +217,7 @@ export type Idea = typeof ideasTable.$inferSelect;
 export type InsertIdea = z.infer<typeof insertIdeaSchema>;
 export type Contact = typeof contactsTable.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
+export type ContactNote = typeof contactNotesTable.$inferSelect;
 export type CallLog = typeof callLogTable.$inferSelect;
 export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
 export type DailyBrief = typeof dailyBriefsTable.$inferSelect;

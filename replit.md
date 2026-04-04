@@ -21,8 +21,9 @@ Tables (in `lib/db/src/schema/tcc.ts`):
 - `checkins` — Daily morning check-in data (sleep, habits)
 - `journals` — Journal entries + AI-formatted output
 - `ideas` — Ideas parking lot with priority
-- `contacts` — Sales contacts / CRM
-- `call_log` — Sales call tracking
+- `contacts` — Sales CRM contacts (status, pipeline stage, deal value, lead source, title, LinkedIn, website, tags, follow-up/close dates, probability)
+- `contact_notes` — Timestamped notes per contact (cascade delete)
+- `call_log` — Sales call tracking (with Claude-generated follow-up draft)
 - `email_training` — Email thumbs up/down training data
 - `daily_briefs` — Cached morning brief data
 - `task_completions` — Task completion tracking
@@ -39,7 +40,12 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 | `GET/POST /api/journal` | Journal entry |
 | `GET /api/brief/today` | Morning brief (calendar, emails, tasks) |
 | `POST /api/emails/action` | Email actions (snooze, suggest_reply, thumbs) |
-| `GET /api/contacts` | Sales contacts |
+| `GET /api/contacts` | Sales contacts (filter: status, stage, search, pagination) |
+| `GET /api/contacts/:id` | Single contact with notes + call history |
+| `POST /api/contacts` | Create contact |
+| `PATCH /api/contacts/:id` | Update contact fields |
+| `DELETE /api/contacts/:id` | Delete contact |
+| `GET/POST /api/contacts/:id/notes` | Contact notes |
 | `GET/POST /api/calls` | Call log |
 | `GET/POST /api/ideas` | Ideas parking lot |
 | `POST /api/claude` | Claude AI proxy |

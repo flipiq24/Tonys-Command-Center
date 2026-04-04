@@ -8,6 +8,30 @@ export const C = {
 };
 export const SC: Record<string, string> = { Hot: C.red, Warm: C.amb, New: C.blu, Cold: C.mut };
 
+export const PIPELINE_STAGES = ["Lead", "Qualified", "Demo Scheduled", "Proposal Sent", "Negotiation", "Closed Won", "Closed Lost"] as const;
+export type PipelineStage = typeof PIPELINE_STAGES[number];
+export const PC: Record<string, string> = {
+  "Lead": "#607D8B",
+  "Qualified": C.blu,
+  "Demo Scheduled": "#7B1FA2",
+  "Proposal Sent": C.amb,
+  "Negotiation": "#E65100",
+  "Closed Won": C.grn,
+  "Closed Lost": C.mut,
+};
+export const PCBg: Record<string, string> = {
+  "Lead": "#ECEFF1",
+  "Qualified": C.bluBg,
+  "Demo Scheduled": "#F3E5F5",
+  "Proposal Sent": C.ambBg,
+  "Negotiation": "#FBE9E7",
+  "Closed Won": C.grnBg,
+  "Closed Lost": "#F5F5F5",
+};
+
+export const LEAD_SOURCES = ["LinkedIn", "Referral", "Cold Outreach", "Event", "Website", "Partner", "Other"] as const;
+export const STATUS_OPTIONS = ["Hot", "Warm", "New", "Cold"] as const;
+
 export const TIPS: Record<string, string> = {
   checkin: "Morning gate. System locked until done. Bedtime, wake, Bible, workout, journal, nutrition, unplug. Saved to database.",
   journal: "Brain dump. Auto-formats: Mood, Key Events, Reflection. Saved to database.",

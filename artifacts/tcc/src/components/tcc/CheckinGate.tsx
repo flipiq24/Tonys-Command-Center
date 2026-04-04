@@ -29,6 +29,8 @@ export function CheckinGate({ initial, onComplete }: Props) {
   const [clock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
   const [patternAlerts, setPatternAlerts] = useState<PatternAlert[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [guiltMessage, setGuiltMessage] = useState("");
+  const [showGuilt, setShowGuilt] = useState(false);
 
   const upCk = (k: keyof CheckinState, v: unknown) => {
     const u = { ...ck, [k]: v } as CheckinState;
@@ -51,6 +53,30 @@ export function CheckinGate({ initial, onComplete }: Props) {
   };
 
   const submit = async () => {
+    setSaving(true);
+    setError("");
+
+    const missingWorkout = !ck.workout;
+    const missingJournal = !ck.journal;
+
+    if (missingWorkout || missingJournal) {
+      try {
+        const guiltRes = await post("/checkin/guilt-trip", { missingWorkout, missingJournal }) as { message: string };
+        if (guiltRes?.message) {
+          setGuiltMessage(guiltRes.message);
+          setShowGuilt(true);
+          setSaving(false);
+          return;
+        }
+      } catch {
+        // If guilt trip fails, continue with normal flow
+      }
+    }
+
+    await doSubmit();
+  };
+
+  const doSubmit = async () => {
     setSaving(true);
     setError("");
     try {
@@ -76,7 +102,101 @@ export function CheckinGate({ initial, onComplete }: Props) {
     setSaving(false);
   };
 
-  // Pattern alert screen
+  const handleGuiltProceed = async () => {
+    setShowGuilt(false);
+    setGuiltMessage("");
+    await doSubmit();
+  };
+
+  const handleGuiltGoBack = () => {
+    setShowGuilt(false);
+    setGuiltMessage("");
+    setSaving(false);
+  };
+
+  if (showGuilt) {
+    const missingWorkout = !ck.workout;
+    const missingJournal = !ck.journal;
+    const missingBoth = missingWorkout && missingJournal;
+    return (
+      <div style={{
+        minHeight: "100vh",
+        background: "#0A0A0A",
+        fontFamily: F,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}>
+        <FontLink />
+        <div style={{
+          maxWidth: 520,
+          width: "100%",
+          padding: "48px 40px",
+        }}>
+          <div style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: missingBoth ? "#EF5350" : "#FF9800",
+            textTransform: "uppercase",
+            letterSpacing: 2,
+            marginBottom: 16,
+          }}>
+            {missingBoth ? "⚠️ BOTH MISSING" : missingWorkout ? "⚠️ WORKOUT MISSING" : "⚠️ JOURNAL MISSING"}
+          </div>
+
+          <div style={{
+            fontSize: 18,
+            lineHeight: 1.7,
+            color: "#E0E0E0",
+            fontFamily: FS,
+            fontStyle: "italic",
+            marginBottom: 40,
+            borderLeft: `3px solid ${missingBoth ? "#EF5350" : "#FF9800"}`,
+            paddingLeft: 20,
+          }}>
+            {guiltMessage}
+          </div>
+
+          <div style={{ display: "flex", gap: 12, flexDirection: "column" }}>
+            <button
+              onClick={handleGuiltGoBack}
+              style={{
+                padding: "16px 28px",
+                background: missingBoth ? "#EF5350" : "#FF9800",
+                color: "#fff",
+                border: "none",
+                borderRadius: 12,
+                fontSize: 16,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: F,
+              }}
+            >
+              Go Handle It
+            </button>
+            <button
+              onClick={handleGuiltProceed}
+              style={{
+                padding: "14px 28px",
+                background: "transparent",
+                color: "#666",
+                border: `1px solid #333`,
+                borderRadius: 12,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: F,
+              }}
+            >
+              I Hear You — Let's Go
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (showAlerts) {
     const highAlerts = patternAlerts.filter(a => a.level === "high");
     const otherAlerts = patternAlerts.filter(a => a.level !== "high");
@@ -173,7 +293,7 @@ export function CheckinGate({ initial, onComplete }: Props) {
         {error && <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 13 }}>{error}</div>}
         <button onClick={submit} disabled={saving}
           style={{ ...btn1, width: "100%", opacity: saving ? 0.6 : 1 }}>
-          {saving ? "Saving..." : "Let's Go →"}
+          {saving ? "Checking..." : "Let's Go →"}
         </button>
       </div>
     </div>

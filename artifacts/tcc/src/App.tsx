@@ -375,6 +375,11 @@ export default function App() {
     return <CheckinGate initial={ck} onComplete={(completed) => { setCk(completed); setView("journal"); }} />;
   }
 
+  // ═══ VIEW: Check-in (re-open from hamburger menu) ═══
+  if (view === "checkin") {
+    return <CheckinGate initial={ck} onComplete={(completed) => { setCk(completed); setView(prevView || "emails"); }} />;
+  }
+
   // ═══ GATE: Journal ═══
   if (view === "journal") {
     return <JournalGate onComplete={() => setView("emails")} />;

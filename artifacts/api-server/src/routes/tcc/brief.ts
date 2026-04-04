@@ -78,7 +78,18 @@ const DEFAULT_TASKS = [
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean; attendeeCount?: number; calendarEventId?: string; htmlLink?: string; };
+type CalItem = {
+  t: string;
+  tEnd?: string;
+  n: string;
+  loc?: string;
+  note?: string;
+  real: boolean;
+  attendeeCount?: number;
+  calendarEventId?: string;
+  calendarLink?: string;
+  htmlLink?: string;
+};
 type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string; contactContext?: string; gmailMessageId?: string; };
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
@@ -190,6 +201,7 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
 
     return (response.data.items || []).map(e => {
       const startRaw = e.start?.dateTime || e.start?.date || "";
+      const endRaw = e.end?.dateTime || e.end?.date || "";
       const timeLabel = startRaw
         ? new Date(startRaw).toLocaleTimeString("en-US", {
             hour: "numeric",
@@ -197,7 +209,13 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
             timeZone: "America/Los_Angeles",
           })
         : "";
-      // "real" = has 2+ attendees OR has a conference/video link
+      const endLabel = endRaw
+        ? new Date(endRaw).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: "America/Los_Angeles",
+          })
+        : "";
       const attendeeCount = e.attendees?.length ?? 0;
       const hasVideo = !!(e.conferenceData || (e.description || "").match(/zoom|meet|teams/i));
       const item: CalItem = {
@@ -206,6 +224,11 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
         real: attendeeCount > 1 || hasVideo,
         attendeeCount,
       };
+      if (endLabel) item.tEnd = endLabel;
+      if (e.id) {
+        item.calendarEventId = e.id;
+        item.calendarLink = e.htmlLink || `https://calendar.google.com/calendar/event?eid=${btoa(e.id)}`;
+      }
       if (e.location) item.loc = e.location;
       if (e.description) item.note = e.description.slice(0, 120);
       if (e.id) item.calendarEventId = e.id;

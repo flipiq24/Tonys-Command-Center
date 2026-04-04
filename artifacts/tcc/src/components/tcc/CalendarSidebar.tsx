@@ -21,7 +21,8 @@ function parseTime(t: string): Date | null {
   return d;
 }
 
-function calendarUrl(eventId?: string): string {
+function calendarUrl(htmlLink?: string, eventId?: string): string {
+  if (htmlLink) return htmlLink;
   if (eventId) {
     const encoded = btoa(eventId).replace(/=+$/, "");
     return `https://www.google.com/calendar/event?eid=${encoded}`;
@@ -115,10 +116,10 @@ export function CalendarSidebar({ items, onClose, onSchedule }: Props) {
 
             {/* Time — clickable calendar link */}
             <a
-              href={calendarUrl(c.calendarEventId)}
+              href={calendarUrl(c.htmlLink, c.calendarEventId)}
               target="_blank"
               rel="noopener noreferrer"
-              title={c.calendarEventId ? "Open in Google Calendar" : "Open Google Calendar"}
+              title={c.htmlLink || c.calendarEventId ? "Open event in Google Calendar" : "Open Google Calendar"}
               style={{
                 fontSize: 10, fontWeight: 700,
                 color: isCurrent ? "#2563EB" : (c.real ? C.blu : C.mut),

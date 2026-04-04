@@ -109,8 +109,8 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks }: Props) {
                     </span>
                   : <span style={{ fontSize: 10, color: C.mut }}>note</span>
                 }
-                {c.calendarEventId
-                  ? <DeepLink type="calendar" id={c.calendarEventId} />
+                {c.htmlLink || c.calendarEventId
+                  ? <DeepLink type="calendar" id={c.htmlLink || c.calendarEventId || ""} />
                   : (
                     <a
                       href="https://calendar.google.com"

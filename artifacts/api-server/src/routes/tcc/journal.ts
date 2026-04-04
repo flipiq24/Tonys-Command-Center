@@ -3,11 +3,12 @@ import { eq } from "drizzle-orm";
 import { db, journalsTable, checkinsTable } from "@workspace/db";
 import { SaveJournalBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
 
 router.get("/journal/today", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const [journal] = await db
     .select()
     .from(journalsTable)
@@ -28,8 +29,8 @@ router.post("/journal", async (req, res): Promise<void> => {
     return;
   }
 
-  const today = new Date().toISOString().split("T")[0];
-  const todayDate = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const today = todayPacific();
+  const todayDate = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Los_Angeles" });
   const rawText = parsed.data.rawText;
 
   let formattedText = rawText;
@@ -89,25 +90,21 @@ Output EXACTLY this format and nothing else (start immediately with ### Daily Jo
     req.log.warn({ err }, "Claude API failed, saving raw text");
   }
 
-  const [existing] = await db.select().from(journalsTable).where(eq(journalsTable.date, today));
-  let journal;
-  if (existing) {
-    [journal] = await db
-      .update(journalsTable)
-      .set({ rawText, formattedText, mood, keyEvents, reflection })
-      .where(eq(journalsTable.date, today))
-      .returning();
-  } else {
-    [journal] = await db
-      .insert(journalsTable)
-      .values({ date: today, rawText, formattedText, mood, keyEvents, reflection })
-      .returning();
-  }
+  // Use ON CONFLICT DO UPDATE to avoid select-then-insert race condition
+  const [journal] = await db
+    .insert(journalsTable)
+    .values({ date: today, rawText, formattedText, mood, keyEvents, reflection })
+    .onConflictDoUpdate({
+      target: journalsTable.date,
+      set: { rawText, formattedText, mood, keyEvents, reflection },
+    })
+    .returning();
 
-  await db
-    .update(checkinsTable)
+  // Mark journal complete on today's checkin (fire-and-forget, non-blocking)
+  db.update(checkinsTable)
     .set({ journal: true })
-    .where(eq(checkinsTable.date, today));
+    .where(eq(checkinsTable.date, today))
+    .catch(err => console.error("[journal] Failed to mark checkin journal=true:", err));
 
   res.json(journal);
 });

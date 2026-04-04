@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { get, post } from "@/lib/api";
-// FontLink moved to index.html <head> — no longer rendered in React
+import { get, post, del } from "@/lib/api";
+import { FontLink } from "@/components/tcc/FontLink";
 import { CheckinGate } from "@/components/tcc/CheckinGate";
 import { JournalGate } from "@/components/tcc/JournalGate";
 import { Header } from "@/components/tcc/Header";
@@ -13,15 +13,9 @@ import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
 import { TasksView } from "@/components/tcc/TasksView";
 import { C, F, FS } from "@/components/tcc/constants";
-import type { CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief } from "@/components/tcc/types";
+import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
 type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks";
-
-interface CheckinState {
-  bed: string; wake: string; sleep: string;
-  bible: boolean; workout: boolean; journal: boolean;
-  nut: string; unplug: boolean; done: boolean;
-}
 
 const DEFAULT_CONTACTS: Contact[] = [
   { id: "1", name: "Mike Oyoque", company: "MR EXCELLENCE", status: "Warm", phone: "(555) 123-4567", nextStep: "Follow up demo", lastContactDate: "Mar 25" },
@@ -64,6 +58,7 @@ export default function App() {
   // UI state
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
+  const [meetingWarning, setMeetingWarning] = useState<{ title: string; time: string; location?: string } | null>(null);
 
   // Custom instructions (Ctrl+hover editable tooltips)
   const [customTips, setCustomTips] = useState<Record<string, string>>({});
@@ -71,6 +66,34 @@ export default function App() {
   const handleTipSaved = useCallback((key: string, text: string) => {
     setCustomTips(prev => ({ ...prev, [key]: text }));
   }, []);
+
+  // Auto-refresh: fetch fresh brief data every 15 minutes
+  const [lastRefresh, setLastRefresh] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshBrief = useCallback(async (sources?: string[]) => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const qs = sources?.length ? `?refresh=${sources.join(",")}` : "";
+      const data = await get<DailyBrief>(`/brief/today${qs}`);
+      if (!data || (data as { error?: string }).error) return;
+      // ONLY update data arrays — NEVER reset view/gates/modals
+      setBrief(data);
+      setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+      console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString(), "sources:", sources ?? "all");
+    } catch (err) {
+      console.warn("[TCC] Auto-refresh failed (skipping):", err);
+      // Silent fail — do NOT show error, do NOT crash
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing]);
+
+  useEffect(() => {
+    const interval = setInterval(refreshBrief, 15 * 60 * 1000); // every 15 min
+    return () => clearInterval(interval);
+  }, [refreshBrief]);
 
   // Persist active view so Tony resumes exactly where he left off on reload
   const persistView = useCallback((v: View) => {
@@ -84,6 +107,33 @@ export default function App() {
     const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
     return () => clearInterval(i);
   }, []);
+
+  // 5-min meeting warnings: fire a setTimeout for each upcoming real meeting
+  useEffect(() => {
+    if (!brief?.calendarData) return;
+    const now = new Date();
+    const parseTime = (t: string) => {
+      const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!m) return null;
+      let h = parseInt(m[1]); const min = parseInt(m[2]); const ampm = m[3].toUpperCase();
+      if (ampm === "PM" && h < 12) h += 12;
+      if (ampm === "AM" && h === 12) h = 0;
+      const d = new Date(now);
+      d.setHours(h, min, 0, 0);
+      return d;
+    };
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const item of brief.calendarData) {
+      if (!item.real) continue;
+      const start = parseTime(item.t);
+      if (!start) continue;
+      const msUntilWarning = start.getTime() - now.getTime() - 5 * 60 * 1000;
+      if (msUntilWarning > 0 && msUntilWarning < 8 * 60 * 60 * 1000) {
+        timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc }), msUntilWarning));
+      }
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [brief?.calendarData]);
 
   // Load all state from DB on mount
   useEffect(() => {
@@ -173,11 +223,11 @@ export default function App() {
     const newVal = !tDone[task.id];
     setTDone(prev => ({ ...prev, [task.id]: newVal }));
     if (newVal) {
-      post("/tasks/completed", { taskId: task.id, taskText: task.text }).catch(() => {});
+      post("/tasks/completed", { taskId: task.id, taskText: task.text }).catch(err => console.error("[TCC] Task complete failed:", err));
     } else {
-      post("/tasks/uncomplete", { taskId: task.id }).catch(() => {});
+      del(`/tasks/completed/${encodeURIComponent(task.id)}`).catch(err => console.error("[TCC] Task uncomplete failed:", err));
     }
-  }, [tDone, persistView]);
+  }, [tDone]);
 
   const handleLogCall = useCallback(async (contactName: string, type: string) => {
     try {
@@ -212,6 +262,7 @@ export default function App() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <FontLink />
         <div style={{ textAlign: "center" }}>
           <div style={{ fontFamily: FS, fontSize: 24, marginBottom: 8 }}>Tony's Command Center</div>
           <div style={{ color: C.mut, fontSize: 14 }}>Loading your day...</div>
@@ -230,14 +281,8 @@ export default function App() {
     return <JournalGate onComplete={() => setView("emails")} />;
   }
 
-  // ═══ SHARED UI ELEMENTS (inlined JSX — not components, to avoid remount on every render) ═══
-  const sharedModals = (
-    <>
-      <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
-      <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
-    </>
-  );
-
+  // ═══ SHARED UI ELEMENTS ═══
+  // Note: these are JSX elements, NOT inner components — avoids unmount/remount on every render
   const sharedHeader = (
     <Header
       clock={clock}
@@ -246,13 +291,27 @@ export default function App() {
       calSide={calSide}
       eod={eod}
       customTips={customTips}
+      lastRefresh={lastRefresh}
+      refreshing={refreshing}
+      slackItems={(brief?.slackItems || []) as SlackItem[]}
+      linearItems={(brief?.linearItems || []) as LinearItem[]}
+      meetingWarning={meetingWarning}
       onSetView={v => persistView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
       onShowChat={() => setShowChat(true)}
       onEod={handleEod}
       onTipSaved={handleTipSaved}
+      onRefresh={refreshBrief}
+      onDismissWarning={() => setMeetingWarning(null)}
     />
+  );
+
+  const sharedModals = (
+    <>
+      <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
+      <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
+    </>
   );
 
   // ═══ EMAILS VIEW ═══

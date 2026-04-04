@@ -21,8 +21,9 @@ Tables (in `lib/db/src/schema/tcc.ts`):
 - `checkins` — Daily morning check-in data (sleep, habits)
 - `journals` — Journal entries + AI-formatted output
 - `ideas` — Ideas parking lot with priority
-- `contacts` — Sales contacts / CRM
-- `call_log` — Sales call tracking
+- `contacts` — Sales CRM contacts (status, pipeline stage, deal value, lead source, title, LinkedIn, website, tags, follow-up/close dates, probability)
+- `contact_notes` — Timestamped notes per contact (cascade delete)
+- `call_log` — Sales call tracking (with Claude-generated follow-up draft)
 - `email_training` — Email thumbs up/down training data
 - `daily_briefs` — Cached morning brief data
 - `task_completions` — Task completion tracking
@@ -39,7 +40,12 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 | `GET/POST /api/journal` | Journal entry |
 | `GET /api/brief/today` | Morning brief (calendar, emails, tasks) |
 | `POST /api/emails/action` | Email actions (snooze, suggest_reply, thumbs) |
-| `GET /api/contacts` | Sales contacts |
+| `GET /api/contacts` | Sales contacts (filter: status, stage, search, pagination) |
+| `GET /api/contacts/:id` | Single contact with notes + call history |
+| `POST /api/contacts` | Create contact |
+| `PATCH /api/contacts/:id` | Update contact fields |
+| `DELETE /api/contacts/:id` | Delete contact |
+| `GET/POST /api/contacts/:id/notes` | Contact notes |
 | `GET/POST /api/calls` | Call log |
 | `GET/POST /api/ideas` | Ideas parking lot |
 | `POST /api/claude` | Claude AI proxy |
@@ -70,9 +76,14 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 - Default brief data embedded in backend for day-1 experience without live integrations
 - **Slack**: Uses `SLACK_TOKEN` secret (set) — direct Slack Web API calls in `lib/slack.ts`. Supports postMessage, channel history, list channels, and search. Claude has 4 Slack tools: `send_slack_message`, `read_slack_channel`, `list_slack_channels`, `search_slack`. Note: search requires a user token (xoxp-); bot tokens (xoxb-) only support read/post.
 - **MacroDroid (Android phone bridge)**: `phone_log` table added to DB. `POST /phone-log?key=$MACRODROID_SECRET` receives call/SMS webhooks from Tony's phone. `POST /send-sms` triggers MacroDroid to send SMS natively. Secrets: `MACRODROID_SECRET` (webhook auth key), `MACRODROID_WEBHOOK_URL` (MacroDroid trigger URL). See spec for 4 macros to configure on phone.
-- **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues.
 - **AgentMail**: Connected via Replit connector (`conn_agentmail`). EOD report emails sent to tony@flipiq.com and ethan@flipiq.com.
-- Gmail/Google Calendar: Available via Replit integrations — currently using default/mock brief data.
+- **Google Calendar**: Connected via Replit connector (`conn_google-calendar_*`). Morning brief fetches real today's events live. Client in `lib/gcal.ts`.
+- **Gmail (brief + Claude tool)**: `lib/gmail.ts` supports dual-mode:
+  - Mode A (production): set 3 secrets → `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` → tokens auto-refresh, never expire. How to get them: Google Cloud Console → APIs & Services → OAuth 2.0 credentials → create a Web App client → enable Gmail API + Calendar API → use OAuth Playground (https://developers.google.com/oauthplayground) to authorize with `gmail.readonly` + `calendar` scopes → exchange for refresh token → set all 3 secrets.
+  - Mode B (connector fallback): Replit google-mail connector — has add-on scopes only (not gmail.readonly). Will fail for inbox reads. Active when Mode A secrets are NOT set.
+- **Slack (brief)**: `SLACK_TOKEN` bot token missing `channels:read` and `im:read` scopes. Brief falls back to seed. Fix: go to api.slack.com/apps → FlipIQ app → OAuth & Permissions → add Bot Token Scopes: `channels:read`, `channels:history`, `im:read`, `im:history` → reinstall app → update `SLACK_TOKEN` secret with new `xoxb-...` token. Claude tools (send, history by channel ID) work fine with current token.
+- **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues. Brief fetches assigned open issues live.
+- **Contacts DB**: 3,396 contacts total (3,381 imported from 5,344-record master list + 15 seed contacts). Import script: `lib/db/import-contacts.mjs`. Contacts API supports `?search=`, `?limit=`, `?offset=` with Hot→Warm→New priority ordering.
 
 ## Email Brain System
 

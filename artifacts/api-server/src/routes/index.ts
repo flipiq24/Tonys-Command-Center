@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import authRouter from "./tcc/auth";
 import checkinRouter from "./tcc/checkin";
 import journalRouter from "./tcc/journal";
 import briefRouter from "./tcc/brief";
@@ -14,10 +15,12 @@ import eodRouter from "./tcc/eod";
 import systemInstructionsRouter from "./tcc/system-instructions";
 import phoneLogRouter from "./tcc/phone-log";
 import sendSmsRouter from "./tcc/send-sms";
+import timeRoutingRouter from "./tcc/time-routing";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
 router.use(checkinRouter);
 router.use(journalRouter);
 router.use(briefRouter);
@@ -32,6 +35,7 @@ router.use(eodRouter);
 router.use(systemInstructionsRouter);
 router.use(phoneLogRouter);
 router.use(sendSmsRouter);
+router.use(timeRoutingRouter);
 
 // ─── Canonical aliases (spec-matching paths) ─────────────────────────────────
 // /morning-brief is registered directly in briefRouter (both /brief/today and /morning-brief)

@@ -1,4 +1,5 @@
 import { C, FS, card, btn2 } from "./constants";
+import { TimeRoutingBanner } from "./TimeRoutingBanner";
 import type { TaskItem } from "./types";
 
 interface Props {
@@ -15,6 +16,7 @@ export function TasksView({ tasks, tDone, calSide, onToggle, onSwitchToSales, on
 
   return (
     <div style={{ maxWidth: 580, margin: "24px auto", padding: "0 20px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
+      <TimeRoutingBanner />
       <div style={{ ...card, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Tasks</h3>

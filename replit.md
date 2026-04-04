@@ -84,10 +84,24 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 
 ## Claude Tool-Use (/api/claude)
 
-The `/api/claude` endpoint runs a full agentic loop with tools:
+The `/api/claude` endpoint runs a full agentic loop with 8 tools:
+- `list_recent_emails` — Read Tony's unread Gmail inbox
+- `draft_gmail_reply` — Create a Gmail draft for Tony to review
+- `get_today_calendar` — Fetch today's Google Calendar events
+- `create_calendar_event` — Schedule events on Tony's calendar
 - `send_slack_message` — Post to any Slack channel (via Replit connector)
 - `create_linear_issue` — Create Linear issues (via Replit connector)
 - `send_email` — Send email via AgentMail (via Replit connector)
 - `get_email_brain` — Retrieve Tony's learned email priority rules
 
-Tech ideas auto-trigger: Linear issue creation + Slack #tech-ideas post (gracefully skipped if Slack not connected).
+## Architecture Note: External Integration Pattern
+
+External service calls follow a hybrid pattern:
+- **Interactive / user-facing**: Routes through `/api/claude` (agentic loop) — e.g., chat, email drafts, calendar queries
+- **Automated / fire-and-forget**: Called directly in route handlers using connector libs (e.g., EOD report sends via AgentMail, Linear issue creation on Tech ideas, Slack #tech-ideas posts)
+
+This avoids unnecessary token usage for automated background actions while keeping the Claude chat interface as the primary orchestration layer for interactive requests.
+
+## View Persistence
+
+Tony resumes exactly where he left off on page refresh. The `active_view` key is stored in `system_instructions` table and restored on boot. Gates (checkin, journal) are always re-evaluated from DB records, never from persisted view state.

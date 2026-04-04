@@ -68,4 +68,26 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 - All state persists to DB (not localStorage) — resume where Tony left off on reload
 - Calendar sidebar is the only floating panel (collapsible)
 - Default brief data embedded in backend for day-1 experience without live integrations
-- External services (Gmail, Calendar, Slack, etc.) reserved for future MCP integration
+- **Slack**: Integration dismissed by user during OAuth — Slack posting is implemented in `lib/slack.ts` and gracefully skips when not connected. To enable, complete the Slack OAuth flow in Replit integrations (connector ID: `ccfg_slack_01KH7W1T1D6TGP3BJGNQ2N9PEH`) or provide a `SLACK_BOT_TOKEN` secret for a direct API approach.
+- **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues.
+- **AgentMail**: Connected via Replit connector (`conn_agentmail`). EOD report emails sent to tony@flipiq.com and ethan@flipiq.com.
+- Gmail/Google Calendar: Available via Replit integrations — currently using default/mock brief data.
+
+## Email Brain System
+
+- Thumbs 👍/👎 on emails trains a persistent "brain" in PostgreSQL
+- After each vote, Tony is prompted for a reason (optional)
+- Claude Haiku re-generates the brain summary from all training data
+- Brain stored under `system_instructions` table, section `email_brain`
+- Brain is injected into Claude's system prompt for Suggest Reply calls
+- `GET /api/emails/brain` exposes brain content + training stats
+
+## Claude Tool-Use (/api/claude)
+
+The `/api/claude` endpoint runs a full agentic loop with tools:
+- `send_slack_message` — Post to any Slack channel (via Replit connector)
+- `create_linear_issue` — Create Linear issues (via Replit connector)
+- `send_email` — Send email via AgentMail (via Replit connector)
+- `get_email_brain` — Retrieve Tony's learned email priority rules
+
+Tech ideas auto-trigger: Linear issue creation + Slack #tech-ideas post (gracefully skipped if Slack not connected).

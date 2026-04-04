@@ -1,7 +1,10 @@
-import { useState } from "react";
-import { C, F, FS, card, btn2, TIPS, SC } from "./constants";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { get } from "@/lib/api";
+import { C, F, FS, card, btn2, TIPS, SC, PIPELINE_STAGES, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
+import { ContactDrawer } from "./ContactDrawer";
+import { AddContactModal } from "./AddContactModal";
 import type { Contact, CallEntry } from "./types";
 
 interface Props {
@@ -18,57 +21,214 @@ interface Props {
   onConnectedCall?: (contact: { contactId: string; contactName: string; contactEmail?: string }) => void;
 }
 
-export function SalesView({ contacts, calls, demos, calSide, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
+const STATUS_TABS = ["All", "Hot", "Warm", "New", "Cold"] as const;
+
+function isOverdue(date?: string | null): boolean {
+  if (!date) return false;
+  return new Date(date) < new Date(new Date().toDateString());
+}
+
+export function SalesView({ contacts: initialContacts, calls, demos, calSide, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>("All");
+  const [filterStage, setFilterStage] = useState<string>("All");
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<Contact[]>(initialContacts);
+  const [total, setTotal] = useState<number | null>(null);
+  const [searching, setSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const noFilters = !search.trim() && filterStatus === "All" && filterStage === "All";
+    if (noFilters) {
+      setResults(initialContacts);
+      setTotal(null);
+    }
+  }, [initialContacts, search, filterStatus, filterStage]);
+
+  const fetchContacts = useCallback(async () => {
+    setSearching(true);
+    try {
+      const params = new URLSearchParams({ limit: "100" });
+      if (search.trim()) params.set("search", search.trim());
+      if (filterStatus !== "All") params.set("status", filterStatus);
+      if (filterStage !== "All") params.set("stage", filterStage);
+      const data = await get<{ contacts: Contact[]; total: number } | Contact[]>(`/contacts?${params}`);
+      const list = Array.isArray(data) ? data : data.contacts;
+      const tot = Array.isArray(data) ? list.length : data.total;
+      setResults(list);
+      setTotal(tot);
+    } catch { /* keep existing */ }
+    finally { setSearching(false); }
+  }, [search, filterStatus, filterStage]);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const noFilters = !search.trim() && filterStatus === "All" && filterStage === "All";
+    if (noFilters) { return; }
+    debounceRef.current = setTimeout(fetchContacts, search.trim() ? 300 : 0);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search, filterStatus, filterStage, fetchContacts]);
+
+  const handleContactUpdated = useCallback((updated: Contact) => {
+    setResults(prev => prev.map(c => String(c.id) === String(updated.id) ? updated : c));
+  }, []);
+
+  const handleContactDeleted = useCallback((id: string) => {
+    setResults(prev => prev.filter(c => String(c.id) !== id));
+    setSelectedContactId(null);
+  }, []);
+
+  const handleContactCreated = useCallback((contact: Contact) => {
+    setResults(prev => [contact, ...prev]);
+  }, []);
+
+  const overdue = results.filter(c => c.followUpDate && isOverdue(c.followUpDate)).length;
+
   return (
     <>
       {smsContact && <SmsModal contact={smsContact} onClose={() => setSmsContact(null)} />}
-      <div style={{ maxWidth: 760, margin: "24px auto", padding: "0 20px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
-        <div style={{ ...card, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Sales Mode</h3>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 13, fontWeight: 700 }}>
-              <span>Calls: {calls.length}</span>
-              <span style={{ color: C.blu }}>Demos: {demos}</span>
+      <ContactDrawer
+        contactId={selectedContactId}
+        onClose={() => setSelectedContactId(null)}
+        onUpdated={handleContactUpdated}
+        onDeleted={handleContactDeleted}
+        onAttempt={c => { onAttempt(c); setSelectedContactId(null); }}
+        onConnected={name => { onConnected(name); setSelectedContactId(null); }}
+        onSmsOpen={c => { setSmsContact(c); setSelectedContactId(null); }}
+      />
+      <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
+
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: "16px 20px 40px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
+
+        {/* ── Header ── */}
+        <div style={{ ...card, marginBottom: 12, padding: "16px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <h3 style={{ fontFamily: FS, fontSize: 18, margin: 0, color: C.tx }}>Sales Mode</h3>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.sub }}>Calls: {calls.length}</span>
+              {overdue > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.red, background: C.redBg, padding: "2px 8px", borderRadius: 6 }}>{overdue} overdue</span>}
+              <span style={{ color: C.blu, fontSize: 13, fontWeight: 700 }}>Demos: {demos}</span>
               <div style={{ display: "flex", gap: 4 }}>
                 <button onClick={() => onDemoChange(-1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.brd}`, background: C.card, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>−</button>
                 <button onClick={() => onDemoChange(1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.grn}`, background: C.grnBg, cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.grn }}>+</button>
               </div>
+              <button
+                onClick={() => setShowAddContact(true)}
+                style={{ padding: "6px 14px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}
+              >
+                + Add
+              </button>
             </div>
           </div>
-          {contacts.map(c => (
-            <div key={c.id} style={{ display: "flex", gap: 12, padding: 14, marginBottom: 6, background: "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${SC[c.status || "New"] || C.mut}`, alignItems: "center" }}>
-              <div style={{ flex: 1 }}>
+
+          {/* ── Status Tabs ── */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {STATUS_TABS.map(tab => (
+              <button
+                key={tab}
+                onClick={() => setFilterStatus(tab)}
+                style={{
+                  padding: "5px 12px", borderRadius: 8,
+                  border: `1px solid ${filterStatus === tab ? (SC[tab] || C.tx) : C.brd}`,
+                  background: filterStatus === tab
+                    ? (tab === "All" ? C.tx : tab === "Hot" ? C.redBg : tab === "Warm" ? C.ambBg : tab === "Cold" ? "#F5F5F5" : C.bluBg)
+                    : "#FAFAF8",
+                  color: filterStatus === tab ? (tab === "All" ? "#FFF" : SC[tab] || C.tx) : C.sub,
+                  fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F,
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+            <select
+              value={filterStage}
+              onChange={e => setFilterStage(e.target.value)}
+              style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${filterStage !== "All" ? C.blu : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterStage !== "All" ? C.blu : C.sub, cursor: "pointer", outline: "none", fontWeight: filterStage !== "All" ? 700 : 400 }}
+            >
+              <option value="All">All Stages</option>
+              {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          {/* ── Search ── */}
+          <div style={{ position: "relative" }}>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name, company, phone…"
+              style={{ width: "100%", border: `1px solid ${C.brd}`, borderRadius: 10, padding: "9px 36px 9px 12px", fontFamily: F, fontSize: 13, outline: "none", boxSizing: "border-box", background: "#FAFAF8" }}
+            />
+            {searching && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: C.mut }}>…</span>}
+            {search && !searching && (
+              <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: C.mut, padding: 2 }}>✕</button>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: C.mut, marginTop: 6 }}>
+            {search.trim() || filterStatus !== "All" || filterStage !== "All"
+              ? `${results.length} result${results.length !== 1 ? "s" : ""}${total && total > results.length ? ` of ${total}` : ""}`
+              : `${results.length} contacts · click any row to view details`}
+          </div>
+        </div>
+
+        {/* ── Contact List ── */}
+        {results.length === 0 && !searching && (
+          <div style={{ ...card, textAlign: "center", padding: 32, color: C.mut, fontSize: 14 }}>
+            No contacts match your filters.
+          </div>
+        )}
+        {results.map(c => {
+          const od = isOverdue(c.followUpDate);
+          return (
+            <div
+              key={c.id}
+              onClick={() => setSelectedContactId(String(c.id))}
+              style={{ display: "flex", gap: 12, padding: 14, marginBottom: 6, background: "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${SC[c.status || "New"] || C.mut}`, alignItems: "center", cursor: "pointer", transition: "box-shadow 0.15s" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.07)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "none")}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 15, fontWeight: 700 }}>{c.name}</span>
                   <span style={{ fontSize: 10, fontWeight: 700, color: SC[c.status || "New"] || C.mut, background: c.status === "Hot" ? C.redBg : c.status === "Warm" ? C.ambBg : C.bluBg, padding: "2px 8px", borderRadius: 4 }}>{c.status || "New"}</span>
+                  {c.pipelineStage && <span style={{ fontSize: 10, color: C.sub, background: "#F0EEE9", padding: "2px 6px", borderRadius: 4 }}>{c.pipelineStage}</span>}
                 </div>
-                {c.company && <div style={{ fontSize: 12, color: C.sub }}>{c.company}</div>}
-                <div style={{ fontSize: 13, marginTop: 4 }}>→ {c.nextStep}</div>
-                <div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>Last: {c.lastContactDate} · {c.phone}</div>
+                {c.company && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{c.company}</div>}
+                {c.nextStep && <div style={{ fontSize: 13, marginTop: 4, color: C.tx }}>→ {c.nextStep}</div>}
+                <div style={{ fontSize: 11, color: C.mut, marginTop: 2, display: "flex", gap: 10 }}>
+                  {c.followUpDate && <span style={{ color: od ? C.red : C.mut, fontWeight: od ? 700 : 400 }}>{od ? "⚠ OVERDUE " : "📅 "}{c.followUpDate}</span>}
+                  {!c.followUpDate && c.lastContactDate && <span>Last: {c.lastContactDate}</span>}
+                  {c.phone && <span>{c.phone}</span>}
+                </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}
+                onClick={e => e.stopPropagation()}
+              >
                 {c.phone && (
                   <a
                     href={`tel:${c.phone}`}
                     onClick={() => onAttempt({ id: c.id, name: c.name })}
-                    style={{ ...btn2, padding: "7px 12px", fontSize: 11, textDecoration: "none", display: "block", textAlign: "center" }}
+                    style={{ ...btn2, padding: "6px 10px", fontSize: 11, textDecoration: "none", display: "block", textAlign: "center" }}
                   >
                     📞 Call
                   </a>
                 )}
                 {c.phone && (
-                  <button onClick={() => setSmsContact(c)} style={{ ...btn2, padding: "7px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
+                  <button onClick={() => setSmsContact(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
                     💬 Text
                   </button>
                 )}
                 {onCompose && (
-                  <button onClick={() => onCompose(c)} style={{ ...btn2, padding: "7px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
+                  <button onClick={() => onCompose(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
                     ✉ Email
                   </button>
                 )}
                 <Tip tip={TIPS.attempt}>
-                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "7px 12px", fontSize: 11 }}>📋 Log Attempt</button>
+                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "6px 10px", fontSize: 11 }}>📋 Log Attempt</button>
                 </Tip>
                 <Tip tip={TIPS.connected}>
                   <button
@@ -79,27 +239,36 @@ export function SalesView({ contacts, calls, demos, calSide, onAttempt, onConnec
                         onConnected(c.name);
                       }
                     }}
-                    style={{ ...btn2, padding: "7px 12px", fontSize: 11, color: C.grn, borderColor: C.grn }}
+                    style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.grn, borderColor: C.grn }}
                   >
                     ✓ Connected
                   </button>
                 </Tip>
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
+
+        {/* ── Call Log ── */}
         {calls.length > 0 && (
-          <div style={{ ...card, marginBottom: 16, background: C.grnBg }}>
-            <h3 style={{ fontFamily: FS, fontSize: 17, margin: "0 0 10px" }}>Call Log ({calls.length})</h3>
+          <div style={{ ...card, marginTop: 12, background: C.grnBg, padding: "14px 20px" }}>
+            <h3 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 8px", color: C.grn }}>Today's Calls ({calls.length})</h3>
             {calls.map((cl, i) => (
-              <div key={i} style={{ fontSize: 13, padding: "3px 0", color: C.grn }}>
-                ✓ {cl.contactName} — {cl.type} {cl.createdAt ? new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : ""}
+              <div key={i} style={{ fontSize: 13, padding: "3px 0", color: C.grn, display: "flex", gap: 8 }}>
+                <span>{cl.type === "connected" ? "✓" : "📞"}</span>
+                <span style={{ fontWeight: 600 }}>{cl.contactName}</span>
+                <span style={{ color: C.sub }}>— {cl.type}</span>
+                {cl.createdAt && <span style={{ color: C.mut, marginLeft: "auto" }}>{new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}
               </div>
             ))}
           </div>
         )}
-        <button onClick={onSwitchToTasks} style={{ ...btn2, width: "100%", marginBottom: 10 }}>✅ Switch to Tasks</button>
-        <button onClick={onBackToSchedule} style={{ ...btn2, width: "100%", marginBottom: 40, color: C.mut }}>← Schedule</button>
+
+        {/* ── Footer ── */}
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button onClick={onSwitchToTasks} style={{ ...btn2, flex: 1 }}>✅ Switch to Tasks</button>
+          <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1, color: C.mut }}>← Schedule</button>
+        </div>
       </div>
     </>
   );

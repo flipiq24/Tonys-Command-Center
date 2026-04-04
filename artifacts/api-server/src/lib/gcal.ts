@@ -31,9 +31,9 @@ async function getAccessToken(): Promise<string> {
   const data = await fetch(
     "https://" + hostname + "/api/v2/connection?include_secrets=true&connector_names=google-calendar",
     { headers: { Accept: "application/json", "X-Replit-Token": xReplitToken } }
-  ).then(r => r.json());
+  ).then(r => r.json()) as { items?: typeof connectionSettings[] };
 
-  connectionSettings = data.items?.[0];
+  connectionSettings = data.items?.[0] ?? null;
 
   const accessToken =
     connectionSettings?.settings?.access_token ||

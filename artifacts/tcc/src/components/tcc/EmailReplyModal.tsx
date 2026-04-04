@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
+import { VoiceField } from "./VoiceField";
 import type { EmailItem } from "./types";
 
 interface Props {
@@ -47,7 +48,7 @@ export function EmailReplyModal({ email, onClose }: Props) {
         <p style={{ fontSize: 12, color: C.mut, margin: "0 0 12px" }}>To: {email.from} · Re: {email.subj}</p>
         {loading
           ? <div style={{ padding: 20, textAlign: "center", color: C.mut }}>AI is drafting...</div>
-          : <textarea value={draft} onChange={e => setDraft(e.target.value)} style={{ ...inp, minHeight: 140, resize: "vertical", marginBottom: 12 }} />
+          : <VoiceField as="textarea" value={draft} onChange={setDraft} style={{ ...inp, minHeight: 140, resize: "vertical", marginBottom: 12 }} />
         }
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ ...btn2, flex: 1 }}>Cancel</button>

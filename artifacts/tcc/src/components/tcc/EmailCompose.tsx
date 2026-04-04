@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { get, post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
+import { VoiceField } from "./VoiceField";
 
 interface Props {
   open: boolean;
@@ -217,7 +218,7 @@ export function EmailCompose({
 
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>Subject</label>
-              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject line" style={{ ...inp, fontSize: 14 }} />
+              <VoiceField value={subject} onChange={setSubject} placeholder="Subject line" style={{ ...inp, fontSize: 14 }} />
             </div>
 
             <div style={{ marginBottom: 4 }}>
@@ -234,16 +235,17 @@ export function EmailCompose({
 
               {/* Compose area: body + signature preview */}
               <div style={{ border: `1px solid ${C.brd}`, borderRadius: 8, background: "#FAFAF8", overflow: "hidden" }}>
-                <textarea
+                <VoiceField
+                  as="textarea"
                   value={body}
-                  onChange={e => setBody(e.target.value)}
+                  onChange={setBody}
                   placeholder={replyToSnippet ? "Write your reply…" : "Write your message…"}
                   style={{
                     width: "100%", minHeight: 160, padding: "12px 14px",
                     border: "none", outline: "none", resize: "vertical",
                     fontSize: 14, lineHeight: 1.6, fontFamily: F,
                     background: "transparent", boxSizing: "border-box",
-                  } as React.CSSProperties}
+                  }}
                 />
                 {signature && (
                   <div style={{

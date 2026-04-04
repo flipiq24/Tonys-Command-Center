@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { get, post, del, API_BASE as _API_BASE } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, inp } from "./constants";
+import { VoiceInput } from "./VoiceInput";
 
 interface Thread {
   id: string;
@@ -340,25 +341,35 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
         {/* Input area */}
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.brd}`, background: C.card }}>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={streaming ? "Claude is thinking..." : "Ask Claude anything... (Enter to send, Shift+Enter for new line)"}
-              disabled={streaming || !activeThread}
-              rows={2}
-              style={{
-                ...inp,
-                flex: 1,
-                resize: "none",
-                minHeight: 44,
-                maxHeight: 120,
-                fontSize: 14,
-                lineHeight: 1.5,
-                opacity: streaming ? 0.6 : 1,
-              }}
-            />
+            <div style={{ flex: 1, position: "relative" }}>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={streaming ? "Claude is thinking..." : "Ask Claude anything... (Enter to send, Shift+Enter for new line)"}
+                disabled={streaming || !activeThread}
+                rows={2}
+                style={{
+                  ...inp,
+                  width: "100%",
+                  resize: "none",
+                  minHeight: 44,
+                  maxHeight: 120,
+                  fontSize: 14,
+                  lineHeight: 1.5,
+                  opacity: streaming ? 0.6 : 1,
+                  paddingRight: 36,
+                  boxSizing: "border-box",
+                }}
+              />
+              <div style={{ position: "absolute", right: 7, top: 8 }}>
+                <VoiceInput
+                  onTranscript={t => setInput(prev => prev ? prev + " " + t : t)}
+                  size={24}
+                />
+              </div>
+            </div>
             <button
               onClick={sendMessage}
               disabled={streaming || !input.trim() || !activeThread}

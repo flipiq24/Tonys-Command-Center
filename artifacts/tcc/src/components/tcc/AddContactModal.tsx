@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, PIPELINE_STAGES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES, LEAD_SOURCES } from "./constants";
-import { VoiceInput } from "./VoiceInput";
+import { VoiceField } from "./VoiceField";
 import type { Contact } from "./types";
 
 interface Props {
@@ -204,16 +204,16 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 14 }}>
             <label style={lbl}>Full Name *</label>
-            <input value={form.name} onChange={set("name")} style={inp} placeholder="Jane Smith" autoFocus />
+            <VoiceField value={form.name} onChange={v => setForm(p => ({ ...p, name: v }))} style={inp} placeholder="Jane Smith" autoFocus />
           </div>
           <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
             <div style={{ flex: 1 }}>
               <label style={lbl}>Company</label>
-              <input value={form.company} onChange={set("company")} style={inp} placeholder="Acme Corp" />
+              <VoiceField value={form.company} onChange={v => setForm(p => ({ ...p, company: v }))} style={inp} placeholder="Acme Corp" />
             </div>
             <div style={{ flex: 1 }}>
               <label style={lbl}>Title / Role</label>
-              <input value={form.title} onChange={set("title")} style={inp} placeholder="CEO" />
+              <VoiceField value={form.title} onChange={v => setForm(p => ({ ...p, title: v }))} style={inp} placeholder="CEO" />
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -264,21 +264,15 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
             </select>
           </div>
 
-          {/* ── Voice Notes ── */}
           <div style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-              <label style={lbl}>Notes</label>
-              <VoiceInput
-                onTranscript={t => setForm(prev => ({ ...prev, notes: prev.notes ? prev.notes + " " + t : t }))}
-                size={30}
-              />
-            </div>
-            <textarea
+            <label style={lbl}>Notes</label>
+            <VoiceField
+              as="textarea"
               value={form.notes}
-              onChange={set("notes")}
+              onChange={v => setForm(p => ({ ...p, notes: v }))}
               rows={3}
               placeholder="Tap the mic to speak notes, or type here…"
-              style={{ ...inp, resize: "vertical", lineHeight: 1.5, fontSize: 13 } as React.CSSProperties}
+              style={{ ...inp, resize: "vertical", lineHeight: 1.5, fontSize: 13 }}
             />
           </div>
 

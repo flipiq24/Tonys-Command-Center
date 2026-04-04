@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { get, patch, post, del } from "@/lib/api";
 import { C, F, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
+import { VoiceField } from "./VoiceField";
 import type { Contact, ContactNote, CallEntry } from "./types";
 
 interface Props {
@@ -209,9 +210,10 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   {/* Quick Note */}
                   <div style={{ marginBottom: 16, padding: "12px 14px", background: "#FAFAF8", borderRadius: 10, border: `1px solid ${C.brd}` }}>
                     <label style={lbl}>Quick Note</label>
-                    <textarea
+                    <VoiceField
+                      as="textarea"
                       value={noteText}
-                      onChange={e => setNoteText(e.target.value)}
+                      onChange={setNoteText}
                       onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddNote(); }}
                       rows={2}
                       placeholder="Jot a note… (⌘↵ to save)"
@@ -293,7 +295,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
 
                   <div style={fieldRow}>
                     <label style={lbl}>Next Step</label>
-                    <textarea value={draft.nextStep ?? ""} onChange={e => updateDraft("nextStep", e.target.value)} rows={2} style={{ ...inp, resize: "vertical" }} placeholder="What's the next action?" />
+                    <VoiceField as="textarea" value={draft.nextStep ?? ""} onChange={v => updateDraft("nextStep", v)} rows={2} style={{ ...inp, resize: "vertical" }} placeholder="What's the next action?" />
                   </div>
 
                   <hr style={{ border: "none", borderTop: `1px solid ${C.brd}`, margin: "14px 0" }} />
@@ -301,17 +303,17 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                     <div style={{ flex: 1 }}>
                       <label style={lbl}>Name</label>
-                      <input value={draft.name ?? ""} onChange={e => updateDraft("name", e.target.value)} style={inp} />
+                      <VoiceField value={draft.name ?? ""} onChange={v => updateDraft("name", v)} style={inp} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={lbl}>Title / Role</label>
-                      <input value={draft.title ?? ""} onChange={e => updateDraft("title", e.target.value)} style={inp} placeholder="CEO, Broker…" />
+                      <VoiceField value={draft.title ?? ""} onChange={v => updateDraft("title", v)} style={inp} placeholder="CEO, Broker…" />
                     </div>
                   </div>
 
                   <div style={fieldRow}>
                     <label style={lbl}>Company</label>
-                    <input value={draft.company ?? ""} onChange={e => updateDraft("company", e.target.value)} style={inp} />
+                    <VoiceField value={draft.company ?? ""} onChange={v => updateDraft("company", v)} style={inp} />
                   </div>
 
                   <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -337,12 +339,12 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
 
                   <div style={fieldRow}>
                     <label style={lbl}>Tags (comma-separated)</label>
-                    <input value={(draft.tags ?? []).join(", ")} onChange={e => updateDraft("tags", e.target.value.split(",").map(t => t.trim()).filter(Boolean))} style={inp} placeholder="investor, warm, referral…" />
+                    <VoiceField value={(draft.tags ?? []).join(", ")} onChange={v => updateDraft("tags", v.split(",").map(t => t.trim()).filter(Boolean))} style={inp} placeholder="investor, warm, referral…" />
                   </div>
 
                   <div style={fieldRow}>
                     <label style={lbl}>Notes</label>
-                    <textarea value={draft.notes ?? ""} onChange={e => updateDraft("notes", e.target.value)} rows={3} style={{ ...inp, resize: "vertical" }} placeholder="Internal notes about this contact…" />
+                    <VoiceField as="textarea" value={draft.notes ?? ""} onChange={v => updateDraft("notes", v)} rows={3} style={{ ...inp, resize: "vertical" }} placeholder="Internal notes about this contact…" />
                   </div>
 
                   <div style={fieldRow}>
@@ -359,9 +361,10 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
               {activeTab === "notes" && (
                 <>
                   <div style={{ marginBottom: 16 }}>
-                    <textarea
+                    <VoiceField
+                      as="textarea"
                       value={noteText}
-                      onChange={e => setNoteText(e.target.value)}
+                      onChange={setNoteText}
                       onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddNote(); }}
                       rows={3}
                       placeholder="Add a note… (⌘↵ to save)"

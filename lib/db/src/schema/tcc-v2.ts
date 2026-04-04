@@ -114,6 +114,7 @@ export const taskWorkNotesTable = pgTable("task_work_notes", {
   note: text("note").notNull(),
   progress: integer("progress").default(0),
   nextSessionDate: date("next_session_date"),
+  nextSteps: text("next_steps"),
   driveFileId: text("drive_file_id"),
   driveFileName: text("drive_file_name"),
   driveLinkUrl: text("drive_link_url"),

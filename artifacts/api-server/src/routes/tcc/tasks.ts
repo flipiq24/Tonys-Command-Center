@@ -57,11 +57,12 @@ router.delete("/tasks/completed/:taskId", async (req, res): Promise<void> => {
 // ── Work Notes ──────────────────────────────────────────────────────────────
 
 router.post("/tasks/work-note", async (req, res): Promise<void> => {
-  const { taskId, note, progress, nextSessionDate, driveFileId, driveFileName, driveLinkUrl } = req.body as {
+  const { taskId, note, progress, nextSessionDate, nextSteps, driveFileId, driveFileName, driveLinkUrl } = req.body as {
     taskId?: string;
     note?: string;
     progress?: number;
     nextSessionDate?: string;
+    nextSteps?: string;
     driveFileId?: string;
     driveFileName?: string;
     driveLinkUrl?: string;
@@ -88,6 +89,7 @@ router.post("/tasks/work-note", async (req, res): Promise<void> => {
       note: note.trim(),
       progress: pct,
       nextSessionDate: pct < 100 ? (nextSessionDate || null) : null,
+      nextSteps: nextSteps?.trim() || null,
       driveFileId: driveFileId || null,
       driveFileName: driveFileName || null,
       driveLinkUrl: driveLinkUrl || null,

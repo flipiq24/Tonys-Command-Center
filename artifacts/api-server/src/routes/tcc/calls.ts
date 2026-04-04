@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, callLogTable } from "@workspace/db";
 import { LogCallBody } from "@workspace/api-zod";
-import { gte } from "drizzle-orm";
+import { gte, eq } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
@@ -40,18 +40,29 @@ router.post("/calls", async (req, res): Promise<void> => {
 
   if (type === "attempt" && instructions) {
     try {
-      await anthropic.messages.create({
+      const msg = await anthropic.messages.create({
         model: "claude-haiku-4-5",
-        max_tokens: 8192,
+        max_tokens: 1024,
         messages: [
           {
             role: "user",
-            content: `Tony Diaz (FlipIQ) tried to call ${contactName} but got no answer. 
+            content: `Tony Diaz (FlipIQ CEO) tried to call ${contactName} but got no answer.
 Tony's instructions: "${instructions}"
-Draft a brief follow-up email based on these instructions. Keep it short and professional.`,
+Draft a brief, professional follow-up email (3-4 sentences max). Plain text only, no subject line.`,
           },
         ],
       });
+
+      const draftText = msg.content.find(b => b.type === "text")?.text?.trim();
+
+      if (draftText) {
+        const [updated] = await db.update(callLogTable)
+          .set({ followUpText: draftText, followUpSent: false })
+          .where(eq(callLogTable.id, call.id))
+          .returning();
+        res.status(201).json(updated ?? call);
+        return;
+      }
     } catch (err) {
       req.log.warn({ err }, "Claude follow-up email failed");
     }

@@ -175,6 +175,30 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
               animation: "fadeIn 0.12s ease-out",
             }}>
 
+              {/* Refresh status row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px 10px", borderBottom: `1px solid ${C.brd}`, marginBottom: 4 }}>
+                <span style={{ fontSize: 12, color: C.mut, fontFamily: F }}>
+                  {refreshing ? (
+                    <span style={{ color: C.blu, fontWeight: 600 }}>⟳ Refreshing…</span>
+                  ) : lastRefresh ? (
+                    `· Updated ${lastRefresh}`
+                  ) : "Not yet refreshed"}
+                </span>
+                <button
+                  onClick={() => { if (!refreshing && onRefresh) { setOpen(false); onRefresh(SOURCES.map(s => s.id)); } }}
+                  disabled={refreshing}
+                  title="Refresh all sources"
+                  style={{
+                    background: "none", border: `1px solid ${C.brd}`, borderRadius: 6,
+                    padding: "3px 10px", fontSize: 13, color: refreshing ? C.mut : C.blu,
+                    cursor: refreshing ? "default" : "pointer", fontFamily: F,
+                    opacity: refreshing ? 0.5 : 1,
+                  }}
+                >
+                  ↻
+                </button>
+              </div>
+
               {/* Nav */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
               {menuItem("📅", "Schedule", null, () => onSetView("schedule"))}

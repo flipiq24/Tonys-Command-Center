@@ -130,6 +130,16 @@ router.get("/tasks/local", async (req, res): Promise<void> => {
   res.json(tasks);
 });
 
+router.patch("/tasks/local/:id", async (req, res): Promise<void> => {
+  const { id } = req.params;
+  const { status } = req.body as { status?: string };
+  await db
+    .update(localTasksTable)
+    .set({ status: status || "done" })
+    .where(eq(localTasksTable.id, id));
+  res.json({ ok: true });
+});
+
 const CreateTaskBody = z.object({
   text: z.string().min(1, "text is required"),
   dueDate: z.string().optional(),

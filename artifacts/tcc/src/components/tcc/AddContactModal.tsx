@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
-import { C, F, FS, PIPELINE_STAGES, STATUS_OPTIONS } from "./constants";
+import { C, F, FS, PIPELINE_STAGES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES, LEAD_SOURCES } from "./constants";
 import type { Contact } from "./types";
 
 interface Props {
@@ -21,7 +21,7 @@ const lbl: React.CSSProperties = {
 export function AddContactModal({ open, onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     name: "", company: "", title: "", phone: "", email: "",
-    status: "New", pipelineStage: "Lead", leadSource: "",
+    status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -44,9 +44,11 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
         status: form.status,
         pipelineStage: form.pipelineStage,
         leadSource: form.leadSource || undefined,
+        type: form.type || undefined,
+        category: form.category || undefined,
       });
       onCreated(contact);
-      setForm({ name: "", company: "", title: "", phone: "", email: "", status: "New", pipelineStage: "Lead", leadSource: "" });
+      setForm({ name: "", company: "", title: "", phone: "", email: "", status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "" });
       onClose();
     } catch {
       setError("Failed to create contact");
@@ -109,11 +111,27 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
               </select>
             </div>
           </div>
+          <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <label style={lbl}>Contact Type</label>
+              <select value={form.type} onChange={set("type")} style={{ ...inp, cursor: "pointer" }}>
+                <option value="">— Select —</option>
+                {CONTACT_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={lbl}>Category</label>
+              <select value={form.category} onChange={set("category")} style={{ ...inp, cursor: "pointer" }}>
+                <option value="">— Select —</option>
+                {CONTACT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
           <div style={{ marginBottom: 20 }}>
             <label style={lbl}>Lead Source</label>
             <select value={form.leadSource} onChange={set("leadSource")} style={{ ...inp, cursor: "pointer" }}>
               <option value="">— Select —</option>
-              {["LinkedIn", "Referral", "Cold Outreach", "Event", "Website", "Partner", "Other"].map(s => <option key={s}>{s}</option>)}
+              {LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
           {error && <div style={{ color: C.red, fontSize: 13, marginBottom: 12 }}>{error}</div>}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { get } from "@/lib/api";
-import { C, F, FS, card, btn2, TIPS, SC, PC, PCBg, PIPELINE_STAGES } from "./constants";
+import { C, F, FS, card, btn2, TIPS, SC, PC, PCBg, PIPELINE_STAGES, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
 import { ContactDrawer } from "./ContactDrawer";
@@ -148,6 +148,8 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [filterStatus, setFilterStatus] = useState<string>("All");
   const [filterStage, setFilterStage] = useState<string>("All");
+  const [filterType, setFilterType] = useState<string>("All");
+  const [filterCategory, setFilterCategory] = useState<string>("All");
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Contact[]>(initialContacts);
   const [total, setTotal] = useState<number | null>(null);
@@ -156,11 +158,11 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!search && filterStatus === "All" && filterStage === "All") {
+    if (!search && filterStatus === "All" && filterStage === "All" && filterType === "All" && filterCategory === "All") {
       setResults(initialContacts);
       setLocalContacts(initialContacts);
     }
-  }, [initialContacts, search, filterStatus, filterStage]);
+  }, [initialContacts, search, filterStatus, filterStage, filterType, filterCategory]);
 
   const fetchContacts = useCallback(async () => {
     setSearching(true);
@@ -170,6 +172,8 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
       if (search.trim()) params.set("search", search.trim());
       if (filterStatus !== "All") params.set("status", filterStatus);
       if (filterStage !== "All") params.set("stage", filterStage);
+      if (filterType !== "All") params.set("type", filterType);
+      if (filterCategory !== "All") params.set("category", filterCategory);
       const data = await get<{ contacts: Contact[]; total: number } | Contact[]>(`/contacts?${params}`);
       const list = Array.isArray(data) ? data : data.contacts;
       const tot = Array.isArray(data) ? list.length : data.total;
@@ -182,11 +186,11 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
       setTotal(tot);
     } catch { /* keep existing */ }
     finally { setSearching(false); }
-  }, [search, filterStatus, filterStage, viewMode]);
+  }, [search, filterStatus, filterStage, filterType, filterCategory, viewMode]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    const noFilters = !search.trim() && filterStatus === "All" && filterStage === "All";
+    const noFilters = !search.trim() && filterStatus === "All" && filterStage === "All" && filterType === "All" && filterCategory === "All";
     if (noFilters && viewMode === "list") {
       setResults(initialContacts);
       setTotal(null);
@@ -195,7 +199,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
     const timeout = search.trim() ? 300 : 0;
     debounceRef.current = setTimeout(fetchContacts, timeout);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search, filterStatus, filterStage, viewMode, fetchContacts, initialContacts]);
+  }, [search, filterStatus, filterStage, filterType, filterCategory, viewMode, fetchContacts, initialContacts]);
 
   const handleContactUpdated = useCallback((updated: Contact) => {
     setLocalContacts(prev => prev.map(c => String(c.id) === String(updated.id) ? updated : c));
@@ -279,6 +283,22 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
               <option value="All">All Stages</option>
               {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <select
+              value={filterType}
+              onChange={e => setFilterType(e.target.value)}
+              style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${filterType !== "All" ? C.amb : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterType !== "All" ? C.amb : C.sub, cursor: "pointer", outline: "none", fontWeight: filterType !== "All" ? 700 : 400 }}
+            >
+              <option value="All">All Types</option>
+              {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${filterCategory !== "All" ? "#7B1FA2" : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterCategory !== "All" ? "#7B1FA2" : C.sub, cursor: "pointer", outline: "none", fontWeight: filterCategory !== "All" ? 700 : 400 }}
+            >
+              <option value="All">All Categories</option>
+              {CONTACT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
 
           <div style={{ position: "relative" }}>
@@ -294,7 +314,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
           </div>
 
           <div style={{ fontSize: 11, color: C.mut, marginTop: 8 }}>
-            {search.trim() || filterStatus !== "All" || filterStage !== "All"
+            {search.trim() || filterStatus !== "All" || filterStage !== "All" || filterType !== "All" || filterCategory !== "All"
               ? `${displayedContacts.length} result${displayedContacts.length !== 1 ? "s" : ""}${total && total > displayedContacts.length ? ` of ${total}` : ""}`
               : `${displayedContacts.length} contacts · Hot → Warm → New`}
           </div>

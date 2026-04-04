@@ -5,7 +5,7 @@ import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
 const router: IRouter = Router();
 
 router.get("/contacts", async (req, res): Promise<void> => {
-  const { status, stage, search, limit = "50", offset = "0" } = req.query as Record<string, string>;
+  const { status, stage, type, category, search, limit = "50", offset = "0" } = req.query as Record<string, string>;
   const lim = Math.min(parseInt(limit) || 50, 200);
   const off = parseInt(offset) || 0;
 
@@ -13,6 +13,8 @@ router.get("/contacts", async (req, res): Promise<void> => {
 
   if (status && status !== "All") conditions.push(eq(contactsTable.status, status));
   if (stage && stage !== "All") conditions.push(eq(contactsTable.pipelineStage, stage));
+  if (type && type !== "All") conditions.push(eq(contactsTable.type, type));
+  if (category && category !== "All") conditions.push(eq(contactsTable.category, category));
 
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
@@ -83,6 +85,7 @@ router.post("/contacts", async (req, res): Promise<void> => {
     phone: body.phone ? String(body.phone) : undefined,
     email: body.email ? String(body.email) : undefined,
     type: body.type ? String(body.type) : undefined,
+    category: body.category ? String(body.category) : undefined,
     title: body.title ? String(body.title) : undefined,
     nextStep: body.nextStep ? String(body.nextStep) : undefined,
     notes: body.notes ? String(body.notes) : undefined,
@@ -116,6 +119,7 @@ router.patch("/contacts/:id", async (req, res): Promise<void> => {
   if ("phone" in body) updateFields.phone = body.phone ? String(body.phone) : null;
   if ("email" in body) updateFields.email = body.email ? String(body.email) : null;
   if ("type" in body) updateFields.type = body.type ? String(body.type) : null;
+  if ("category" in body) updateFields.category = body.category ? String(body.category) : null;
   if ("title" in body) updateFields.title = body.title ? String(body.title) : null;
   if ("nextStep" in body) updateFields.nextStep = body.nextStep ? String(body.nextStep) : null;
   if ("lastContactDate" in body) updateFields.lastContactDate = body.lastContactDate ? String(body.lastContactDate) : null;

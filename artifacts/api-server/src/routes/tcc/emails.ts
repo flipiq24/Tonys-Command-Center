@@ -1,9 +1,24 @@
 import { Router, type IRouter } from "express";
-import { db, emailTrainingTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { db, emailTrainingTable, emailSnoozesTable } from "@workspace/db";
 import { EmailActionBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
+
+router.get("/emails/snoozed", async (req, res): Promise<void> => {
+  const today = new Date().toISOString().split("T")[0];
+  const snoozes = await db
+    .select()
+    .from(emailSnoozesTable)
+    .where(eq(emailSnoozesTable.date, today));
+
+  const snoozed: Record<number, string> = {};
+  for (const s of snoozes) {
+    snoozed[s.emailId] = s.snoozeUntil;
+  }
+  res.json(snoozed);
+});
 
 router.post("/emails/action", async (req, res): Promise<void> => {
   const parsed = EmailActionBody.safeParse(req.body);
@@ -12,7 +27,7 @@ router.post("/emails/action", async (req, res): Promise<void> => {
     return;
   }
 
-  const { action, emailId, sender, subject, reason } = parsed.data;
+  const { action, emailId, sender, subject, reason, snoozeUntil } = parsed.data;
 
   if (action === "thumbs_up" || action === "thumbs_down") {
     await db.insert(emailTrainingTable).values({
@@ -26,6 +41,16 @@ router.post("/emails/action", async (req, res): Promise<void> => {
   }
 
   if (action === "snooze") {
+    if (emailId !== null && emailId !== undefined) {
+      const today = new Date().toISOString().split("T")[0];
+      await db
+        .insert(emailSnoozesTable)
+        .values({
+          date: today,
+          emailId,
+          snoozeUntil: snoozeUntil || "tomorrow",
+        });
+    }
     res.json({ ok: true, message: `Email ${emailId} snoozed` });
     return;
   }

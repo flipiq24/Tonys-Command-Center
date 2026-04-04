@@ -1,0 +1,106 @@
+import { useState } from "react";
+import { post } from "@/lib/api";
+import { FontLink } from "./FontLink";
+import { C, F, FS, TODAY_STR, card, inp, btn1, btn2, lbl } from "./constants";
+
+interface CheckinState {
+  bed: string; wake: string; sleep: string;
+  bible: boolean; workout: boolean; journal: boolean;
+  nut: string; unplug: boolean; done: boolean;
+}
+
+interface Props {
+  initial: CheckinState;
+  onComplete: (ck: CheckinState) => void;
+}
+
+export function CheckinGate({ initial, onComplete }: Props) {
+  const [ck, setCk] = useState<CheckinState>(initial);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [clock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+
+  const upCk = (k: keyof CheckinState, v: unknown) => {
+    const u = { ...ck, [k]: v } as CheckinState;
+    if (u.bed && u.wake) {
+      try {
+        const parse = (t: string) => {
+          const m = t.match(/(\d+):?(\d*)\s*(am|pm)?/i);
+          if (!m) return 0;
+          let h = +m[1]; const mn = m[2] ? +m[2] : 0;
+          if (m[3]?.toLowerCase() === "pm" && h < 12) h += 12;
+          if (m[3]?.toLowerCase() === "am" && h === 12) h = 0;
+          return h + mn / 60;
+        };
+        let d = parse(u.wake) - parse(u.bed);
+        if (d < 0) d += 24;
+        u.sleep = d.toFixed(1);
+      } catch { /* ignore */ }
+    }
+    setCk(u);
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await post("/checkin", {
+        bedtime: ck.bed, waketime: ck.wake, sleepHours: ck.sleep || undefined,
+        bible: ck.bible, workout: ck.workout, journal: ck.journal,
+        nutrition: ck.nut, unplug: ck.unplug,
+      });
+      const done = { ...ck, done: true };
+      setCk(done);
+      onComplete(done);
+    } catch {
+      setError("Failed to save check-in. Please try again.");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <FontLink />
+      <div style={{ ...card, padding: "36px 40px", maxWidth: 480, width: "100%" }}>
+        <h1 style={{ fontFamily: FS, fontSize: 28, margin: 0 }}>Morning Check-in</h1>
+        <p style={{ color: C.mut, margin: "6px 0 0", fontSize: 13 }}>{TODAY_STR} · {clock}</p>
+        <p style={{ fontFamily: FS, fontSize: 14, color: C.sub, fontStyle: "italic", margin: "12px 0 24px", borderLeft: `3px solid ${C.brd}`, paddingLeft: 12 }}>
+          "Follow the plan I gave you!" — God
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 18 }}>
+          <div><label style={lbl}>Bedtime</label><input style={inp} placeholder="10:30 PM" value={ck.bed} onChange={e => upCk("bed", e.target.value)} /></div>
+          <div><label style={lbl}>Wake time</label><input style={inp} placeholder="6:00 AM" value={ck.wake} onChange={e => upCk("wake", e.target.value)} /></div>
+        </div>
+        {ck.sleep && (
+          <div style={{ background: +ck.sleep >= 7 ? C.grnBg : C.ambBg, borderRadius: 10, padding: "10px 16px", marginBottom: 18, fontSize: 14, fontWeight: 600, color: +ck.sleep >= 7 ? C.grn : C.amb }}>
+            Sleep: {ck.sleep}h {+ck.sleep < 7 ? "⚠️" : "✓"}
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+          {([["bible", "Bible"], ["workout", "Workout"], ["journal", "Journal"], ["unplug", "Unplug 6PM"]] as [keyof CheckinState, string][]).map(([k, l]) => (
+            <button key={k} onClick={() => upCk(k, !ck[k])}
+              style={{ padding: 13, borderRadius: 12, border: `2px solid ${ck[k] ? C.grn : C.brd}`, background: ck[k] ? C.grnBg : C.card, color: ck[k] ? C.grn : C.sub, cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F }}>
+              {ck[k] ? "✓ " : ""}{l}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <label style={lbl}>Yesterday's Nutrition</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["Good", "OK", "Bad"].map(n => (
+              <button key={n} onClick={() => upCk("nut", n)}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: `2px solid ${ck.nut === n ? (n === "Good" ? C.grn : n === "OK" ? C.amb : C.red) : C.brd}`, background: ck.nut === n ? (n === "Good" ? C.grnBg : n === "OK" ? C.ambBg : C.redBg) : C.card, color: ck.nut === n ? (n === "Good" ? C.grn : n === "OK" ? C.amb : C.red) : C.sub, cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F }}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+        {error && <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 13 }}>{error}</div>}
+        <button onClick={submit} disabled={saving}
+          style={{ ...btn1, width: "100%", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Saving..." : "Let's Go →"}
+        </button>
+      </div>
+    </div>
+  );
+}

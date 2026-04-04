@@ -21,7 +21,7 @@ interface Props {
   onConnectedCall?: (contact: { contactId: string; contactName: string; contactEmail?: string }) => void;
 }
 
-const STATUS_TABS = ["All", "Hot", "Warm", "New", "Cold"] as const;
+const STATUS_OPTIONS = ["All", "Hot", "Warm", "New", "Cold"] as const;
 
 function isOverdue(date?: string | null): boolean {
   if (!date) return false;
@@ -34,19 +34,22 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
   const [showAddContact, setShowAddContact] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("All");
   const [filterStage, setFilterStage] = useState<string>("All");
+  const [filterType, setFilterType] = useState<string>("All");
+  const [filterCategory, setFilterCategory] = useState<string>("All");
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Contact[]>(initialContacts);
   const [total, setTotal] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const hasFilters = !!(search.trim() || filterStatus !== "All" || filterStage !== "All" || filterType !== "All" || filterCategory !== "All");
+
   useEffect(() => {
-    const noFilters = !search.trim() && filterStatus === "All" && filterStage === "All";
-    if (noFilters) {
+    if (!hasFilters) {
       setResults(initialContacts);
       setTotal(null);
     }
-  }, [initialContacts, search, filterStatus, filterStage]);
+  }, [initialContacts, hasFilters]);
 
   const fetchContacts = useCallback(async () => {
     setSearching(true);
@@ -55,6 +58,8 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
       if (search.trim()) params.set("search", search.trim());
       if (filterStatus !== "All") params.set("status", filterStatus);
       if (filterStage !== "All") params.set("stage", filterStage);
+      if (filterType !== "All") params.set("type", filterType);
+      if (filterCategory !== "All") params.set("category", filterCategory);
       const data = await get<{ contacts: Contact[]; total: number } | Contact[]>(`/contacts?${params}`);
       const list = Array.isArray(data) ? data : data.contacts;
       const tot = Array.isArray(data) ? list.length : data.total;
@@ -62,15 +67,14 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
       setTotal(tot);
     } catch { /* keep existing */ }
     finally { setSearching(false); }
-  }, [search, filterStatus, filterStage]);
+  }, [search, filterStatus, filterStage, filterType, filterCategory]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    const noFilters = !search.trim() && filterStatus === "All" && filterStage === "All";
-    if (noFilters) { return; }
+    if (!hasFilters) { return; }
     debounceRef.current = setTimeout(fetchContacts, search.trim() ? 300 : 0);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search, filterStatus, filterStage, fetchContacts]);
+  }, [search, filterStatus, filterStage, filterType, filterCategory, fetchContacts, hasFilters]);
 
   const handleContactUpdated = useCallback((updated: Contact) => {
     setResults(prev => prev.map(c => String(c.id) === String(updated.id) ? updated : c));
@@ -124,33 +128,47 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
             </div>
           </div>
 
-          {/* ── Status Tabs ── */}
-          <div style={{ display: "flex", gap: 4, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-            {STATUS_TABS.map(tab => (
-              <button
-                key={tab}
-                onClick={() => setFilterStatus(tab)}
-                style={{
-                  padding: "5px 12px", borderRadius: 8,
-                  border: `1px solid ${filterStatus === tab ? (SC[tab] || C.tx) : C.brd}`,
-                  background: filterStatus === tab
-                    ? (tab === "All" ? C.tx : tab === "Hot" ? C.redBg : tab === "Warm" ? C.ambBg : tab === "Cold" ? "#F5F5F5" : C.bluBg)
-                    : "#FAFAF8",
-                  color: filterStatus === tab ? (tab === "All" ? "#FFF" : SC[tab] || C.tx) : C.sub,
-                  fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F,
-                }}
-              >
-                {tab}
-              </button>
-            ))}
+          {/* ── Filters ── */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterStatus !== "All" ? C.red : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterStatus !== "All" ? C.red : C.sub, cursor: "pointer", outline: "none", fontWeight: filterStatus !== "All" ? 700 : 400 }}
+            >
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === "All" ? "All Statuses" : s}</option>)}
+            </select>
             <select
               value={filterStage}
               onChange={e => setFilterStage(e.target.value)}
-              style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${filterStage !== "All" ? C.blu : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterStage !== "All" ? C.blu : C.sub, cursor: "pointer", outline: "none", fontWeight: filterStage !== "All" ? 700 : 400 }}
+              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterStage !== "All" ? C.blu : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterStage !== "All" ? C.blu : C.sub, cursor: "pointer", outline: "none", fontWeight: filterStage !== "All" ? 700 : 400 }}
             >
               <option value="All">All Stages</option>
               {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <select
+              value={filterType}
+              onChange={e => setFilterType(e.target.value)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterType !== "All" ? C.amb : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterType !== "All" ? C.amb : C.sub, cursor: "pointer", outline: "none", fontWeight: filterType !== "All" ? 700 : 400 }}
+            >
+              <option value="All">All Types</option>
+              {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              value={filterCategory}
+              onChange={e => setFilterCategory(e.target.value)}
+              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterCategory !== "All" ? "#7B1FA2" : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterCategory !== "All" ? "#7B1FA2" : C.sub, cursor: "pointer", outline: "none", fontWeight: filterCategory !== "All" ? 700 : 400 }}
+            >
+              <option value="All">All Categories</option>
+              {CONTACT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {hasFilters && (
+              <button
+                onClick={() => { setFilterStatus("All"); setFilterStage("All"); setFilterType("All"); setFilterCategory("All"); setSearch(""); }}
+                style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "#FAFAF8", color: C.mut, fontSize: 12, cursor: "pointer", fontFamily: F }}
+              >
+                Clear
+              </button>
+            )}
           </div>
 
           {/* ── Search ── */}
@@ -168,7 +186,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
             )}
           </div>
           <div style={{ fontSize: 11, color: C.mut, marginTop: 6 }}>
-            {search.trim() || filterStatus !== "All" || filterStage !== "All"
+            {hasFilters
               ? `${results.length} result${results.length !== 1 ? "s" : ""}${total && total > results.length ? ` of ${total}` : ""}`
               : `${results.length} contacts · click any row to view details`}
           </div>

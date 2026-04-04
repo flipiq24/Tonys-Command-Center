@@ -19,6 +19,7 @@ interface Props {
   onToggleCal: () => void;
   onShowIdea: () => void;
   onShowChat: () => void;
+  onShowCheckin: () => void;
   onEod: () => void;
   onTipSaved: (key: string, text: string) => void;
   onRefresh?: (sources: string[]) => void;
@@ -43,7 +44,7 @@ const topLevel = (items: { level: string }[]) => {
   return "low";
 };
 
-export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning }: Props) {
+export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onShowCheckin, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning }: Props) {
   const [open, setOpen] = useState(false);
   const [showRefresh, setShowRefresh] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>(
@@ -206,6 +207,7 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
 
               {/* Nav */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
+              {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
               {menuItem("✉️", "Emails", unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
               {menuItem("📞", "Sales", null, () => onSetView("sales"))}
               {menuItem("✅", "Tasks", null, () => onSetView("tasks"))}

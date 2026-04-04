@@ -430,6 +430,7 @@ export default function App() {
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
       onShowChat={() => { setChatContext(null); persistView("chat"); }}
+      onShowCheckin={() => persistView("checkin")}
       onEod={handleEod}
       onTipSaved={handleTipSaved}
       onRefresh={refreshBrief}

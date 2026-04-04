@@ -55,13 +55,17 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [hasChanges, setHasChanges] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity" | "meetings">("details");
+  const [meetings, setMeetings] = useState<{ id: string; date: string; contactName: string | null; summary: string | null; nextSteps: string | null; outcome: string | null }[]>([]);
+  const [meetingsLoaded, setMeetingsLoaded] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); return; }
+    if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); setMeetings([]); setMeetingsLoaded(false); return; }
     setLoading(true);
     setActiveTab("details");
+    setMeetings([]);
+    setMeetingsLoaded(false);
     get<Contact & { _notes: ContactNote[]; _calls: CallEntry[] }>(`/contacts/${contactId}`)
       .then(data => {
         const { _notes, _calls, ...c } = data;
@@ -74,6 +78,13 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [contactId]);
+
+  useEffect(() => {
+    if (activeTab !== "meetings" || meetingsLoaded || !contact?.name) return;
+    get<typeof meetings>(`/meeting-history?contactName=${encodeURIComponent(contact.name)}&limit=20`)
+      .then(rows => { setMeetings(rows ?? []); setMeetingsLoaded(true); })
+      .catch(() => { setMeetingsLoaded(true); });
+  }, [activeTab, meetingsLoaded, contact]);
 
   const updateDraft = useCallback((field: keyof Contact, value: unknown) => {
     setDraft(prev => ({ ...prev, [field]: value }));
@@ -185,9 +196,9 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                 </div>
               )}
               <div style={{ display: "flex", gap: 0, borderTop: `1px solid ${C.brd}`, marginTop: 4 }}>
-                {(["details", "notes", "activity"] as const).map(tab => (
-                  <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: "10px 4px", background: "none", border: "none", borderBottom: activeTab === tab ? `2px solid ${C.tx}` : "2px solid transparent", fontFamily: F, fontSize: 12, fontWeight: 700, color: activeTab === tab ? C.tx : C.mut, cursor: "pointer", textTransform: "capitalize", letterSpacing: 0.5 }}>
-                    {tab === "notes" ? `Notes (${notes.length})` : tab === "activity" ? `Activity (${calls.length})` : "Details"}
+                {(["details", "notes", "activity", "meetings"] as const).map(tab => (
+                  <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: "10px 2px", background: "none", border: "none", borderBottom: activeTab === tab ? `2px solid ${C.tx}` : "2px solid transparent", fontFamily: F, fontSize: 11, fontWeight: 700, color: activeTab === tab ? C.tx : C.mut, cursor: "pointer", textTransform: "capitalize", letterSpacing: 0.4 }}>
+                    {tab === "notes" ? `Notes (${notes.length})` : tab === "activity" ? `Activity (${calls.length})` : tab === "meetings" ? `Meetings${meetingsLoaded ? ` (${meetings.length})` : ""}` : "Details"}
                   </button>
                 ))}
               </div>
@@ -406,6 +417,37 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   </>
                 );
               })()}
+              {activeTab === "meetings" && (
+                <>
+                  {!meetingsLoaded ? (
+                    <div style={{ color: C.mut, fontSize: 13, textAlign: "center", padding: "24px 0" }}>Loading…</div>
+                  ) : meetings.length === 0 ? (
+                    <div style={{ color: C.mut, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
+                      No meeting history yet.<br />
+                      <span style={{ fontSize: 12 }}>Ask the AI to log a meeting after your next call.</span>
+                    </div>
+                  ) : (
+                    meetings.map(m => (
+                      <div key={m.id} style={{ padding: "12px 14px", background: "#FAFAF8", borderRadius: 10, marginBottom: 10, borderLeft: `3px solid ${C.blu}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                          {m.date}
+                        </div>
+                        {m.summary && <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5, marginBottom: 4 }}>{m.summary}</div>}
+                        {m.nextSteps && (
+                          <div style={{ fontSize: 12, color: C.grn, marginTop: 4 }}>
+                            <span style={{ fontWeight: 700 }}>Next Steps: </span>{m.nextSteps}
+                          </div>
+                        )}
+                        {m.outcome && (
+                          <div style={{ fontSize: 11, fontWeight: 700, marginTop: 6, padding: "2px 8px", background: C.grnBg, color: C.grn, borderRadius: 4, display: "inline-block" }}>
+                            {m.outcome}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </>
+              )}
             </div>
           </>
         ) : (

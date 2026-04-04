@@ -91,16 +91,22 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
     const messages = list.data.messages || [];
     if (messages.length === 0) return { important: [], fyi: [] };
 
+    // Fetch all message details in parallel — avoids N+1 sequential awaits
+    const details = await Promise.all(
+      messages.slice(0, 12).map(msg =>
+        gmail.users.messages.get({
+          userId: "me",
+          id: msg.id!,
+          format: "metadata",
+          metadataHeaders: ["From", "Subject", "Date"],
+        })
+      )
+    );
+
     const rawEmails: { from: string; subject: string; snippet: string; date: string }[] = [];
-    for (const msg of messages.slice(0, 12)) {
-      const detail = await gmail.users.messages.get({
-        userId: "me",
-        id: msg.id!,
-        format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date"],
-      });
-      const headers = detail.data.payload?.headers || [];
-      const hdr = (name: string) => headers.find(h => h.name === name)?.value || "";
+    for (const detail of details) {
+      const hdrs = detail.data.payload?.headers || [];
+      const hdr = (name: string) => hdrs.find(h => h.name === name)?.value || "";
       rawEmails.push({
         from: hdr("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim(),
         subject: hdr("Subject"),

@@ -44,6 +44,11 @@ Thumbs.db
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
+# Environment files — NEVER commit secrets
+.env
+.env.*
+!.env.example
+
 # Replit
 .cache/
 .local/

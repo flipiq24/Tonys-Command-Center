@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import authRouter from "./tcc/auth";
 import checkinRouter from "./tcc/checkin";
 import journalRouter from "./tcc/journal";
 import briefRouter from "./tcc/brief";
@@ -18,6 +19,7 @@ import sendSmsRouter from "./tcc/send-sms";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
 router.use(checkinRouter);
 router.use(journalRouter);
 router.use(briefRouter);

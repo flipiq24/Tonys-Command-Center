@@ -257,14 +257,8 @@ export default function App() {
   }
 
   // ═══ SHARED UI ELEMENTS ═══
-  const SharedModals = () => (
-    <>
-      <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
-      <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
-    </>
-  );
-
-  const SharedHeader = () => (
+  // Note: these are JSX elements, NOT inner components — avoids unmount/remount on every render
+  const sharedHeader = (
     <Header
       clock={clock}
       ideas={ideas}
@@ -284,11 +278,18 @@ export default function App() {
     />
   );
 
+  const sharedModals = (
+    <>
+      <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
+      <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
+    </>
+  );
+
   // ═══ EMAILS VIEW ═══
   if (view === "emails") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
-      <SharedModals />
+      {sharedHeader}
+      {sharedModals}
       <EmailsView
         emailsImportant={brief?.emailsImportant || []}
         emailsFyi={brief?.emailsFyi || []}
@@ -304,9 +305,9 @@ export default function App() {
   // ═══ SALES VIEW ═══
   if (view === "sales") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
+      {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
-      <SharedModals />
+      {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
       <SalesView
         contacts={contacts}
@@ -326,9 +327,9 @@ export default function App() {
   // ═══ TASKS VIEW ═══
   if (view === "tasks") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
+      {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
-      <SharedModals />
+      {sharedModals}
       <TasksView
         tasks={brief?.tasks || []}
         tDone={tDone}
@@ -343,9 +344,9 @@ export default function App() {
   // ═══ SCHEDULE VIEW (default) ═══
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
+      {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
-      <SharedModals />
+      {sharedModals}
       <ScheduleView
         items={brief?.calendarData || []}
         onEnterSales={() => { persistView("sales"); setCalSide(true); }}

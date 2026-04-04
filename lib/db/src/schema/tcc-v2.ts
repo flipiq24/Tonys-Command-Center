@@ -118,3 +118,16 @@ export const taskWorkNotesTable = pgTable("task_work_notes", {
   index("idx_twn_task").on(table.taskId),
   index("idx_twn_date").on(table.date),
 ]);
+
+export const localTasksTable = pgTable("local_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  text: text("text").notNull(),
+  dueDate: date("due_date"),
+  priority: integer("priority").default(50),
+  status: text("status").default("active"),
+  overrideWarning: text("override_warning"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_lt_status").on(table.status),
+  index("idx_lt_due").on(table.dueDate),
+]);

@@ -31,7 +31,7 @@ export const PCBg: Record<string, string> = {
 
 export const LEAD_SOURCES = ["LinkedIn", "Referral", "Cold Outreach", "Event", "Website", "Partner", "Other"] as const;
 export const STATUS_OPTIONS = ["Hot", "Warm", "New", "Cold"] as const;
-export const CONTACT_TYPES = ["Operator/Investor", "Institutional Investor", "Investor", "Broker/Investor", "Wholesaler", "Lender/Affiliate", "Agent", "Other"] as const;
+export const CONTACT_TYPES = ["OPERATOR-INVESTOR", "Institutional Investor", "Investor", "Broker/Investor", "Wholesaler", "Lender/Affiliate", "Agent", "Other"] as const;
 export const CONTACT_CATEGORIES = [
   "A — Priority Pipeline",
   "C — Institutional Investor",

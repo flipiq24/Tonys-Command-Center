@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, taskCompletionsTable } from "@workspace/db";
 import { MarkTaskCompleteBody } from "@workspace/api-zod";
 import { gte } from "drizzle-orm";
+import { getLinearIssues } from "../../lib/linear";
 
 const router: IRouter = Router();
 
@@ -33,6 +34,28 @@ router.post("/tasks/completed", async (req, res): Promise<void> => {
     .returning();
 
   res.status(201).json(completion);
+});
+
+// Pull active issues from Linear to surface as tasks in TCC checklist
+router.get("/tasks/linear", async (req, res): Promise<void> => {
+  try {
+    const issues = await getLinearIssues();
+    // Map to TCC task format
+    const tasks = issues.map(issue => ({
+      id: `linear-${issue.id}`,
+      text: `[${issue.identifier}] ${issue.title}`,
+      cat: "TECH",
+      state: issue.state?.name ?? "In Progress",
+      priority: issue.priority,
+      linearId: issue.id,
+      linearIdentifier: issue.identifier,
+      source: "linear" as const,
+    }));
+    res.json(tasks);
+  } catch (err) {
+    req.log.warn({ err }, "Linear tasks fetch failed");
+    res.json([]);
+  }
 });
 
 export default router;

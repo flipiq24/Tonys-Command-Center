@@ -174,8 +174,9 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
 
               {/* Navigate */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
-              {menuItem("✉️", "Emails", unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
               {menuItem("📞", "Sales", null, () => onSetView("sales"))}
+              {menuItem("📅", "Calendar", null, () => onToggleCal(), calSide ? C.blu : undefined)}
+              {menuItem("✉️", "Emails", unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
               {menuItem("✅", "Tasks", null, () => onSetView("tasks"))}
               {menuItem("💬", "AI Chat", null, () => onShowChat())}
 
@@ -184,7 +185,6 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
               {menuItem("💡", "Ideas", null, () => onShowIdea())}
-              {menuItem("📅", "Calendar sidebar", null, () => onToggleCal(), calSide ? C.blu : undefined)}
               {slackItems.length > 0 && menuItem(
                 "💬",
                 `Slack · ${slackItems.length} item${slackItems.length > 1 ? "s" : ""}`,

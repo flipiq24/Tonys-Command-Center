@@ -11,6 +11,7 @@ import claudeRouter from "./tcc/claude";
 import demosRouter from "./tcc/demos";
 import tasksRouter from "./tcc/tasks";
 import eodRouter from "./tcc/eod";
+import systemInstructionsRouter from "./tcc/system-instructions";
 
 const router: IRouter = Router();
 
@@ -26,6 +27,7 @@ router.use(claudeRouter);
 router.use(demosRouter);
 router.use(tasksRouter);
 router.use(eodRouter);
+router.use(systemInstructionsRouter);
 
 // ─── Canonical aliases (spec-matching paths) ─────────────────────────────────
 // /morning-brief is registered directly in briefRouter (both /brief/today and /morning-brief)

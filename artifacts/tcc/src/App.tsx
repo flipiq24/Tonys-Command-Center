@@ -65,6 +65,13 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
 
+  // Custom instructions (Ctrl+hover editable tooltips)
+  const [customTips, setCustomTips] = useState<Record<string, string>>({});
+
+  const handleTipSaved = useCallback((key: string, text: string) => {
+    setCustomTips(prev => ({ ...prev, [key]: text }));
+  }, []);
+
   useEffect(() => {
     const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
     return () => clearInterval(i);
@@ -74,7 +81,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [checkin, journal, briefData, callData, ideaData, demoData, snoozedData, taskData] = await Promise.all([
+        const [checkin, journal, briefData, callData, ideaData, demoData, snoozedData, taskData, instructionsData] = await Promise.all([
           get<{ id?: string; done?: boolean; bedtime?: string; waketime?: string; sleepHours?: string; bible?: boolean; workout?: boolean; journal?: boolean; nutrition?: string; unplug?: boolean }>("/checkin/today").catch(() => null),
           get<{ formattedText?: string; rawText?: string }>("/journal/today").catch(() => null),
           get<DailyBrief>("/brief/today").catch(() => null),
@@ -83,6 +90,7 @@ export default function App() {
           get<{ count: number }>("/demos/count").catch(() => ({ count: 0 })),
           get<Record<number, string>>("/emails/snoozed").catch(() => ({})),
           get<{ taskId: string }[]>("/tasks/completed").catch(() => []),
+          get<Record<string, string>>("/system-instructions").catch(() => ({})),
         ]);
 
         if (checkin?.id) {
@@ -116,6 +124,9 @@ export default function App() {
           const done: Record<string, boolean> = {};
           for (const t of taskData) done[t.taskId] = true;
           setTDone(done);
+        }
+        if (instructionsData && Object.keys(instructionsData).length > 0) {
+          setCustomTips(instructionsData);
         }
       } catch {
         /* start fresh */
@@ -217,11 +228,13 @@ export default function App() {
       unresolved={unresolved}
       calSide={calSide}
       eod={eod}
+      customTips={customTips}
       onSetView={v => setView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
       onShowChat={() => setShowChat(true)}
       onEod={handleEod}
+      onTipSaved={handleTipSaved}
     />
   );
 
@@ -234,8 +247,10 @@ export default function App() {
         emailsImportant={brief?.emailsImportant || []}
         emailsFyi={brief?.emailsFyi || []}
         snoozed={snoozed}
+        customTips={customTips}
         onSnooze={handleSnooze}
         onDone={() => setView("schedule")}
+        onTipSaved={handleTipSaved}
       />
     </div>
   );

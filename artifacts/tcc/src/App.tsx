@@ -566,6 +566,7 @@ export default function App() {
         items={brief?.calendarData || []}
         onEnterSales={() => { persistView("sales"); setCalSide(true); }}
         onEnterTasks={() => { persistView("tasks"); setCalSide(true); }}
+        onRefresh={() => refreshBrief(["calendar"])}
       />
     </div>
   );

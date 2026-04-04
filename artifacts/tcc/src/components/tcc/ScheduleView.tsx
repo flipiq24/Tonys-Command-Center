@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { C, F, FS, btn1, btn2 } from "./constants";
 import type { CalItem } from "./types";
 import { DeepLink } from "./DeepLink";
+import { AddScheduleItemWizard } from "./AddScheduleItemWizard";
 
 interface Props {
   items: CalItem[];
   onEnterSales: () => void;
   onEnterTasks: () => void;
+  onRefresh?: () => Promise<void>;
 }
 
 const HOUR_HEIGHT = 72;
@@ -97,9 +99,21 @@ function getCalendarUrl(ev: CalItem): string {
   return "https://calendar.google.com";
 }
 
-export function ScheduleView({ items, onEnterSales, onEnterTasks }: Props) {
+export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: Props) {
   const [nowMin, setNowMin] = useState(getNowMinutes);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const nowRef = useRef<HTMLDivElement>(null);
+
+  const handleRefresh = async () => {
+    if (refreshing || !onRefresh) return;
+    setRefreshing(true);
+    try { await onRefresh(); } finally { setRefreshing(false); }
+  };
+
+  const handleWizardSaved = async () => {
+    if (onRefresh) await onRefresh();
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNowMin(getNowMinutes()), 30000);
@@ -171,8 +185,37 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks }: Props) {
             </span>
           )}
           <span style={{ fontSize: 12, color: C.mut }}>{items.length} events</span>
+          <button
+            onClick={() => setShowWizard(true)}
+            title="Add schedule item"
+            style={{
+              padding: "6px 14px", borderRadius: 8,
+              background: C.tx, color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F,
+            }}
+          >+ Add</button>
+          {onRefresh && (
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Refresh schedule"
+              style={{
+                background: "none", border: "none", cursor: refreshing ? "default" : "pointer",
+                fontSize: 16, color: C.blu, padding: "2px 4px", lineHeight: 1,
+                opacity: refreshing ? 0.5 : 1,
+                animation: refreshing ? "spin 1s linear infinite" : "none",
+              }}
+            >↻</button>
+          )}
         </div>
       </div>
+
+      {showWizard && (
+        <AddScheduleItemWizard
+          onClose={() => setShowWizard(false)}
+          onSaved={handleWizardSaved}
+        />
+      )}
 
       {items.length === 0 ? (
         <div style={{

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { post, get } from "@/lib/api";
+import { post, get, patch } from "@/lib/api";
 import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
 import { VoiceField } from "./VoiceField";
 import { TimeRoutingBanner } from "./TimeRoutingBanner";
@@ -74,7 +74,8 @@ function ProgressBar({ pct, size = "md" }: { pct: number; size?: "sm" | "md" }) 
 export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, onBackToSchedule, onPrint }: Props) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
-  const [localTasksLoaded, setLocalTasksLoaded] = useState(false);
+  const [localDone, setLocalDone] = useState<Set<string>>(new Set());
+  const [localRefreshing, setLocalRefreshing] = useState(false);
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
   const [workNotePct, setWorkNotePct] = useState<number>(25);
@@ -83,13 +84,27 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [noteHistory, setNoteHistory] = useState<Record<string, WorkNote[]>>({});
   const [noteError, setNoteError] = useState("");
 
-  useEffect(() => {
-    if (localTasksLoaded) return;
-    get<LocalTask[]>("/tasks/local").then(rows => {
+  const fetchLocalTasks = async () => {
+    try {
+      const rows = await get<LocalTask[]>("/tasks/local");
       setLocalTasks(rows);
-      setLocalTasksLoaded(true);
-    }).catch(() => setLocalTasksLoaded(true));
-  }, [localTasksLoaded]);
+    } catch { /* ok */ }
+  };
+
+  useEffect(() => { fetchLocalTasks(); }, []);
+
+  const refreshLocalTasks = async () => {
+    setLocalRefreshing(true);
+    await fetchLocalTasks();
+    setLocalRefreshing(false);
+  };
+
+  const completeLocalTask = async (id: string) => {
+    setLocalDone(prev => new Set([...prev, id]));
+    try {
+      await patch(`/tasks/local/${id}`, { status: "done" });
+    } catch { /* optimistic, ignore */ }
+  };
 
   const doneCount = Object.values(tDone).filter(Boolean).length;
   const activeTasks = tasks.filter(t => !tDone[t.id]);
@@ -143,7 +158,10 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
     setSavingNote(false);
   };
 
-  const overallPct = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0;
+  const activeLocalTasks = localTasks.filter(t => !localDone.has(t.id));
+  const totalTasks = tasks.length + activeLocalTasks.length;
+  const totalDone = doneCount + (localTasks.length - activeLocalTasks.length);
+  const overallPct = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
 
   return (
     <>
@@ -160,7 +178,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.5)", marginBottom: 2 }}>Today's Tasks</div>
               <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 800, color: "#fff" }}>
-                {doneCount} of {tasks.length} done
+                {totalDone} of {totalTasks} done
               </div>
             </div>
             <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
@@ -177,6 +195,55 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
           <ProgressBar pct={overallPct} />
         </div>
+
+        {/* ── My Live Tasks (created via + New Task) ─────── */}
+        {(activeLocalTasks.length > 0 || localRefreshing) && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingLeft: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.blu }}>
+                ⚡ My Tasks — {activeLocalTasks.length} active
+              </div>
+              <button
+                onClick={refreshLocalTasks}
+                disabled={localRefreshing}
+                style={{ background: "none", border: "none", cursor: localRefreshing ? "default" : "pointer", fontSize: 15, color: C.blu, padding: "0 2px", opacity: localRefreshing ? 0.5 : 1, animation: localRefreshing ? "spin 1s linear infinite" : "none" }}
+              >↻</button>
+            </div>
+            {activeLocalTasks.map(t => {
+              const done = localDone.has(t.id);
+              return (
+                <div key={t.id} style={{
+                  display: "flex", alignItems: "flex-start", gap: 12,
+                  padding: "14px 16px", marginBottom: 8, borderRadius: 14,
+                  background: done ? C.grnBg : "#F0F7FF",
+                  border: `1.5px solid ${done ? C.grn : C.blu}33`,
+                  borderLeft: `4px solid ${done ? C.grn : C.blu}`,
+                  opacity: done ? 0.6 : 1,
+                }}>
+                  <button
+                    onClick={() => !done && completeLocalTask(t.id)}
+                    style={{
+                      width: 22, height: 22, borderRadius: "50%", border: `2px solid ${done ? C.grn : C.blu}`,
+                      background: done ? C.grn : "transparent", color: done ? "#fff" : C.blu,
+                      cursor: done ? "default" : "pointer", flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 12, fontWeight: 900, padding: 0,
+                    }}
+                  >{done ? "✓" : ""}</button>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: done ? C.grn : C.tx, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>{t.text}</div>
+                    {t.dueDate && (
+                      <div style={{ fontSize: 11, color: C.mut, marginTop: 3 }}>
+                        Due: {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </div>
+                    )}
+                    {t.overrideWarning && <div style={{ fontSize: 11, color: C.amb, marginTop: 2 }}>⚠️ {t.overrideWarning}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* ── Focus Zone ─────────────────────────────────── */}
         <div style={{ marginBottom: 8 }}>
@@ -326,30 +393,6 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         )}
 
-        {/* ── Local Tasks ───────────────────────────────── */}
-        {localTasks.length > 0 && (
-          <div style={{ ...card, marginBottom: 16, border: `1px solid ${C.brd}` }}>
-            <h4 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 12px", color: C.sub }}>
-              My Tasks ({localTasks.length})
-            </h4>
-            {localTasks.map(t => (
-              <div key={t.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "11px 14px", marginBottom: 6, background: "#FAFAF8", borderRadius: 12, border: `1px solid ${C.brd}`, borderLeft: `3px solid ${C.blu}` }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>TASK</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: C.tx }}>{t.text}</div>
-                  {t.dueDate && (
-                    <div style={{ fontSize: 11, color: C.mut, marginTop: 3 }}>
-                      Due: {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                    </div>
-                  )}
-                  {t.overrideWarning && (
-                    <div style={{ fontSize: 11, color: C.amb, marginTop: 3 }}>⚠️ Added with priority override</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
         <button onClick={onSwitchToSales} style={{ ...btn2, width: "100%", marginBottom: 10, borderRadius: 12, padding: "12px 0", fontWeight: 700 }}>📞 Sales Mode</button>
         <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>

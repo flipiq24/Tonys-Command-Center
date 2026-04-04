@@ -131,3 +131,23 @@ export const localTasksTable = pgTable("local_tasks", {
   index("idx_lt_status").on(table.status),
   index("idx_lt_due").on(table.dueDate),
 ]);
+
+export const manualScheduleEventsTable = pgTable("manual_schedule_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull(),
+  time: text("time").notNull(),
+  timeEnd: text("time_end"),
+  title: text("title").notNull(),
+  type: text("type").notNull(),
+  category: text("category").notNull(),
+  importance: text("importance").default("mid"),
+  person: text("person"),
+  contactId: uuid("contact_id"),
+  description: text("description"),
+  briefing: text("briefing"),
+  forcedOverride: integer("forced_override").default(0),
+  overrideReason: text("override_reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_mse_date").on(table.date),
+]);

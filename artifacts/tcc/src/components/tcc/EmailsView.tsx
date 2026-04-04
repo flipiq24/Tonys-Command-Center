@@ -28,7 +28,22 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
   const [training, setTraining] = useState<TrainingState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [nwPickEmailId, setNwPickEmailId] = useState<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function getNextWeekDay(dayOffset: number): Date {
+    // dayOffset: 0=Mon 1=Tue 2=Wed 3=Thu 4=Fri
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun 1=Mon ... 6=Sat
+    const daysToNextMon = day === 0 ? 1 : 8 - day;
+    const d = new Date(now);
+    d.setDate(now.getDate() + daysToNextMon + dayOffset);
+    return d;
+  }
+  const NW_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  function toDateStr(d: Date) {
+    return d.toISOString().split("T")[0];
+  }
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
@@ -72,7 +87,7 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
 
   return (
     <>
-      <EmailReplyModal email={replyEmail} onClose={() => setReplyEmail(null)} />
+      <EmailReplyModal email={replyEmail} onClose={() => setReplyEmail(null)} onSnooze={onSnooze} />
       <div style={{ maxWidth: 680, margin: "24px auto", padding: "0 20px" }}>
         <div style={{ ...card, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -126,17 +141,18 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
                   </SmartTip>
                   <SmartTip tipKey="snooze" tip={tip("snooze")} onSaved={onTipSaved}>
                     <select onChange={ev => {
-                      if (ev.target.value) {
-                        onSnooze(e.id, ev.target.value);
-                        post("/emails/action", { action: "snooze", emailId: e.id, snoozeUntil: ev.target.value }).catch(() => {});
-                        ev.target.value = "";
-                      }
+                      const val = ev.target.value;
+                      ev.target.value = "";
+                      if (!val) return;
+                      if (val === "nw") { setNwPickEmailId(e.id); return; }
+                      onSnooze(e.id, val);
+                      post("/emails/action", { action: "snooze", emailId: e.id, snoozeUntil: val }).catch(() => {});
                     }} defaultValue="" style={{ ...btn2, padding: "5px 8px", fontSize: 11 }}>
                       <option value="">Snooze...</option>
                       <option value="1h">1 hour</option>
                       <option value="2h">2 hours</option>
                       <option value="tom">Tomorrow</option>
-                      <option value="nw">Next week</option>
+                      <option value="nw">Next week →</option>
                     </select>
                   </SmartTip>
 
@@ -159,6 +175,44 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
                     }}>👎</button>
                 </div>
               </div>
+
+              {/* Next-week day picker */}
+              {nwPickEmailId === e.id && (
+                <div style={{ margin: "8px 0 2px", padding: "12px 14px", background: C.bluBg, borderRadius: 12, border: `1.5px solid ${C.blu}33` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                    Pick a day next week
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {NW_DAYS.map((label, i) => {
+                      const d = getNextWeekDay(i);
+                      const dateStr = toDateStr(d);
+                      return (
+                        <button
+                          key={label}
+                          onClick={() => {
+                            onSnooze(e.id, dateStr);
+                            post("/emails/action", { action: "snooze", emailId: e.id, snoozeUntil: dateStr }).catch(() => {});
+                            setNwPickEmailId(null);
+                          }}
+                          style={{
+                            flex: 1, minWidth: 52, padding: "8px 4px", borderRadius: 10,
+                            border: `1.5px solid ${C.blu}55`, background: C.card,
+                            color: C.blu, fontFamily: F, fontSize: 11, fontWeight: 700,
+                            cursor: "pointer", textAlign: "center", lineHeight: 1.4,
+                          }}
+                        >
+                          <div>{label}</div>
+                          <div style={{ fontSize: 10, fontWeight: 500, color: C.mut }}>{d.getMonth() + 1}/{d.getDate()}</div>
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => setNwPickEmailId(null)}
+                      style={{ padding: "8px 10px", borderRadius: 10, border: `1px solid ${C.brd}`, background: "none", color: C.mut, fontFamily: F, fontSize: 11, cursor: "pointer" }}
+                    >✕</button>
+                  </div>
+                </div>
+              )}
 
               {/* Inline training reason capture */}
               {training && training.emailId === e.id && !training.saved && (
@@ -223,13 +277,72 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
         </div>
 
         <div style={{ ...card, marginBottom: 16 }}>
-          <h3 style={{ fontFamily: FS, fontSize: 19, margin: "0 0 14px" }}>FYI — No Reply Needed</h3>
-          {emailsFyi.map(e => (
-            <div key={e.id} style={{ padding: "10px 0", borderBottom: `1px solid ${C.brd}` }}>
-              <div style={{ fontSize: 14 }}><strong>{e.from}</strong> — {e.subj}</div>
-              <div style={{ fontSize: 12, color: C.mut, marginTop: 2 }}>{e.why}</div>
-            </div>
-          ))}
+          {/* FYI header */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
+            <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>FYI</h3>
+            <span style={{ fontSize: 13, color: C.mut, fontFamily: F }}>{emailsFyi.length} email{emailsFyi.length !== 1 ? "s" : ""} · no reply needed</span>
+          </div>
+
+          {emailsFyi.length === 0 && (
+            <div style={{ fontSize: 13, color: C.mut, padding: "8px 0" }}>No FYI emails right now.</div>
+          )}
+
+          {emailsFyi.map(e => {
+            const subjectLower = (e.subj || "").toLowerCase();
+            const whyLower = (e.why || "").toLowerCase();
+            const isContract = /contract|agreement|sign|signature|nda|escrow|closing|addendum|addend/.test(subjectLower + " " + whyLower);
+            const isHot = !isContract && (e.p === "high" || /urgent|deadline|immediate|time.?sensitive|critical/.test(whyLower));
+            const senderName = e.from.replace(/<[^>]+>/, "").trim() || e.from;
+            const url = gmailUrl(e);
+
+            if (isContract) {
+              return (
+                <div key={e.id} style={{
+                  marginBottom: 10, padding: "12px 14px", borderRadius: 12,
+                  border: `1.5px solid ${C.amb}55`, background: C.ambBg,
+                  borderLeft: `4px solid ${C.amb}`,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: C.amb, textTransform: "uppercase", letterSpacing: 0.8, background: `${C.amb}22`, padding: "2px 8px", borderRadius: 20 }}>📄 Contract</span>
+                    {e.time && <span style={{ fontSize: 11, color: C.mut, marginLeft: "auto" }}>{e.time}</span>}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.tx, fontFamily: F }}>{senderName}</div>
+                      <div style={{ fontSize: 13, color: C.sub, marginTop: 2, fontFamily: F }}>{e.subj}</div>
+                      {e.why && <div style={{ fontSize: 12, color: C.mut, marginTop: 5, fontFamily: F }}>{e.why}</div>}
+                    </div>
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 11, color: C.amb, fontWeight: 700, textDecoration: "none", flexShrink: 0, padding: "4px 10px", border: `1.5px solid ${C.amb}55`, borderRadius: 20 }}>
+                      Open →
+                    </a>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={e.id} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 0", borderBottom: `1px solid ${C.brd}`,
+              }}>
+                {isHot
+                  ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, flexShrink: 0, display: "inline-block" }} />
+                  : <span style={{ width: 8, flexShrink: 0 }} />
+                }
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: C.tx, fontFamily: F, flexShrink: 0, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{senderName}</span>
+                    <span style={{ fontSize: 12, color: C.sub, fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>— {e.subj}</span>
+                  </div>
+                </div>
+                {e.time && <span style={{ fontSize: 11, color: C.mut, flexShrink: 0, whiteSpace: "nowrap" }}>{e.time}</span>}
+                <a href={url} target="_blank" rel="noopener noreferrer"
+                  title="Open in Gmail"
+                  style={{ fontSize: 14, color: C.blu, textDecoration: "none", flexShrink: 0, lineHeight: 1 }}>✉</a>
+              </div>
+            );
+          })}
         </div>
 
         <button onClick={onDone} style={{ ...btn1, width: "100%", marginBottom: 40 }}>

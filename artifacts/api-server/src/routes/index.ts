@@ -12,6 +12,8 @@ import demosRouter from "./tcc/demos";
 import tasksRouter from "./tcc/tasks";
 import eodRouter from "./tcc/eod";
 import systemInstructionsRouter from "./tcc/system-instructions";
+import phoneLogRouter from "./tcc/phone-log";
+import sendSmsRouter from "./tcc/send-sms";
 
 const router: IRouter = Router();
 
@@ -28,6 +30,8 @@ router.use(demosRouter);
 router.use(tasksRouter);
 router.use(eodRouter);
 router.use(systemInstructionsRouter);
+router.use(phoneLogRouter);
+router.use(sendSmsRouter);
 
 // ─── Canonical aliases (spec-matching paths) ─────────────────────────────────
 // /morning-brief is registered directly in briefRouter (both /brief/today and /morning-brief)

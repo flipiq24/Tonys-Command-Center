@@ -139,6 +139,19 @@ export const eodReportsTable = pgTable("eod_reports", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const phoneLogTable = pgTable("phone_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contactId: uuid("contact_id").references(() => contactsTable.id),
+  contactName: text("contact_name"),
+  phoneNumber: text("phone_number").notNull(),
+  type: text("type").notNull(), // 'call_outbound' | 'call_inbound' | 'sms_outbound' | 'sms_inbound'
+  durationSeconds: integer("duration_seconds"),
+  smsBody: text("sms_body"),
+  matched: boolean("matched").default(false),
+  loggedAt: timestamp("logged_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertCheckinSchema = createInsertSchema(checkinsTable).omit({ id: true, createdAt: true });
 export const insertJournalSchema = createInsertSchema(journalsTable).omit({ id: true, createdAt: true });
 export const insertIdeaSchema = createInsertSchema(ideasTable).omit({ id: true, createdAt: true });
@@ -161,3 +174,4 @@ export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
 export type DailyBrief = typeof dailyBriefsTable.$inferSelect;
 export type Demo = typeof demosTable.$inferSelect;
 export type EodReport = typeof eodReportsTable.$inferSelect;
+export type PhoneLog = typeof phoneLogTable.$inferSelect;

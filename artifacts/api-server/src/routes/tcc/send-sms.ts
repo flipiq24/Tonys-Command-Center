@@ -1,25 +1,20 @@
 import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
-const SendSmsBody = z.object({
-  phone_number: z.string(),
-  message: z.string(),
-  contact_id: z.string().optional(),
-});
-
 // ─── POST /send-sms — triggers MacroDroid to send SMS from Tony's phone ───────
 router.post("/send-sms", async (req, res): Promise<void> => {
-  const parsed = SendSmsBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "invalid body" });
+  const body = req.body as Record<string, unknown>;
+  const phone_number = body["phone_number"] as string;
+  const message = body["message"] as string;
+  const contact_id = body["contact_id"] as string | undefined;
+
+  if (!phone_number || !message) {
+    res.status(400).json({ error: "phone_number and message required" });
     return;
   }
-
-  const { phone_number, message, contact_id } = parsed.data;
   const webhookUrl = process.env.MACRODROID_WEBHOOK_URL;
 
   let macrodroidOk = false;

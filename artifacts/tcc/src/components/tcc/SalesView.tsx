@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { C, F, FS, card, btn2, TIPS, SC } from "./constants";
 import { Tip } from "./Tip";
+import { SmsModal } from "./SmsModal";
 import type { Contact, CallEntry } from "./types";
 
 interface Props {
@@ -7,6 +9,7 @@ interface Props {
   calls: CallEntry[];
   demos: number;
   calSide: boolean;
+  apiBase: string;
   onAttempt: (contact: { id: string | number; name: string }) => void;
   onConnected: (contactName: string) => void;
   onDemoChange: (delta: number) => void;
@@ -14,8 +17,11 @@ interface Props {
   onBackToSchedule: () => void;
 }
 
-export function SalesView({ contacts, calls, demos, calSide, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule }: Props) {
+export function SalesView({ contacts, calls, demos, calSide, apiBase, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule }: Props) {
+  const [smsContact, setSmsContact] = useState<Contact | null>(null);
   return (
+    <>
+    {smsContact && <SmsModal contact={smsContact} apiBase={apiBase} onClose={() => setSmsContact(null)} />}
     <div style={{ maxWidth: 760, margin: "24px auto", padding: "0 20px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
       <div style={{ ...card, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -41,8 +47,24 @@ export function SalesView({ contacts, calls, demos, calSide, onAttempt, onConnec
               <div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>Last: {c.lastContactDate} · {c.phone}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
+              {/* Native call — opens Android dialer */}
+              {c.phone && (
+                <a
+                  href={`tel:${c.phone}`}
+                  onClick={() => onAttempt({ id: c.id, name: c.name })}
+                  style={{ ...btn2, padding: "7px 12px", fontSize: 11, textDecoration: "none", display: "block", textAlign: "center" }}
+                >
+                  📞 Call
+                </a>
+              )}
+              {/* SMS compose modal → MacroDroid → phone sends SMS */}
+              {c.phone && (
+                <button onClick={() => setSmsContact(c)} style={{ ...btn2, padding: "7px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
+                  💬 Text
+                </button>
+              )}
               <Tip tip={TIPS.attempt}>
-                <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "7px 12px", fontSize: 11 }}>📞 Attempt</button>
+                <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "7px 12px", fontSize: 11 }}>📋 Attempt</button>
               </Tip>
               <Tip tip={TIPS.connected}>
                 <button onClick={() => onConnected(c.name)} style={{ ...btn2, padding: "7px 12px", fontSize: 11, color: C.grn, borderColor: C.grn }}>✓ Connected</button>
@@ -64,5 +86,6 @@ export function SalesView({ contacts, calls, demos, calSide, onAttempt, onConnec
       <button onClick={onSwitchToTasks} style={{ ...btn2, width: "100%", marginBottom: 10 }}>✅ Switch to Tasks</button>
       <button onClick={onBackToSchedule} style={{ ...btn2, width: "100%", marginBottom: 40, color: C.mut }}>← Schedule</button>
     </div>
+    </>
   );
 }

@@ -434,7 +434,24 @@ export const taskWorkNotesTable = pgTable("task_work_notes", {
 ]);
 ```
 
-### Step 7: Add `status` column to the existing contacts table
+### Step 7: Create Pacific timezone utility
+
+**Create NEW file: `artifacts/api-server/src/lib/dates.ts`** (if it doesn't already exist)
+
+```typescript
+export function todayPacific(): string {
+  return new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" }).split("/").reverse().map((s, i) => i === 0 ? s : s.padStart(2, "0")).join("-");
+  // Returns YYYY-MM-DD in Pacific time
+}
+export function nowPacific(): Date {
+  const str = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+  return new Date(str);
+}
+```
+
+**IMPORTANT:** Use `todayPacific()` instead of `new Date().toISOString().split("T")[0]` in ALL routes that compute "today" — this prevents 11 PM Pacific showing as tomorrow's date.
+
+### Step 8: Add `status` column to the existing contacts table
 
 The contacts table needs a `status` field that is SEPARATE from `contact_intelligence.stage`:
 
@@ -462,7 +479,7 @@ SELECT *, EXTRACT(DAY FROM NOW() - last_communication_date) AS days_since_contac
 FROM contact_intelligence WHERE contact_id = $1;
 ```
 
-### Step 8: Export all tables from the main barrel file
+### Step 9: Export all tables from the main barrel file
 
 Wherever `contactsTable`, `callLogTable`, etc. are currently exported from, also re-export every table from `schema-v2.ts`:
 
@@ -479,7 +496,7 @@ export {
 } from "./schema-v2";
 ```
 
-### Step 9: Run the migration
+### Step 10: Run the migration
 
 After creating the schema file, run:
 

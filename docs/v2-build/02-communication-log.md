@@ -338,6 +338,36 @@ After all three prompts, here is the full picture:
    - Inserts into `communication_log` with `channel = "email_received"`
    - Calls `updateContactComms()` to increment `total_emails_received`
 
+### Step 7: Verify MacroDroid phone-log integration (Story 15.1)
+
+The existing `phone-log.ts` route already handles MacroDroid webhooks. After adding the communication_log mirror in Step 4, verify:
+- Outbound calls log as channel='call_outbound', direction='outbound'
+- Inbound calls log as channel='call_inbound', direction='inbound'
+- Inbound texts log as channel='text_received', direction='inbound'
+- Secret key auth rejects requests without ?key=MACRODROID_SECRET
+- Matched contacts get contact_intelligence counters updated
+
+### Step 8: FlipIQ-tagged unknown call auto-contact creation (Story 15.2)
+
+In `phone-log.ts`, after the existing contact matching logic, add:
+
+If no contact matched AND the request body includes `flipiq_tagged: true` (or the call happened during a "FlipIQ Demo" calendar event), auto-create a contact:
+
+```typescript
+if (!matchedContact && parsed.data.flipiq_tagged) {
+  const [newContact] = await db.insert(contactsTable).values({
+    name: `Unknown — ${parsed.data.phone_number}`,
+    phone: parsed.data.phone_number,
+    source: "phone",
+    status: "New",
+  }).returning();
+  // Link the phone_log entry to the new contact
+  // Also create a contact_intelligence row
+}
+```
+
+If NOT tagged, just log with matched=false. Do NOT auto-create.
+
 ## VERIFY BEFORE MOVING ON
 
 1. Make a call via the Sales View -> check `communication_log` table has a new row with `channel = 'call_outbound'`

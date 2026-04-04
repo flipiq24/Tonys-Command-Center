@@ -133,18 +133,56 @@ router.post("/email/suggest-draft", async (req, res): Promise<void> => {
     const { default: Anthropic } = await import("@anthropic-ai/sdk");
     const anthropic = new Anthropic();
 
+    // Before calling Claude, fetch context from DB:
+    // 1. Query system_instructions for email_brain
+    const [emailBrain] = await db.select().from(businessContextTable)
+      .where(eq(businessContextTable.documentType, "email_brain")).limit(1)
+      .catch(() => [undefined]);
+    // 2. If contactName, query communication_log for last 5 interactions
+    let recentComms: { channel: string; summary: string; loggedAt: Date | null }[] = [];
+    if (contactName) {
+      recentComms = await db.select({
+        channel: communicationLogTable.channel,
+        summary: communicationLogTable.summary,
+        loggedAt: communicationLogTable.loggedAt,
+      }).from(communicationLogTable)
+        .where(eq(communicationLogTable.contactName, contactName))
+        .orderBy(desc(communicationLogTable.loggedAt))
+        .limit(5)
+        .catch(() => []);
+    }
+    // 3. If contactName, query contact_briefs for latest brief
+    let latestBrief: { briefText: string } | undefined;
+    if (contactName) {
+      const [brief] = await db.select({ briefText: contactBriefsTable.briefText })
+        .from(contactBriefsTable)
+        .where(eq(contactBriefsTable.contactName, contactName))
+        .orderBy(desc(contactBriefsTable.generatedAt))
+        .limit(1)
+        .catch(() => [undefined]);
+      latestBrief = brief;
+    }
+    // Include all of this in the Claude prompt as context.
+    const dbContext = [
+      emailBrain?.content ? `EMAIL BRAIN INSTRUCTIONS:\n${emailBrain.content.substring(0, 500)}` : "",
+      recentComms.length > 0 ? `RECENT COMMUNICATIONS:\n${recentComms.map(c => `- [${c.channel}] ${c.summary}`).join("\n")}` : "",
+      latestBrief?.briefText ? `CONTACT BRIEF:\n${latestBrief.briefText.substring(0, 500)}` : "",
+    ].filter(Boolean).join("\n\n");
+
     const prompt = replyToSnippet
       ? `Draft a reply email from Tony Diaz (FlipIQ CEO) to ${contactName || to}.
 Original email subject: "${subject || "No subject"}"
 Original email snippet: "${replyToSnippet}"
 ${context ? `Additional context: ${context}` : ""}
 
-Write a professional but warm reply. Keep it concise (3-5 sentences max). Tony's style: direct, friendly, action-oriented. Sign off as "Tony".`
+Write a professional but warm reply. Keep it concise (3-5 sentences max). Tony's style: direct, friendly, action-oriented. Sign off as "Tony".
+${dbContext ? `\n\nADDITIONAL CONTEXT FROM DATABASE:\n${dbContext}` : ""}`
       : `Draft an email from Tony Diaz (FlipIQ CEO) to ${contactName || to}.
 Subject: "${subject || "Write a good subject"}"
 ${context ? `Context: ${context}` : ""}
 
-Write a professional but warm email. Keep it concise. Tony's style: direct, friendly, action-oriented. Sign off as "Tony".`;
+Write a professional but warm email. Keep it concise. Tony's style: direct, friendly, action-oriented. Sign off as "Tony".
+${dbContext ? `\n\nADDITIONAL CONTEXT FROM DATABASE:\n${dbContext}` : ""}`;
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -183,57 +221,79 @@ let cacheExpiry = 0;
 
 router.get("/contacts/autocomplete", async (req, res): Promise<void> => {
   const query = String(req.query.q || "").toLowerCase().trim();
-  if (!query || query.length < 2) {
+  if (!query || query.length < 3) {
     res.json([]);
     return;
   }
 
   try {
-    // Refresh cache if expired
-    if (Date.now() > cacheExpiry || cachedContacts.length === 0) {
-      const people = getPeople();
-      const response = await people.people.connections.list({
-        resourceName: "people/me",
-        pageSize: 1000,
-        personFields: "names,emailAddresses",
-      });
+    // Step 1: Search Supabase contacts first
+    const dbResults = await db.select().from(contactsTable)
+      .where(or(
+        ilike(contactsTable.name, `%${query}%`),
+        ilike(contactsTable.email, `%${query}%`),
+        ilike(contactsTable.company, `%${query}%`)
+      )).limit(5);
+    const dbContacts = dbResults.map(c => ({ name: c.name, email: c.email || "", company: c.company || "" }));
 
-      cachedContacts = (response.data.connections || [])
-        .filter(c => c.emailAddresses?.length)
-        .map(c => ({
-          name: c.names?.[0]?.displayName || "",
-          email: c.emailAddresses![0].value || "",
-        }));
-
-      // Also fetch "other contacts" (people emailed but not in Contacts)
-      try {
-        const otherResponse = await people.otherContacts.list({
+    // Step 2: Google People API as fallback (only if < 5 DB results)
+    let googleContacts: { name: string; email: string; company: string }[] = [];
+    if (dbContacts.length < 5) {
+      // Refresh cache if expired
+      if (Date.now() > cacheExpiry || cachedContacts.length === 0) {
+        const people = getPeople();
+        const response = await people.people.connections.list({
+          resourceName: "people/me",
           pageSize: 1000,
-          readMask: "names,emailAddresses",
+          personFields: "names,emailAddresses",
         });
-        const others = (otherResponse.data.otherContacts || [])
+
+        cachedContacts = (response.data.connections || [])
           .filter(c => c.emailAddresses?.length)
           .map(c => ({
             name: c.names?.[0]?.displayName || "",
             email: c.emailAddresses![0].value || "",
           }));
-        cachedContacts = [...cachedContacts, ...others];
-      } catch {
-        // otherContacts may fail if scope doesn't cover it — that's OK
+
+        // Also fetch "other contacts" (people emailed but not in Contacts)
+        try {
+          const otherResponse = await people.otherContacts.list({
+            pageSize: 1000,
+            readMask: "names,emailAddresses",
+          });
+          const others = (otherResponse.data.otherContacts || [])
+            .filter(c => c.emailAddresses?.length)
+            .map(c => ({
+              name: c.names?.[0]?.displayName || "",
+              email: c.emailAddresses![0].value || "",
+            }));
+          cachedContacts = [...cachedContacts, ...others];
+        } catch {
+          // otherContacts may fail if scope doesn't cover it — that's OK
+        }
+
+        cacheExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
       }
 
-      cacheExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+      // Filter by query
+      googleContacts = cachedContacts
+        .filter(c =>
+          c.name.toLowerCase().includes(query) ||
+          c.email.toLowerCase().includes(query)
+        )
+        .slice(0, 10 - dbContacts.length)
+        .map(c => ({ ...c, company: "" }));
     }
 
-    // Filter by query
-    const matches = cachedContacts
-      .filter(c =>
-        c.name.toLowerCase().includes(query) ||
-        c.email.toLowerCase().includes(query)
-      )
-      .slice(0, 10);
+    // Merge: DB results first, then Google, dedupe by email
+    const seen = new Set<string>();
+    const merged = [...dbContacts, ...googleContacts].filter(c => {
+      if (!c.email || seen.has(c.email.toLowerCase())) return false;
+      seen.add(c.email.toLowerCase());
+      return true;
+    }).slice(0, 10);
 
-    res.json(matches);
+    res.json(merged);
   } catch (err) {
     console.warn("[Contacts] autocomplete failed:", err instanceof Error ? err.message : err);
     res.json([]);

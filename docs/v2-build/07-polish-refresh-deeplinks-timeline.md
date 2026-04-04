@@ -28,6 +28,9 @@ useEffect(() => {
   const REFRESH_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
   const refreshBrief = async () => {
+    // IMPORTANT: Do NOT reset check-in or journal state
+    if (view === "checkin" || view === "journal") return;
+
     try {
       const freshBrief = await get<DailyBrief>("/brief/today");
       setBrief(freshBrief);
@@ -655,6 +658,130 @@ export function PrintView({ brief, onClose }: Props) {
     </>
   );
 }
+```
+
+### Step 10: Add Promotions/Spam email category (Story 2.1)
+
+In brief.ts email classification, update the Claude system prompt to classify into THREE categories: `important`, `fyi`, `promotions`.
+
+In EmailsView.tsx, add a third collapsed section: "Promotions/Spam" -- hidden by default with a "Show N promotions" toggle.
+
+```typescript
+// In the Claude email classification prompt, change:
+// "Classify each email as 'important' or 'fyi'"
+// to:
+// "Classify each email as 'important', 'fyi', or 'promotions' (marketing, newsletters, automated notifications)"
+
+// In EmailsView.tsx, after the FYI section:
+const promotions = emails.filter(e => e.p === "promotions");
+
+{/* Promotions/Spam section -- collapsed by default */}
+{promotions.length > 0 && (
+  <div style={{ marginTop: 12 }}>
+    <button onClick={() => setShowPromo(!showPromo)}
+      style={{ ...btn2, width: "100%", fontSize: 12, color: C.mut }}>
+      {showPromo ? "Hide" : "Show"} {promotions.length} promotions
+    </button>
+    {showPromo && promotions.map((e, i) => (
+      /* render promotion email row */
+    ))}
+  </div>
+)}
+```
+
+### Step 11: Snooze expiration logic (Story 2.5)
+
+In the 15-minute auto-refresh, check snoozed emails:
+- Parse snooze values: "1h" -> 1 hour from snooze time, "2h" -> 2 hours, "tom" -> next day 9 AM, "nw" -> next Monday 9 AM
+- If current time > snooze expiration -> remove from snoozed map, email reappears
+- Store snooze start time (not just the duration) so expiration can be computed
+
+```typescript
+// In the refresh callback or a separate useEffect:
+const checkSnoozeExpirations = () => {
+  const now = new Date();
+  setSnoozed(prev => {
+    const updated = new Map(prev);
+    for (const [emailId, snoozeData] of updated) {
+      const { duration, startTime } = snoozeData;
+      let expiresAt: Date;
+      if (duration === "1h") expiresAt = new Date(startTime.getTime() + 60 * 60 * 1000);
+      else if (duration === "2h") expiresAt = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
+      else if (duration === "tom") {
+        expiresAt = new Date(startTime);
+        expiresAt.setDate(expiresAt.getDate() + 1);
+        expiresAt.setHours(9, 0, 0, 0);
+      } else if (duration === "nw") {
+        expiresAt = new Date(startTime);
+        const dayOfWeek = expiresAt.getDay();
+        const daysUntilMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+        expiresAt.setDate(expiresAt.getDate() + daysUntilMonday);
+        expiresAt.setHours(9, 0, 0, 0);
+      } else continue;
+
+      if (now >= expiresAt) updated.delete(emailId);
+    }
+    return updated;
+  });
+};
+```
+
+### Step 12: Email contact brief-line (Story 2.1)
+
+For each Important email, if the sender matches a known contact:
+- Query communication_log for total thread count with this contact
+- Get the last communication summary
+- Render below the email: "3rd thread with [name]. Last: [summary]."
+
+```typescript
+// In EmailsView.tsx, for each important email:
+{e.contactBrief && (
+  <div style={{ fontSize: 11, color: C.sub, marginTop: 2 }}>
+    {e.contactBrief.threadCount > 0
+      ? `${ordinal(e.contactBrief.threadCount)} thread with ${e.contactBrief.name}. Last: ${e.contactBrief.lastSummary}`
+      : `First email from ${e.contactBrief.name}`}
+  </div>
+)}
+
+// In brief.ts, when building email data, for each email:
+// 1. Match sender to contacts table by email
+// 2. If matched, query communication_log count where contactId = matched.id AND channel LIKE 'email%'
+// 3. Get last communication summary
+// 4. Attach as contactBrief: { name, threadCount, lastSummary }
+```
+
+### Step 13: New email notification indicator (Story 2.1)
+
+After email polling detects new emails, if the count increased since last poll, briefly flash the Gmail badge or show a subtle "New email" indicator for 5 seconds.
+
+```typescript
+// In the email poll useEffect:
+const [newEmailFlash, setNewEmailFlash] = useState(false);
+const prevEmailCountRef = useRef(0);
+
+const pollEmails = async () => {
+  try {
+    const result = await get<{ emails: EmailItem[] }>("/emails/poll");
+    if (result.emails && brief) {
+      const newCount = result.emails.length;
+      if (newCount > prevEmailCountRef.current && prevEmailCountRef.current > 0) {
+        setNewEmailFlash(true);
+        setTimeout(() => setNewEmailFlash(false), 5000);
+      }
+      prevEmailCountRef.current = newCount;
+      setBrief(prev => prev ? { ...prev, emailsImportant: result.emails } : prev);
+    }
+  } catch { /* silent */ }
+};
+
+// In the Gmail tab/badge JSX:
+<span style={{
+  background: newEmailFlash ? C.red : undefined,
+  color: newEmailFlash ? "#fff" : undefined,
+  transition: "background 0.3s, color 0.3s",
+}}>
+  Gmail {newEmailFlash && "(New!)"}
+</span>
 ```
 
 ## VERIFY BEFORE MOVING ON

@@ -394,6 +394,7 @@ interface Props {
   onBrief?: (contactId: string) => void;
   onOpenChat?: (contextType: string, contextId: string, contextLabel: string) => void;
   onResearch?: (contactId: string) => void;
+  onSchedule?: (contact: Contact) => void;
 }
 
 // Stage = pipeline position
@@ -559,6 +560,8 @@ export function SalesMorning({
         {c.phone && <button onClick={() => setSmsContact(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 10, color: C.blu, borderColor: C.blu }}>Text</button>}
         {c.email && onCompose && <button onClick={() => onCompose(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 10, color: C.amb, borderColor: C.amb }}>Email</button>}
         <button onClick={() => setConnectedCall(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 10, color: C.grn, borderColor: C.grn }}>Connected</button>
+        {/* Schedule quick action -- opens ScheduleMeeting pre-filled with contact */}
+        {onSchedule && <button onClick={() => onSchedule(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 10, color: "#7B1FA2", borderColor: "#7B1FA2" }}>Schedule</button>}
         {onBrief && <button onClick={() => onBrief(String(c.id))} style={{ ...btn2, padding: "6px 10px", fontSize: 10 }}>Brief</button>}
         {onResearch && <button onClick={() => onResearch(String(c.id))} style={{ ...btn2, padding: "6px 10px", fontSize: 10, color: "#7B1FA2", borderColor: "#7B1FA2" }}>Research</button>}
         <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "6px 10px", fontSize: 10 }}>Log</button>
@@ -681,7 +684,7 @@ export function SalesMorning({
               )}
               {morningData.pipelineSummary.overdue > 0 && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: C.red, background: "#FFF0F0", padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.red}` }}>
-                  Overdue: {morningData.pipelineSummary.overdue} !!!
+                  Overdue: {morningData.pipelineSummary.overdue} WARNING
                 </div>
               )}
             </div>
@@ -827,6 +830,119 @@ import { SalesMorning } from "@/components/tcc/SalesMorning";
 ### Step 5: Keep the original SalesView file
 
 **DO NOT DELETE** `artifacts/tcc/src/components/tcc/SalesView.tsx`. It can remain as a fallback. The new `SalesMorning.tsx` is the replacement that gets imported in App.tsx.
+
+### Step 6: Build TasksView with Top-3 Focus (Story 5.1, 5.6)
+
+**Create NEW file: `artifacts/tcc/src/components/tcc/TasksViewV2.tsx`**
+
+Key requirements:
+- TOP 3 tasks in a "Focus" card at top (larger font, prominent)
+- Task #1 is ALWAYS "10 Sales Calls" -- clicking it routes to Sales Mode
+- Full task list below, collapsed by default with "Show all N tasks" toggle
+- When all 3 focus tasks done, next 3 auto-promote
+- Each task shows: priority indicator (red/yellow/green dot), text, source badge, owner, due date, deep link
+- TWO action buttons per task:
+  - "Completed" -> POST /tasks/completed, task moves to completed section (grayed, strikethrough)
+  - "Worked on it" -> opens modal with textarea + voice input, saves to POST /tasks/work-note
+- Completed section at bottom shows today's completed tasks
+
+**Create backend route: POST /api/tasks/work-note**
+
+```typescript
+router.post("/tasks/work-note", async (req, res) => {
+  const { taskId, note } = req.body;
+  const [entry] = await db.insert(taskWorkNotesTable).values({
+    taskId, note, date: todayPacific(),
+  }).returning();
+  res.status(201).json(entry);
+});
+
+router.get("/tasks/:taskId/work-notes", async (req, res) => {
+  const notes = await db.select().from(taskWorkNotesTable)
+    .where(eq(taskWorkNotesTable.taskId, req.params.taskId))
+    .orderBy(desc(taskWorkNotesTable.createdAt));
+  res.json(notes);
+});
+```
+
+### Step 7: Out-of-sequence + missing dates alerts in task view (Story 5.1)
+
+At the TOP of TasksView, before the Focus section, add alert cards:
+- Red card: "OUT OF SEQUENCE: [issue] (P3) is In Progress but [issue] (P1) is blocked"
+- Amber card: "MISSING DATES: [N] Linear items have no due date" with links
+
+Query these from GET /api/tasks/alerts which checks Linear for out-of-sequence and missing dates.
+
+```typescript
+router.get("/tasks/alerts", async (_req, res) => {
+  // Check Linear for priority inversions and missing due dates
+  // Return { outOfSequence: string[], missingDates: { id: string; title: string; identifier: string }[] }
+  // Out-of-sequence: any P3+ issue In Progress while a P1 issue is Blocked or Backlog
+  // Missing dates: any issue without a due date in the current cycle
+});
+```
+
+### Step 8: Add "Load More" pagination to contact list
+
+Add a "Load More" button at the bottom of the contact list. Track offset state.
+When clicked, fetch next 50 contacts with `GET /api/contacts?offset=50&limit=50`.
+Append to existing results.
+
+```typescript
+const [contactOffset, setContactOffset] = useState(0);
+const [allContacts, setAllContacts] = useState<Contact[]>([]);
+const [hasMore, setHasMore] = useState(true);
+
+const loadMore = async () => {
+  const next = await get<Contact[]>(`/contacts?offset=${contactOffset + 50}&limit=50`);
+  setAllContacts(prev => [...prev, ...next]);
+  setContactOffset(prev => prev + 50);
+  if (next.length < 50) setHasMore(false);
+};
+
+// In JSX, at the bottom of the contact list:
+{hasMore && (
+  <button onClick={loadMore} style={{ ...btn2, width: "100%", marginTop: 8 }}>
+    Load More
+  </button>
+)}
+```
+
+### Step 9: Add status filter dropdown to contact list
+
+Add a filter bar above the contact list with dropdowns for:
+- Status: All / Hot / Warm / Cold / New
+- Stage: All / New / Outreach / Engaged / Meeting Scheduled / Negotiating / Closed / Dormant
+
+Filters apply to the displayed contact list via query params.
+
+```typescript
+const [filterStatus, setFilterStatus] = useState("All");
+const [filterStage, setFilterStage] = useState("All");
+
+// In JSX, above the contact list:
+<div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+    style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: `1px solid ${C.brd}`, fontFamily: F }}>
+    <option value="All">All Statuses</option>
+    <option value="Hot">Hot</option>
+    <option value="Warm">Warm</option>
+    <option value="Cold">Cold</option>
+    <option value="New">New</option>
+  </select>
+  <select value={filterStage} onChange={e => setFilterStage(e.target.value)}
+    style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: `1px solid ${C.brd}`, fontFamily: F }}>
+    <option value="All">All Stages</option>
+    <option value="new">New</option>
+    <option value="outreach">Outreach</option>
+    <option value="engaged">Engaged</option>
+    <option value="meeting_scheduled">Meeting Scheduled</option>
+    <option value="negotiating">Negotiating</option>
+    <option value="closed">Closed</option>
+    <option value="dormant">Dormant</option>
+  </select>
+</div>
+```
 
 ## VERIFY BEFORE MOVING ON
 

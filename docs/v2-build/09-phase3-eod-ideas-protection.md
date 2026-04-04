@@ -67,11 +67,39 @@ router.post("/eod-report/auto", async (req, res): Promise<void> => {
       ideasToday = ideas.map(i => i.text || "");
     } catch { /* non-critical */ }
 
-    // Fetch meetings from today's calendar
+    // Fetch meetings from today's calendar (actual events that have passed)
     let meetingsToday: string[] = [];
     try {
-      // Use brief data or calendar fetch
-      meetingsToday = []; // populated from calendar data
+      const { listTodayEvents } = await import("../../lib/gcal");
+      const allEvents = await listTodayEvents();
+      const pastMeetings = allEvents.filter(e => new Date(e.end) < new Date());
+      meetingsToday = pastMeetings.map(e => e.summary);
+    } catch { /* non-critical */ }
+
+    // Demo feedback: analyze any "FlipIQ Demo" events that passed
+    let demoFeedback: string[] = [];
+    try {
+      const { analyzeDemoRecording } = await import("../../lib/demo-feedback");
+      const { listTodayEvents: listEvents } = await import("../../lib/gcal");
+      const todayEvents = await listEvents();
+      const demoEvents = todayEvents.filter(e =>
+        e.summary.toLowerCase().includes("flipiq demo") && new Date(e.end) < new Date()
+      );
+      for (const demoEvent of demoEvents) {
+        const feedback = await analyzeDemoRecording(demoEvent.summary, today);
+        if (feedback) demoFeedback.push(feedback);
+      }
+    } catch { /* non-critical */ }
+
+    // Overrides today: query ideas with status "override" created today
+    let overridesToday: string[] = [];
+    try {
+      const overrides = await db.select().from(ideasTable)
+        .where(and(
+          gte(ideasTable.createdAt, todayDate),
+          eq(ideasTable.status, "override")
+        ));
+      overridesToday = overrides.map(o => o.text || "");
     } catch { /* non-critical */ }
 
     // Out-of-sequence detection
@@ -155,10 +183,10 @@ Out-of-Sequence Work (not on 90-day plan):
 ${outOfSequenceItems.length > 0 ? outOfSequenceItems.map(t => `- ${t}`).join("\n") : "- All work aligned with plan"}
 
 Tony's Overrides Today:
-(List any idea overrides or morning protection overrides from today's logs)
+${overridesToday.length > 0 ? overridesToday.map(o => `- ${o}`).join("\n") : "- No overrides today"}
 
 Pitch/Demo Feedback:
-(Include if FlipIQ demo recordings were analyzed today)
+${demoFeedback.length > 0 ? demoFeedback.join("\n\n---\n\n") : "- No demos analyzed today"}
 
 Format Ethan's report to include:
 1. Tony's activity summary (brief)
@@ -521,13 +549,39 @@ router.post("/ideas/notify-override", async (req, res): Promise<void> => {
 });
 
 router.post("/ideas/escalate-to-ethan", async (req, res): Promise<void> => {
-  const { text } = req.body;
+  const { text, rank, reasoning } = req.body;
   try {
     const { postToSlack } = await import("../../lib/slack");
     await postToSlack({
       channel: "@ethan",
       text: `*Idea Parked + Meeting Requested*\n\nTony submitted an idea that was flagged as out-of-scope and auto-parked:\n> ${text}\n\nPlease schedule a meeting to discuss if this should be prioritized.`,
     });
+
+    // When escalating to Ethan, ALSO create a calendar event:
+    try {
+      const { createEvent } = await import("../../lib/gcal");
+
+      // Helper: find next available afternoon slot (2 PM)
+      const nextSlot = new Date();
+      nextSlot.setDate(nextSlot.getDate() + 1); // tomorrow
+      nextSlot.setHours(14, 0, 0, 0); // 2 PM
+      // Skip weekends
+      if (nextSlot.getDay() === 0) nextSlot.setDate(nextSlot.getDate() + 1);
+      if (nextSlot.getDay() === 6) nextSlot.setDate(nextSlot.getDate() + 2);
+
+      const endSlot = new Date(nextSlot.getTime() + 30 * 60 * 1000); // 30 minutes
+
+      await createEvent({
+        summary: `Review plan change with Ethan — "${(text || "").substring(0, 50)}"`,
+        start: nextSlot.toISOString(),
+        end: endSlot.toISOString(),
+        attendees: ["ethan@flipiq.com"],
+        description: `Tony submitted: "${text}"\nAI priority: #${rank || "unknown"}\nTony's reasoning: "${reasoning || "Auto-parked, no justification"}"`,
+      });
+    } catch (calErr) {
+      console.warn("[ideas] Calendar event creation failed:", calErr);
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.json({ ok: true, slackFailed: true });
@@ -895,18 +949,36 @@ export async function analyzeDemoRecording(eventName: string, eventDate: string)
     const recording = recordings[0];
     console.log(`[demo-feedback] Found recording: ${recording.name}`);
 
-    // Generate AI feedback based on recording metadata
-    // (Full transcript analysis would require additional transcription service)
+    // If a transcript/recording exists, download and send the CONTENT to Claude for analysis
+    // Don't just analyze metadata — analyze the actual conversation text
+    // Extract: talk-to-listen ratio, questions asked count, prospect engagement signals, objections raised
+    // Save analysis to contact_intelligence.personality_notes and communication_log
+    let transcriptContent = "";
+    try {
+      const { getDrive } = await import("./google-auth");
+      const drive = getDrive();
+      const exported = await drive.files.export({
+        fileId: recording.id,
+        mimeType: "text/plain",
+      });
+      transcriptContent = typeof exported.data === "string" ? exported.data : JSON.stringify(exported.data);
+    } catch {
+      // If transcript export fails, fall back to metadata-only analysis
+      console.log(`[demo-feedback] Could not export transcript, using metadata-only analysis`);
+    }
     const feedback = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
       messages: [{
         role: "user",
-        content: `A FlipIQ demo was conducted: "${eventName}" on ${eventDate}. A recording exists: "${recording.name}". Generate coaching feedback for Tony covering:
-1. Talk ratio recommendation (aim for 60/40 prospect talking)
-2. Key questions to ask in demos
-3. Signs of prospect interest to look for
-4. Common improvement areas for SaaS demos
+        content: `A FlipIQ demo was conducted: "${eventName}" on ${eventDate}. A recording exists: "${recording.name}".
+${transcriptContent ? `\nTRANSCRIPT CONTENT:\n${transcriptContent.substring(0, 8000)}` : "(No transcript available — analyze based on metadata only.)"}
+
+Generate coaching feedback for Tony covering:
+1. Talk-to-listen ratio (aim for 60/40 prospect talking) ${transcriptContent ? "— compute from the transcript" : ""}
+2. Questions asked count ${transcriptContent ? "— count from transcript" : ""}
+3. Prospect engagement signals ${transcriptContent ? "— identify from transcript" : ""}
+4. Objections raised ${transcriptContent ? "— extract from transcript" : ""}
 5. Follow-up timing recommendation
 
 Keep it concise and actionable.`,
@@ -914,7 +986,25 @@ Keep it concise and actionable.`,
     });
 
     const textBlock = feedback.content.find(b => b.type === "text");
-    return textBlock?.type === "text" ? textBlock.text : null;
+    const analysisText = textBlock?.type === "text" ? textBlock.text : null;
+
+    // Save analysis to communication_log for the contact
+    if (analysisText) {
+      try {
+        const { db } = await import("@workspace/db");
+        const { communicationLogTable } = await import("./schema-v2");
+        await db.insert(communicationLogTable).values({
+          contactName: eventName.replace("FlipIQ Demo", "").trim() || "Demo participant",
+          channel: "meeting",
+          direction: "outbound",
+          subject: eventName,
+          summary: analysisText.substring(0, 300),
+          fullContent: analysisText,
+        });
+      } catch { /* non-critical */ }
+    }
+
+    return analysisText;
   } catch (err) {
     console.warn("[demo-feedback] Analysis failed:", err);
     return null;

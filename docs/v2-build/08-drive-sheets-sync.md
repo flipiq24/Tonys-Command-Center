@@ -378,7 +378,7 @@ const CONTACTS_HEADER = [
 ];
 
 const TASKS_HEADER = [
-  "ID", "Task Text", "Category", "Completed At", "Source",
+  "Task", "Source", "Owner", "Priority", "Status", "Start Date", "Completed Date", "Due Date", "Notes", "90-Day Link", "Linear ID",
 ];
 
 const COMM_LOG_HEADER = [
@@ -442,14 +442,20 @@ async function syncTaskCompletions(): Promise<number> {
   if (newTasks.length === 0) return 0;
 
   const rows = newTasks.map(t => [
-    t.id,
     t.taskText || "",
-    t.category || "",
+    t.source || "tcc",
+    t.owner || "Tony",
+    t.priority || "",
+    t.status || "",
+    t.startDate || "",
     t.completedAt ? new Date(t.completedAt).toISOString() : "",
-    "tcc",
+    t.dueDate || "",
+    t.notes || "",
+    t.ninetyDayLink || "",
+    t.linearId || "",
   ]);
 
-  await withRateLimit(() => appendRow(MASTER_TASK_SHEET_ID, "Tasks!A:E", rows));
+  await withRateLimit(() => appendRow(MASTER_TASK_SHEET_ID, "Tasks!A:K", rows));
   return newTasks.length;
 }
 
@@ -657,6 +663,30 @@ export async function ingestBusinessContext(): Promise<void> {
       console.log(`[business-context] Business plan ingested (${content.length} chars)`);
     } catch (err) {
       console.warn("[business-context] Failed to ingest business plan:", err);
+    }
+  }
+
+  // 3. Daily Task spiritual mindset doc
+  const DAILY_SPIRITUAL_DOC_ID = process.env.DAILY_SPIRITUAL_DOC_ID || "YOUR_DOC_ID_HERE";
+  if (DAILY_SPIRITUAL_DOC_ID && DAILY_SPIRITUAL_DOC_ID !== "YOUR_DOC_ID_HERE") {
+    try {
+      const content = await readGoogleDoc(DAILY_SPIRITUAL_DOC_ID);
+      await db.insert(businessContextTable).values({
+        documentType: "daily_spiritual",
+        sourceDocId: DAILY_SPIRITUAL_DOC_ID,
+        content: content.substring(0, 50000),
+        ingestedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: businessContextTable.documentType,
+        set: {
+          content: content.substring(0, 50000),
+          sourceDocId: DAILY_SPIRITUAL_DOC_ID,
+          ingestedAt: new Date(),
+        },
+      });
+      console.log(`[business-context] Daily spiritual doc ingested (${content.length} chars)`);
+    } catch (err) {
+      console.warn("[business-context] Failed to ingest daily spiritual doc:", err);
     }
   }
 

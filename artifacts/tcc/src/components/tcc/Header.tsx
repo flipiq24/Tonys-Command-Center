@@ -10,23 +10,39 @@ interface Props {
   calSide: boolean;
   eod: boolean;
   customTips: Record<string, string>;
+  lastRefresh?: string;
+  refreshing?: boolean;
   onSetView: (v: string) => void;
   onToggleCal: () => void;
   onShowIdea: () => void;
   onShowChat: () => void;
   onEod: () => void;
   onTipSaved: (key: string, text: string) => void;
+  onRefresh?: () => void;
 }
 
-export function Header({ clock, ideas, unresolved, calSide, eod, customTips, onSetView, onToggleCal, onShowIdea, onShowChat, onEod, onTipSaved }: Props) {
+export function Header({ clock, ideas, unresolved, calSide, eod, customTips, lastRefresh, refreshing, onSetView, onToggleCal, onShowIdea, onShowChat, onEod, onTipSaved, onRefresh }: Props) {
   const tip = (key: string) => (customTips ?? {})[key] ?? TIPS[key] ?? "";
 
   return (
     <div style={{ background: C.card, borderBottom: `1px solid ${C.brd}`, padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
       <FontLink />
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <h1 onClick={() => onSetView("schedule")} style={{ fontFamily: FS, fontSize: 18, margin: 0, cursor: "pointer" }}>Tony's Command Center</h1>
         <span style={{ fontSize: 11, color: C.mut }}>{TODAY_STR} · {clock}</span>
+        {lastRefresh && (
+          <span style={{ fontSize: 10, color: C.mut, marginLeft: 2 }}>· Updated {lastRefresh}</span>
+        )}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="Refresh data now"
+            style={{ background: "none", border: "none", cursor: refreshing ? "default" : "pointer", fontSize: 11, color: C.mut, padding: "0 2px", opacity: refreshing ? 0.4 : 0.7, lineHeight: 1 }}
+          >
+            {refreshing ? "⟳" : "↻"}
+          </button>
+        )}
       </div>
       <p style={{ fontFamily: FS, fontSize: 12, color: C.sub, fontStyle: "italic", margin: 0, position: "absolute", left: "50%", transform: "translateX(-50%)" }}>
         "Follow the plan I gave you!" — God

@@ -17,6 +17,9 @@ import phoneLogRouter from "./tcc/phone-log";
 import sendSmsRouter from "./tcc/send-sms";
 import timeRoutingRouter from "./tcc/time-routing";
 import meetingHistoryRouter from "./tcc/meeting-history";
+import emailSendRouter from "./tcc/email-send";
+import contactsAutocompleteRouter from "./tcc/contacts-autocomplete";
+import emailPollRouter from "./tcc/email-poll";
 
 const router: IRouter = Router();
 
@@ -26,6 +29,7 @@ router.use(checkinRouter);
 router.use(journalRouter);
 router.use(briefRouter);
 router.use(emailsRouter);
+router.use(contactsAutocompleteRouter);
 router.use(contactsRouter);
 router.use(callsRouter);
 router.use(ideasRouter);
@@ -38,6 +42,8 @@ router.use(phoneLogRouter);
 router.use(sendSmsRouter);
 router.use(timeRoutingRouter);
 router.use(meetingHistoryRouter);
+router.use(emailSendRouter);
+router.use(emailPollRouter);
 
 // ─── Canonical aliases (spec-matching paths) ─────────────────────────────────
 // /morning-brief is registered directly in briefRouter (both /brief/today and /morning-brief)

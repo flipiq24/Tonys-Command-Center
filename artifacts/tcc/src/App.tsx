@@ -8,6 +8,8 @@ import { CalendarSidebar } from "@/components/tcc/CalendarSidebar";
 import { IdeasModal } from "@/components/tcc/IdeasModal";
 import { AttemptModal } from "@/components/tcc/AttemptModal";
 import { ClaudeModal } from "@/components/tcc/ClaudeModal";
+import { EmailCompose } from "@/components/tcc/EmailCompose";
+import { ConnectedCallModal } from "@/components/tcc/ConnectedCallModal";
 import { EmailsView } from "@/components/tcc/EmailsView";
 import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
@@ -55,6 +57,18 @@ export default function App() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [showIdea, setShowIdea] = useState(false);
 
+  // Email compose state
+  const [emailCompose, setEmailCompose] = useState<{
+    to?: string; subject?: string; body?: string;
+    contactId?: string; contactName?: string;
+    replyToSnippet?: string; threadId?: string;
+  } | null>(null);
+
+  // Connected call modal state
+  const [connectedCall, setConnectedCall] = useState<{
+    contactId: string; contactName: string; contactEmail?: string;
+  } | null>(null);
+
   // UI state
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
@@ -94,6 +108,20 @@ export default function App() {
     const interval = setInterval(refreshBrief, 15 * 60 * 1000); // every 15 min
     return () => clearInterval(interval);
   }, [refreshBrief]);
+
+  // Email polling — check for new received emails every 5 minutes
+  useEffect(() => {
+    const pollEmails = async () => {
+      try {
+        await get("/emails/poll");
+      } catch {
+        // silent fail — non-critical background task
+      }
+    };
+    pollEmails();
+    const interval = setInterval(pollEmails, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Persist active view so Tony resumes exactly where he left off on reload
   const persistView = useCallback((v: View) => {
@@ -311,6 +339,25 @@ export default function App() {
     <>
       <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
+      <EmailCompose
+        open={!!emailCompose}
+        onClose={() => setEmailCompose(null)}
+        prefillTo={emailCompose?.to}
+        prefillSubject={emailCompose?.subject}
+        prefillBody={emailCompose?.body}
+        prefillContactId={emailCompose?.contactId}
+        prefillContactName={emailCompose?.contactName}
+        replyToSnippet={emailCompose?.replyToSnippet}
+        threadId={emailCompose?.threadId}
+      />
+      <ConnectedCallModal
+        open={!!connectedCall}
+        onClose={() => setConnectedCall(null)}
+        contactId={connectedCall?.contactId || ""}
+        contactName={connectedCall?.contactName || ""}
+        contactEmail={connectedCall?.contactEmail}
+        onFollowUpEmail={prefill => setEmailCompose(prefill)}
+      />
     </>
   );
 
@@ -349,6 +396,16 @@ export default function App() {
         onDemoChange={handleDemoChange}
         onSwitchToTasks={() => persistView("tasks")}
         onBackToSchedule={() => persistView("schedule")}
+        onCompose={c => setEmailCompose({
+          to: c.email || "",
+          contactId: String(c.id),
+          contactName: c.name,
+        })}
+        onConnectedCall={c => setConnectedCall({
+          contactId: String(c.id),
+          contactName: c.name,
+          contactEmail: c.email || undefined,
+        })}
       />
     </div>
   );

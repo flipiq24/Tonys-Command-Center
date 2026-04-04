@@ -19,6 +19,8 @@ interface Props {
   onDemoChange: (delta: number) => void;
   onSwitchToTasks: () => void;
   onBackToSchedule: () => void;
+  onCompose?: (contact: Contact) => void;
+  onConnectedCall?: (contact: Contact) => void;
 }
 
 type ViewMode = "list" | "pipeline";
@@ -53,9 +55,11 @@ interface ContactCardProps {
   onAttempt: (c: { id: string | number; name: string }) => void;
   onSms: (c: Contact) => void;
   onConnected: (name: string) => void;
+  onCompose?: (c: Contact) => void;
+  onConnectedCall?: (c: Contact) => void;
 }
 
-function ContactCard({ c, onClick, onAttempt, onSms, onConnected }: ContactCardProps) {
+function ContactCard({ c, onClick, onAttempt, onSms, onConnected, onCompose, onConnectedCall }: ContactCardProps) {
   const overdue = isOverdue(c.followUpDate);
 
   return (
@@ -109,10 +113,25 @@ function ContactCard({ c, onClick, onAttempt, onSms, onConnected }: ContactCardP
             💬 Text
           </button>
         )}
+        {onCompose && (
+          <button onClick={e => { e.stopPropagation(); onCompose(c); }} style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
+            ✉ Email
+          </button>
+        )}
         <button onClick={e => { e.stopPropagation(); onAttempt({ id: c.id, name: c.name }); }} style={{ ...btn2, padding: "6px 10px", fontSize: 11 }}>
           📋 Log
         </button>
-        <button onClick={e => { e.stopPropagation(); onConnected(c.name); }} style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.grn, borderColor: C.grn }}>
+        <button
+          onClick={e => {
+            e.stopPropagation();
+            if (onConnectedCall && c.id) {
+              onConnectedCall(c);
+            } else {
+              onConnected(c.name);
+            }
+          }}
+          style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.grn, borderColor: C.grn }}
+        >
           ✓ Done
         </button>
       </div>
@@ -142,7 +161,7 @@ function KanbanCard({ c, onClick }: KanbanCardProps) {
   );
 }
 
-export function SalesView({ contacts: initialContacts, calls, demos, calSide, apiBase, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule }: Props) {
+export function SalesView({ contacts: initialContacts, calls, demos, calSide, apiBase, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
@@ -337,6 +356,8 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
                 onAttempt={onAttempt}
                 onSms={setSmsContact}
                 onConnected={onConnected}
+                onCompose={onCompose}
+                onConnectedCall={onConnectedCall}
               />
             ))}
           </div>

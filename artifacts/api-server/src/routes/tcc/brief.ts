@@ -4,7 +4,7 @@ import { db, dailyBriefsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { getUncachableGmailClient } from "../../lib/gmail.js";
 import { getUncachableGoogleCalendarClient } from "../../lib/gcal.js";
-import { listSlackChannels, getSlackChannelHistory } from "../../lib/slack.js";
+import { getSlackChannelHistory } from "../../lib/slack.js";
 import { getLinearIssues } from "../../lib/linear.js";
 
 // ─── Full seed defaults — matches TCC_Seed_Data JSON ─────────────────────────
@@ -186,55 +186,71 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
 }
 
 // ─── Live Slack fetch via SLACK_TOKEN ─────────────────────────────────────────
+// Strategy: Try public channels first (needs channels:read), fall back to DMs only.
+// DMs require im:history scope which most bot tokens have by default.
 
 async function fetchLiveSlack(): Promise<SlackItem[] | null> {
   if (!process.env.SLACK_TOKEN) return null;
+  const token = process.env.SLACK_TOKEN;
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const items: SlackItem[] = [];
+
   try {
-    const { ok, channels, error } = await listSlackChannels();
-    if (!ok) {
-      console.warn("[brief] Slack listChannels failed:", error);
-      return null;
-    }
+    // Attempt 1: public channels (requires channels:read)
+    const chanRes = await fetch(
+      "https://slack.com/api/conversations.list?types=public_channel&limit=50&exclude_archived=true",
+      { headers }
+    ).then(r => r.json()) as { ok: boolean; error?: string; channels?: { id: string; name: string; is_member: boolean }[] };
 
-    const targetNames = ["engineering", "leadership", "general", "sales", "random"];
-    const targets = (channels || []).filter(c => targetNames.includes(c.name) && c.is_member);
-    const items: SlackItem[] = [];
+    if (chanRes.ok) {
+      const targetNames = ["engineering", "leadership", "general", "sales"];
+      const targets = (chanRes.channels || []).filter(c => targetNames.includes(c.name) && c.is_member);
 
-    for (const ch of targets.slice(0, 6)) {
-      const hist = await getSlackChannelHistory({ channel: ch.id, limit: 30 });
-      if (!hist.ok) continue;
-      const mentions = (hist.messages || []).filter(m =>
-        m.text?.includes("@tony") || m.text?.includes("@here") || m.text?.includes("@channel")
-      );
-      for (const m of mentions.slice(0, 2)) {
-        items.push({
-          from: m.username || m.user || "Unknown",
-          message: (m.text || "").slice(0, 120),
-          level: /urgent|asap|blocking/i.test(m.text || "") ? "high" : "mid",
-          channel: `#${ch.name}`,
-        });
+      for (const ch of targets.slice(0, 5)) {
+        const hist = await getSlackChannelHistory({ channel: ch.id, limit: 30 });
+        if (!hist.ok) continue;
+        const mentions = (hist.messages || []).filter(m =>
+          m.text?.includes("@tony") || m.text?.includes("@here") || m.text?.includes("@channel")
+        );
+        for (const m of mentions.slice(0, 2)) {
+          items.push({
+            from: m.username || m.user || "Unknown",
+            message: (m.text || "").slice(0, 120),
+            level: /urgent|asap|blocking/i.test(m.text || "") ? "high" : "mid",
+            channel: `#${ch.name}`,
+          });
+        }
       }
+    } else {
+      console.warn(`[brief] Slack channels list failed (${chanRes.error}) — trying DMs only`);
     }
 
-    // Also check DMs (IMs)
-    const token = process.env.SLACK_TOKEN!;
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    const imRes = await fetch("https://slack.com/api/conversations.list?types=im&limit=5", { headers })
-      .then(r => r.json()) as { ok: boolean; channels?: { id: string }[] };
+    // Always also check DMs (im:history is usually available)
+    const imRes = await fetch(
+      "https://slack.com/api/conversations.list?types=im&limit=5",
+      { headers }
+    ).then(r => r.json()) as { ok: boolean; error?: string; channels?: { id: string }[] };
+
     if (imRes.ok) {
-      for (const dm of (imRes.channels || []).slice(0, 3)) {
+      for (const dm of (imRes.channels || []).slice(0, 4)) {
         const hist = await getSlackChannelHistory({ channel: dm.id, limit: 5 });
         if (!hist.ok) continue;
         for (const m of (hist.messages || []).slice(0, 1)) {
+          if (!m.text?.trim()) continue;
           items.push({
             from: m.username || m.user || "DM",
             message: (m.text || "").slice(0, 120),
-            level: "mid",
+            level: /urgent|asap/i.test(m.text || "") ? "high" : "low",
             channel: "DM",
           });
         }
       }
+    } else {
+      console.warn(`[brief] Slack DMs list also failed (${imRes.error})`);
     }
+
+    // If we got nothing from channels OR DMs, return null → seed fallback
+    if (items.length === 0 && !chanRes.ok && !imRes.ok) return null;
 
     return items.slice(0, 5);
   } catch (err) {

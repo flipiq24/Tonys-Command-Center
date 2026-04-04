@@ -57,7 +57,7 @@ export const TIPS: Record<string, string> = {
   chat: "Open AI chat for any question or request.",
 };
 
-export const TODAY_STR = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+export const TODAY_STR = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Los_Angeles" });
 
 export const card: React.CSSProperties = { background: C.card, borderRadius: 14, padding: "20px 24px", border: `1px solid ${C.brd}` };
 export const inp: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 10, border: `2px solid ${C.brd}`, fontSize: 15, fontFamily: F, boxSizing: "border-box", outline: "none" };

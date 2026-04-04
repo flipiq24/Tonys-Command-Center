@@ -33,7 +33,7 @@ const DEFAULT_CONTACTS: Contact[] = [
 export default function App() {
   const [view, setView] = useState<View>("checkin");
   const [prevView, setPrevView] = useState<View>("emails");
-  const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+  const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
   const [loading, setLoading] = useState(true);
 
   // Check-in state
@@ -110,7 +110,7 @@ export default function App() {
       const data = await get<DailyBrief>(`/brief/today${qs}`);
       if (!data || (data as { error?: string }).error) return;
       setBrief(data);
-      setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+      setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
       console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString(), "sources:", sources ?? "all");
     } catch (err) {
       console.warn("[TCC] Auto-refresh failed (skipping):", err);
@@ -171,7 +171,7 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
-    const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
+    const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })), 30000);
     return () => clearInterval(i);
   }, []);
 
@@ -265,7 +265,7 @@ export default function App() {
           );
           setCustomTips(tipKeys);
         }
-        setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+        setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
       } catch {
         /* start fresh */
       }

@@ -4,7 +4,7 @@ import { ClaudePromptBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable } from "@workspace/db";
 import { createLinearIssue } from "../../lib/linear";
-import { postSlackMessage } from "../../lib/slack";
+import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendViaAgentMail } from "../../lib/agentmail";
 import { listRecentEmails, draftReply } from "../../lib/gmail";
 import { getTodayEvents, createEvent } from "../../lib/gcal";
@@ -84,6 +84,38 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
     },
   },
   {
+    name: "read_slack_channel",
+    description: "Read recent messages from a FlipIQ Slack channel. Use to check what the team has been discussing, get deal updates, or see sales activity.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        channel: { type: "string", description: "Slack channel name or ID, e.g. #general, #sales, #tech-ideas" },
+        limit: { type: "number", description: "Number of messages to fetch (default 10, max 50)" },
+      },
+      required: ["channel"],
+    },
+  },
+  {
+    name: "list_slack_channels",
+    description: "List all Slack channels Tony's workspace has. Use to discover which channels exist before reading or posting.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "search_slack",
+    description: "Search Slack messages across all channels. Use to find specific conversations, deal mentions, or team updates.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Search query, e.g. 'deal closed', 'Fernando Perez', 'demo scheduled'" },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "get_today_calendar",
     description: "Fetch Tony's Google Calendar events for today. Use to check his schedule, find meeting times, or give him a schedule overview.",
     input_schema: {
@@ -123,6 +155,47 @@ async function executeTool(
       if (result.ok) return `✓ Message posted to ${input.channel}`;
       if (result.error === "slack_not_connected") return `⚠️ Slack not connected yet — message queued for when Slack is set up.`;
       return `✗ Slack error: ${result.error}`;
+    }
+
+    case "read_slack_channel": {
+      const result = await getSlackChannelHistory({
+        channel: String(input.channel),
+        limit: typeof input.limit === "number" ? Math.min(input.limit, 50) : 10,
+      });
+      if (!result.ok) {
+        if (result.error === "slack_not_connected") return "⚠️ SLACK_TOKEN not set — Slack not connected.";
+        return `✗ Slack error: ${result.error}`;
+      }
+      if (!result.messages?.length) return `No recent messages found in ${input.channel}.`;
+      return result.messages.map((m, i) => {
+        const time = new Date(parseFloat(m.ts) * 1000).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+        return `${i + 1}. [${time}] ${m.username || m.user || "user"}: ${m.text}`;
+      }).join("\n");
+    }
+
+    case "list_slack_channels": {
+      const result = await listSlackChannels();
+      if (!result.ok) {
+        if (result.error === "slack_not_connected") return "⚠️ SLACK_TOKEN not set — Slack not connected.";
+        return `✗ Slack error: ${result.error}`;
+      }
+      if (!result.channels?.length) return "No channels found.";
+      return result.channels
+        .map(c => `#${c.name}${c.is_member ? " ✓" : ""}`)
+        .join(", ");
+    }
+
+    case "search_slack": {
+      const result = await searchSlack(String(input.query));
+      if (!result.ok) {
+        if (result.error === "slack_not_connected") return "⚠️ SLACK_TOKEN not set — Slack not connected.";
+        if (result.error === "not_allowed_token_type") return "⚠️ Search requires a user token (xoxp-), not a bot token. Use read_slack_channel for channel messages.";
+        return `✗ Slack search error: ${result.error}`;
+      }
+      if (!result.messages?.length) return `No Slack messages found for "${input.query}".`;
+      return result.messages.map((m, i) =>
+        `${i + 1}. [#${m.channel?.name || "unknown"}] ${m.text}`
+      ).join("\n");
     }
 
     case "create_linear_issue": {
@@ -240,7 +313,10 @@ TOOLS AVAILABLE:
 - draft_gmail_reply: Create a Gmail draft Tony can review and send
 - get_today_calendar: See what's on Tony's Google Calendar today
 - create_calendar_event: Schedule a meeting on Tony's calendar
-- send_slack_message: Post to #tech-ideas, #sales, #general, etc.
+- send_slack_message: Post to any Slack channel
+- read_slack_channel: Read recent messages from a Slack channel
+- list_slack_channels: List all channels in Tony's Slack workspace
+- search_slack: Search across all Slack messages
 - create_linear_issue: Create tech tasks in Linear
 - send_email: Send emails via AgentMail (automated inbox)
 - get_email_brain: Check Tony's learned email priority rules

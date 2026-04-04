@@ -52,7 +52,6 @@ export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoaded, setContactsLoaded] = useState(false);
   const [calls, setCalls] = useState<CallEntry[]>([]);
-  const [demos, setDemos] = useState(0);
   const [attempt, setAttempt] = useState<{ id: string | number; name: string } | null>(null);
   const [calSide, setCalSide] = useState(false);
 
@@ -213,13 +212,12 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [checkin, journal, briefData, callData, ideaData, demoData, snoozedData, taskData, instructionsData] = await Promise.all([
+        const [checkin, journal, briefData, callData, ideaData, snoozedData, taskData, instructionsData] = await Promise.all([
           get<{ id?: string; done?: boolean; bedtime?: string; waketime?: string; sleepHours?: string; bible?: boolean; workout?: boolean; journal?: boolean; nutrition?: string; unplug?: boolean }>("/checkin/today").catch(() => null),
           get<{ formattedText?: string; rawText?: string }>("/journal/today").catch(() => null),
           get<DailyBrief>("/brief/today").catch(() => null),
           get<CallEntry[]>("/calls").catch(() => []),
           get<Idea[]>("/ideas").catch(() => []),
-          get<{ count: number }>("/demos/count").catch(() => ({ count: 0 })),
           get<Record<number, string>>("/emails/snoozed").catch(() => ({})),
           get<{ taskId: string }[]>("/tasks/completed").catch(() => []),
           get<Record<string, string>>("/system-instructions").catch(() => ({})),
@@ -252,7 +250,6 @@ export default function App() {
         if (briefData) setBrief(briefData);
         if (callData?.length) setCalls(callData);
         if (ideaData?.length) setIdeas(ideaData);
-        if (demoData) setDemos(demoData.count);
         if (snoozedData) setSnoozed(snoozedData);
         if (taskData?.length) {
           const done: Record<string, boolean> = {};
@@ -308,20 +305,6 @@ export default function App() {
       setCalls(prev => [...prev, call]);
     } catch {
       setCalls(prev => [...prev, { contactName, type, createdAt: new Date().toISOString() }]);
-    }
-  }, []);
-
-  const handleDemoChange = useCallback(async (delta: number) => {
-    try {
-      if (delta > 0) {
-        const r = await post<{ count: number }>("/demos/increment");
-        setDemos(r.count);
-      } else {
-        const r = await post<{ count: number }>("/demos/decrement");
-        setDemos(r.count);
-      }
-    } catch {
-      setDemos(prev => Math.max(0, prev + delta));
     }
   }, []);
 
@@ -527,11 +510,9 @@ export default function App() {
       <SalesView
         contacts={contacts}
         calls={calls}
-        demos={demos}
         calSide={calSide}
         onAttempt={c => setAttempt(c)}
         onConnected={name => handleLogCall(name, "connected")}
-        onDemoChange={handleDemoChange}
         onSwitchToTasks={() => persistView("tasks")}
         onBackToSchedule={() => persistView("schedule")}
         onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}

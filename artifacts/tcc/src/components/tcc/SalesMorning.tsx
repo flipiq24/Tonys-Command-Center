@@ -38,7 +38,6 @@ interface BriefModalData {
 
 interface Props {
   calls: { contactName: string; type: string }[];
-  demos: number;
   onAttempt: (c: { id: string | number; name: string }) => void;
   onConnectedCall: (c: { contactId: string; contactName: string; contactEmail?: string }) => void;
   onCompose: (c: Contact) => void;
@@ -75,7 +74,7 @@ function CommTag({ channel }: { channel?: string }) {
   return <span style={{ fontSize: 10, color: C.mut, background: C.brd + "88", borderRadius: 3, padding: "1px 4px" }}>{labels[channel] || channel}</span>;
 }
 
-export function SalesMorning({ calls, demos, onAttempt, onConnectedCall, onCompose, onOpenChat, onSwitchToTasks, onBackToSchedule }: Props) {
+export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onOpenChat, onSwitchToTasks, onBackToSchedule }: Props) {
   const [data, setData] = useState<MorningData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

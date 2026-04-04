@@ -5,9 +5,31 @@ import { db } from "@workspace/db";
 import { communicationLogTable, contactsTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
 import { updateContactComms } from "../../lib/contact-comms";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
 
+// ─── Fetch Gmail signature ─────────────────────────────────────────────────
+async function getGmailSignature(): Promise<string> {
+  try {
+    const gmail = getGmail();
+    const res = await gmail.users.settings.sendAs.list({ userId: "me" });
+    const primary = (res.data.sendAs || []).find(s => s.isPrimary);
+    const sig = primary?.signature || "";
+    // Strip HTML tags to get plain text
+    return sig.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").trim();
+  } catch {
+    return "Tony Diaz\nCEO, FlipIQ";
+  }
+}
+
+// ─── GET /email/signature ──────────────────────────────────────────────────
+router.get("/email/signature", async (_req, res): Promise<void> => {
+  const sig = await getGmailSignature();
+  res.json({ signature: sig });
+});
+
+// ─── POST /email/send ──────────────────────────────────────────────────────
 const SendEmailBody = z.object({
   to: z.string().email(),
   cc: z.string().optional(),
@@ -90,6 +112,7 @@ router.post("/email/send", async (req, res): Promise<void> => {
   }
 });
 
+// ─── POST /email/suggest-draft ────────────────────────────────────────────
 const SuggestDraftBody = z.object({
   to: z.string(),
   subject: z.string().optional(),
@@ -108,32 +131,47 @@ router.post("/email/suggest-draft", async (req, res): Promise<void> => {
   const { to, subject, context, contactName, replyToSnippet } = parsed.data;
 
   try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const anthropic = new Anthropic();
+    const recipient = contactName || to;
 
-    const prompt = replyToSnippet
-      ? `Draft a reply email from Tony Diaz (FlipIQ CEO) to ${contactName || to}.
-Original email subject: "${subject || "No subject"}"
-Original email snippet: "${replyToSnippet}"
+    const systemPrompt = `You are drafting emails on behalf of Tony Diaz, CEO of FlipIQ — a real estate wholesaling and investment platform.
+Tony's writing style: direct, warm, professional, action-oriented. He gets to the point fast and keeps emails short.
+You must respond with ONLY a JSON object in this exact format (no markdown, no code fences):
+{"subject":"<subject line>","body":"<email body — use \\n for line breaks, do NOT include a signature>"}`;
+
+    const userPrompt = replyToSnippet
+      ? `Draft a reply from Tony to ${recipient}.
+Original subject: "${subject || "No subject"}"
+Original message snippet: "${replyToSnippet}"
 ${context ? `Additional context: ${context}` : ""}
-
-Write a professional but warm reply. Keep it concise (3-5 sentences max). Tony's style: direct, friendly, action-oriented. Sign off as "Tony".`
-      : `Draft an email from Tony Diaz (FlipIQ CEO) to ${contactName || to}.
-Subject: "${subject || "Write a good subject"}"
-${context ? `Context: ${context}` : ""}
-
-Write a professional but warm email. Keep it concise. Tony's style: direct, friendly, action-oriented. Sign off as "Tony".`;
+Keep it 2-4 sentences. Be warm and direct.`
+      : `Draft an email from Tony to ${recipient}.
+${subject ? `Subject hint: "${subject}"` : "Create a clear, compelling subject line."}
+${context ? `Context/purpose: ${context}` : "Write a general outreach or follow-up email."}
+Keep the body to 3-5 sentences max.`;
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
+      max_tokens: 512,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userPrompt }],
     });
 
     const textBlock = response.content.find(b => b.type === "text");
-    const draft = textBlock?.type === "text" ? textBlock.text : "";
+    const raw = textBlock?.type === "text" ? textBlock.text.trim() : "";
 
-    res.json({ ok: true, draft, suggestedSubject: subject || "" });
+    let draftSubject = subject || "";
+    let draftBody = "";
+
+    try {
+      const parsed = JSON.parse(raw);
+      draftSubject = parsed.subject || draftSubject;
+      draftBody = parsed.body || "";
+    } catch {
+      // Fallback: treat entire response as body
+      draftBody = raw;
+    }
+
+    res.json({ ok: true, subject: draftSubject, body: draftBody });
   } catch (err) {
     req.log.error({ err }, "Email draft suggestion failed");
     res.status(500).json({ error: "Failed to generate draft" });

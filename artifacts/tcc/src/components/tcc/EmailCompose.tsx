@@ -111,6 +111,18 @@ export function EmailCompose({
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [aiDrafting, setAiDrafting] = useState(false);
+  const [signature, setSignature] = useState("");
+  const [sigLoading, setSigLoading] = useState(false);
+
+  // Fetch Gmail signature once
+  useEffect(() => {
+    if (signature || sigLoading) return;
+    setSigLoading(true);
+    get<{ signature: string }>("/email/signature")
+      .then(r => setSignature(r.signature || "Tony Diaz\nCEO, FlipIQ"))
+      .catch(() => setSignature("Tony Diaz\nCEO, FlipIQ"))
+      .finally(() => setSigLoading(false));
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -128,23 +140,33 @@ export function EmailCompose({
     setAiDrafting(true);
     setError("");
     try {
-      const result = await post<{ ok: boolean; draft: string; suggestedSubject?: string }>("/email/suggest-draft", {
+      const result = await post<{ ok: boolean; subject: string; body: string }>("/email/suggest-draft", {
         to,
         subject,
         contactName: prefillContactName,
         replyToSnippet,
         context: body || undefined,
       });
-      if (result.draft) setBody(result.draft);
-      if (result.suggestedSubject && !subject) setSubject(result.suggestedSubject);
+      if (result.body) setBody(result.body);
+      if (result.subject) setSubject(result.subject);
     } catch {
-      setError("Failed to generate AI draft");
+      setError("AI draft failed — check that the API server is running");
     }
     setAiDrafting(false);
   };
 
+  // Full body including signature separator
+  const fullBodyForSend = () => {
+    const trimmed = body.trim();
+    if (!signature) return trimmed;
+    const sep = "\n\n--\n";
+    // Avoid double-appending if user already typed the signature
+    if (trimmed.includes(signature.trim())) return trimmed;
+    return `${trimmed}${sep}${signature}`;
+  };
+
   const handleSend = async () => {
-    if (!to || !subject || !body) {
+    if (!to || !subject || !body.trim()) {
       setError("To, Subject, and Body are required");
       return;
     }
@@ -152,7 +174,9 @@ export function EmailCompose({
     setError("");
     try {
       await post("/email/send", {
-        to, cc: cc || undefined, bcc: bcc || undefined, subject, body,
+        to, cc: cc || undefined, bcc: bcc || undefined,
+        subject,
+        body: fullBodyForSend(),
         threadId: threadId || undefined,
         contactId: prefillContactId || undefined,
       });
@@ -166,9 +190,11 @@ export function EmailCompose({
 
   if (!open) return null;
 
+  const canSend = !!to && !!subject && !!body.trim() && !sending;
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 14, padding: 28, width: 600, maxWidth: "95vw", maxHeight: "90vh", overflow: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 14, padding: 28, width: 620, maxWidth: "95vw", maxHeight: "92vh", overflow: "auto" }}>
 
         {sent ? (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
@@ -180,7 +206,7 @@ export function EmailCompose({
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <h3 style={{ fontFamily: FS, fontSize: 20, margin: 0 }}>
-                {replyToSnippet ? "Reply" : "Compose Email"}
+                {replyToSnippet ? "Reply" : "New Email"}
               </h3>
               <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: C.mut }}>&#10005;</button>
             </div>
@@ -194,48 +220,64 @@ export function EmailCompose({
               <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject line" style={{ ...inp, fontSize: 14 }} />
             </div>
 
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1 }}>Body</label>
                 <button
                   onClick={handleAiDraft}
                   disabled={aiDrafting}
-                  style={{ ...btn2, padding: "4px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}
+                  style={{ ...btn2, padding: "4px 12px", fontSize: 11, color: C.blu, borderColor: C.blu, opacity: aiDrafting ? 0.6 : 1 }}
                 >
-                  {aiDrafting ? "Drafting..." : "AI Draft"}
+                  {aiDrafting ? "Drafting…" : "AI Draft"}
                 </button>
               </div>
-              <textarea
-                value={body}
-                onChange={e => setBody(e.target.value)}
-                placeholder="Write your email here..."
-                style={{ ...inp, minHeight: 180, resize: "vertical", fontSize: 14, lineHeight: 1.6 } as React.CSSProperties}
-              />
+
+              {/* Compose area: body + signature preview */}
+              <div style={{ border: `1px solid ${C.brd}`, borderRadius: 8, background: "#FAFAF8", overflow: "hidden" }}>
+                <textarea
+                  value={body}
+                  onChange={e => setBody(e.target.value)}
+                  placeholder={replyToSnippet ? "Write your reply…" : "Write your message…"}
+                  style={{
+                    width: "100%", minHeight: 160, padding: "12px 14px",
+                    border: "none", outline: "none", resize: "vertical",
+                    fontSize: 14, lineHeight: 1.6, fontFamily: F,
+                    background: "transparent", boxSizing: "border-box",
+                  } as React.CSSProperties}
+                />
+                {signature && (
+                  <div style={{
+                    padding: "8px 14px 12px",
+                    borderTop: `1px solid ${C.brd}`,
+                    fontSize: 13, color: C.mut, fontFamily: F,
+                    lineHeight: 1.5, whiteSpace: "pre-wrap",
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: C.brd, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>— Signature</div>
+                    {signature}
+                  </div>
+                )}
+              </div>
             </div>
 
             {error && (
-              <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>
+              <div style={{ marginBottom: 12, marginTop: 8, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>
                 {error}
               </div>
             )}
 
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
               <button onClick={onClose} style={{ ...btn2, padding: "10px 20px" }}>Cancel</button>
               <button
                 onClick={handleSend}
-                disabled={sending || !to || !subject || !body}
-                style={{
-                  ...btn1,
-                  padding: "10px 28px",
-                  opacity: (sending || !to || !subject || !body) ? 0.4 : 1,
-                }}
+                disabled={!canSend}
+                style={{ ...btn1, padding: "10px 28px", opacity: canSend ? 1 : 0.4 }}
               >
-                {sending ? "Sending..." : "Send via Gmail"}
+                {sending ? "Sending…" : "Send via Gmail"}
               </button>
             </div>
 
-            <div style={{ fontSize: 10, color: C.mut, marginTop: 10, textAlign: "center" }}>
-              Sends directly from tony@flipiq.com via Gmail API
+            <div style={{ fontSize: 10, color: C.mut, marginTop: 8, textAlign: "center" }}>
+              Sends from tony@flipiq.com · signature appended automatically
             </div>
           </>
         )}

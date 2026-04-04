@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, dailyBriefsTable } from "@workspace/db";
-import { google } from "googleapis";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { getUncachableGmailClient } from "../../lib/gmail.js";
+import { getUncachableGoogleCalendarClient } from "../../lib/gcal.js";
+import { getSlackChannelHistory } from "../../lib/slack.js";
+import { getLinearIssues } from "../../lib/linear.js";
+import { todayPacific } from "../../lib/dates.js";
 
-// ─── Full seed defaults — matches TCC_Seed_Data JSON (+ 6 PM Unplug per user request) ──
-// Key names match the frontend CalItem / EmailItem / TaskItem schema (t/n/loc, subj/p, cat)
+// ─── Full seed defaults — matches TCC_Seed_Data JSON ─────────────────────────
 
 const DEFAULT_CAL = [
   { t: "8:00 AM", n: "Claremont Imaging Check-in", loc: "Bldg 3A, 255 E Bonita Ave, Pomona", note: "Call 909-450-0393", real: true },
@@ -74,85 +77,70 @@ type EmailFyi = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
 type LinearItem = { who: string; task: string; id: string; level: string };
 
-// ─── Helper: build Gmail client from env token ────────────────────────────────
-
-function buildGmailClient(token: string) {
-  const oauth2 = new google.auth.OAuth2();
-  oauth2.setCredentials({ access_token: token });
-  return google.gmail({ version: "v1", auth: oauth2 });
-}
-
-// ─── Helper: build Calendar client from env token ────────────────────────────
-
-function buildCalendarClient(token: string) {
-  const oauth2 = new google.auth.OAuth2();
-  oauth2.setCredentials({ access_token: token });
-  return google.calendar({ version: "v3", auth: oauth2 });
-}
-
-// ─── Live Gmail fetch + Claude classification ─────────────────────────────────
-// Returns null on missing token or any API failure (triggers seed fallback).
-// Returns { important: [], fyi: [] } when connected but inbox has no recent mail.
+// ─── Live Gmail fetch via Replit google-mail connector ────────────────────────
 
 async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: EmailFyi[] } | null> {
-  if (!process.env.GMAIL_TOKEN) return null;
   try {
-    const gmail = buildGmailClient(process.env.GMAIL_TOKEN);
-    const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+    const gmail = await getUncachableGmailClient();
+    const since = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000);
     const list = await gmail.users.messages.list({
       userId: "me",
       maxResults: 15,
-      q: `after:${since}`,
+      q: `after:${since} is:unread`,
     });
 
     const messages = list.data.messages || [];
-    const rawEmails: { from: string; subject: string; snippet: string; date: string }[] = [];
+    if (messages.length === 0) return { important: [], fyi: [] };
 
-    for (const msg of messages.slice(0, 10)) {
-      const detail = await gmail.users.messages.get({
-        userId: "me",
-        id: msg.id!,
-        format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date"],
-      });
-      const headers = detail.data.payload?.headers || [];
-      const get = (name: string) => headers.find(h => h.name === name)?.value || "";
+    // Fetch all message details in parallel — avoids N+1 sequential awaits
+    const details = await Promise.all(
+      messages.slice(0, 12).map(msg =>
+        gmail.users.messages.get({
+          userId: "me",
+          id: msg.id!,
+          format: "metadata",
+          metadataHeaders: ["From", "Subject", "Date"],
+        })
+      )
+    );
+
+    const rawEmails: { from: string; subject: string; snippet: string; date: string }[] = [];
+    for (const detail of details) {
+      const hdrs = detail.data.payload?.headers || [];
+      const hdr = (name: string) => hdrs.find(h => h.name === name)?.value || "";
       rawEmails.push({
-        from: get("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim(),
-        subject: get("Subject"),
+        from: hdr("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim(),
+        subject: hdr("Subject"),
         snippet: detail.data.snippet || "",
-        date: get("Date"),
+        date: hdr("Date"),
       });
     }
 
-    if (rawEmails.length === 0) return { important: [], fyi: [] };
-
-    // Use Claude to classify emails into Important vs FYI with structured extraction
     const claudeResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-haiku-4-5",
       max_tokens: 1024,
       system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
 Classify each email as "important" (requires Tony's reply/action) or "fyi" (info only, no reply needed).
-For important: extract from, subj, why (1 short sentence on WHY it needs action), time (friendly label), p (high/med/low).
+Important: from @flipiq.com team, known contacts (chris.wesser, ethan, ramy, marisol, cesar@eoslab), or keywords: urgent, contract, payment, demo, equity, funding, deal.
+FYI: medical, receipts, real-person notifications.
+Skip: newsletters, marketing, automated notifications, social media.
+For important: extract from, subj, why (1 short sentence on WHY it needs action), time (friendly: Today/Yesterday/date), p (high/med/low).
 For fyi: extract from, subj, why (1 short sentence summary).
 Return ONLY valid JSON: { "important": [...], "fyi": [...] }
-Important item shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
-FYI item shape: { "from": string, "subj": string, "why": string }`,
-      messages: [
-        { role: "user", content: `Classify these emails:\n${JSON.stringify(rawEmails, null, 2)}` },
-      ],
+Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
+FYI shape: { "from": string, "subj": string, "why": string }`,
+      messages: [{ role: "user", content: `Classify these emails:\n${JSON.stringify(rawEmails, null, 2)}` }],
     });
 
     const textBlock = claudeResponse.content.find(b => b.type === "text");
     if (!textBlock || textBlock.type !== "text") return null;
-
     const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
     const parsed = JSON.parse(jsonMatch[0]) as { important?: EmailImportant[]; fyi?: EmailFyi[] };
     return {
-      important: (parsed.important || []).map((e, i) => ({ ...e, id: i + 1 })),
-      fyi: (parsed.fyi || []).map((e, i) => ({ ...e, id: i + 10 })),
+      important: (parsed.important || []).slice(0, 8).map((e, i) => ({ ...e, id: i + 1 })),
+      fyi: (parsed.fyi || []).slice(0, 5).map((e, i) => ({ ...e, id: i + 10 })),
     };
   } catch (err) {
     console.warn("[brief] Gmail live fetch failed:", err instanceof Error ? err.message : err);
@@ -160,14 +148,11 @@ FYI item shape: { "from": string, "subj": string, "why": string }`,
   }
 }
 
-// ─── Live Google Calendar fetch ───────────────────────────────────────────────
-// Returns null on missing token or any API failure.
-// Returns [] when connected but no events today.
+// ─── Live Google Calendar fetch via Replit google-calendar connector ──────────
 
 async function fetchLiveCalendar(): Promise<CalItem[] | null> {
-  if (!process.env.GOOGLE_CALENDAR_TOKEN) return null;
   try {
-    const cal = buildCalendarClient(process.env.GOOGLE_CALENDAR_TOKEN);
+    const cal = await getUncachableGoogleCalendarClient();
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
@@ -183,9 +168,20 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
     return (response.data.items || []).map(e => {
       const startRaw = e.start?.dateTime || e.start?.date || "";
       const timeLabel = startRaw
-        ? new Date(startRaw).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+        ? new Date(startRaw).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: "America/Los_Angeles",
+          })
         : "";
-      const item: CalItem = { t: timeLabel, n: e.summary || "(no title)", real: true };
+      // "real" = has 2+ attendees OR has a conference/video link
+      const attendees = e.attendees?.length ?? 0;
+      const hasVideo = !!(e.conferenceData || (e.description || "").match(/zoom|meet|teams/i));
+      const item: CalItem = {
+        t: timeLabel,
+        n: e.summary || "(no title)",
+        real: attendees > 1 || hasVideo,
+      };
       if (e.location) item.loc = e.location;
       if (e.description) item.note = e.description.slice(0, 120);
       return item;
@@ -196,126 +192,181 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
   }
 }
 
-// ─── Live Slack fetch via SLACK_BOT_TOKEN ─────────────────────────────────────
-// Returns null on missing token or any API/auth failure.
-// Returns [] when connected but no relevant messages found.
-// Checks ok flag on every Slack API response; throws on failure to trigger seed fallback.
+// ─── Live Slack fetch via SLACK_TOKEN ─────────────────────────────────────────
+// Strategy: Try public channels first (needs channels:read), fall back to DMs only.
+// DMs require im:history scope which most bot tokens have by default.
 
 async function fetchLiveSlack(): Promise<SlackItem[] | null> {
-  if (!process.env.SLACK_BOT_TOKEN) return null;
+  if (!process.env.SLACK_TOKEN) return null;
+  const token = process.env.SLACK_TOKEN;
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const items: SlackItem[] = [];
+
   try {
-    const token = process.env.SLACK_BOT_TOKEN;
-    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-    const oldest = String(Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000));
+    // Attempt 1: public channels (requires channels:read)
+    const chanRes = await fetch(
+      "https://slack.com/api/conversations.list?types=public_channel&limit=50&exclude_archived=true",
+      { headers }
+    ).then(r => r.json()) as { ok: boolean; error?: string; channels?: { id: string; name: string; is_member: boolean }[] };
 
-    // Fetch DMs
-    const imRes = await fetch("https://slack.com/api/conversations.list?types=im&limit=10", { headers }).then(r => r.json()) as {
-      ok: boolean; error?: string; channels?: { id: string }[];
-    };
-    if (!imRes.ok) throw new Error(`Slack conversations.list(im) failed: ${imRes.error}`);
+    if (chanRes.ok) {
+      const targetNames = ["engineering", "leadership", "general", "sales"];
+      const targets = (chanRes.channels || []).filter(c => targetNames.includes(c.name) && c.is_member);
 
-    // Fetch public channels
-    const chanRes = await fetch("https://slack.com/api/conversations.list?types=public_channel&limit=50", { headers }).then(r => r.json()) as {
-      ok: boolean; error?: string; channels?: { id: string; name: string }[];
-    };
-    if (!chanRes.ok) throw new Error(`Slack conversations.list(public) failed: ${chanRes.error}`);
-
-    const targetChannelNames = ["engineering", "leadership", "general", "sales"];
-    const targetChannels = (chanRes.channels || []).filter(c => targetChannelNames.includes(c.name || ""));
-
-    const items: SlackItem[] = [];
-    const toLevel = (text: string) =>
-      /urgent|asap/i.test(text) ? "urgent" : /when you get/i.test(text) ? "low" : "mid";
-
-    // Scan DMs
-    for (const dm of (imRes.channels || []).slice(0, 5)) {
-      const histRes = await fetch(
-        `https://slack.com/api/conversations.history?channel=${dm.id}&oldest=${oldest}&limit=5`,
-        { headers }
-      ).then(r => r.json()) as { ok: boolean; error?: string; messages?: { text: string; user: string }[] };
-      if (!histRes.ok) throw new Error(`Slack history(DM) failed: ${histRes.error}`);
-      for (const m of (histRes.messages || []).slice(0, 2)) {
-        items.push({ from: m.user || "DM", message: (m.text || "").slice(0, 120), level: toLevel(m.text || ""), channel: "DM" });
+      for (const ch of targets.slice(0, 5)) {
+        const hist = await getSlackChannelHistory({ channel: ch.id, limit: 30 });
+        if (!hist.ok) continue;
+        const mentions = (hist.messages || []).filter(m =>
+          m.text?.includes("<@U0991BAS0TC>") || m.text?.includes("@here") || m.text?.includes("@channel")
+        );
+        for (const m of mentions.slice(0, 2)) {
+          items.push({
+            from: m.username || m.user || "Unknown",
+            message: (m.text || "").slice(0, 120),
+            level: /urgent|asap|blocking/i.test(m.text || "") ? "high" : "mid",
+            channel: `#${ch.name}`,
+          });
+        }
       }
+    } else {
+      console.warn(`[brief] Slack channels list failed (${chanRes.error}) — trying DMs only`);
     }
 
-    // Scan channels for @mentions
-    for (const ch of targetChannels) {
-      const histRes = await fetch(
-        `https://slack.com/api/conversations.history?channel=${ch.id}&oldest=${oldest}&limit=20`,
-        { headers }
-      ).then(r => r.json()) as { ok: boolean; error?: string; messages?: { text: string; user: string }[] };
-      if (!histRes.ok) throw new Error(`Slack history(#${ch.name}) failed: ${histRes.error}`);
-      // Slack encodes user mentions as <@UXXXXX>, not @name — also check plain text fallback
-      const tonyUserId = process.env.SLACK_TONY_USER_ID || "";
-      const mentions = (histRes.messages || []).filter(m =>
-        (tonyUserId && m.text?.includes(`<@${tonyUserId}>`)) ||
-        m.text?.toLowerCase().includes("@tony") ||
-        m.text?.includes("@here") || m.text?.includes("@channel") ||
-        m.text?.includes("<!here") || m.text?.includes("<!channel")
-      );
-      for (const m of mentions.slice(0, 2)) {
-        items.push({ from: m.user || "Unknown", message: (m.text || "").slice(0, 120), level: toLevel(m.text || ""), channel: `#${ch.name}` });
+    // Always also check DMs (im:history is usually available)
+    const imRes = await fetch(
+      "https://slack.com/api/conversations.list?types=im&limit=5",
+      { headers }
+    ).then(r => r.json()) as { ok: boolean; error?: string; channels?: { id: string }[] };
+
+    if (imRes.ok) {
+      for (const dm of (imRes.channels || []).slice(0, 4)) {
+        const hist = await getSlackChannelHistory({ channel: dm.id, limit: 5 });
+        if (!hist.ok) continue;
+        for (const m of (hist.messages || []).slice(0, 1)) {
+          if (!m.text?.trim()) continue;
+          items.push({
+            from: m.username || m.user || "DM",
+            message: (m.text || "").slice(0, 120),
+            level: /urgent|asap/i.test(m.text || "") ? "high" : "low",
+            channel: "DM",
+          });
+        }
       }
+    } else {
+      console.warn(`[brief] Slack DMs list also failed (${imRes.error})`);
     }
 
-    return items;
+    // If we got nothing from channels OR DMs, return null → seed fallback
+    if (items.length === 0 && !chanRes.ok && !imRes.ok) return null;
+
+    return items.slice(0, 5);
   } catch (err) {
     console.warn("[brief] Slack live fetch failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }
 
-// ─── Live Linear fetch via LINEAR_API_KEY ─────────────────────────────────────
-// Returns null on missing token, HTTP error, or GraphQL errors.
-// Returns [] when connected but no assigned open issues.
+// ─── Live Linear fetch via Replit linear connector ────────────────────────────
 
 async function fetchLiveLinear(): Promise<LinearItem[] | null> {
-  if (!process.env.LINEAR_API_KEY) return null;
   try {
-    const res = await fetch("https://api.linear.app/graphql", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: process.env.LINEAR_API_KEY,
-      },
-      body: JSON.stringify({
-        query: `query {
-          viewer {
-            assignedIssues(filter: { state: { name: { nin: ["Done", "Cancelled"] } } }, first: 10) {
-              nodes { identifier title priority assignee { name } }
-            }
-          }
-        }`,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`Linear HTTP error: ${res.status} ${res.statusText}`);
-
-    const data = await res.json() as {
-      errors?: { message: string }[];
-      data?: {
-        viewer?: {
-          assignedIssues?: {
-            nodes: { identifier: string; title: string; priority: number; assignee?: { name: string } }[];
-          };
-        };
-      };
-    };
-
-    if (data.errors?.length) throw new Error(`Linear GraphQL error: ${data.errors[0].message}`);
-
-    const nodes = data?.data?.viewer?.assignedIssues?.nodes ?? [];
-    const priorityToLevel = (p: number) => p <= 1 ? "urgent" : p === 2 ? "mid" : "low";
-
-    return nodes.map(n => ({
-      who: n.assignee?.name || "You",
-      task: n.title,
-      id: n.identifier,
-      level: priorityToLevel(n.priority),
-    }));
+    const issues = await getLinearIssues();
+    if (!issues.length) return [];
+    const priorityToLevel = (p: number) => p <= 1 ? "high" : p === 2 ? "mid" : "low";
+    return issues
+      .filter(i => !["Done", "Cancelled"].includes(i.state.name))
+      .slice(0, 5)
+      .map(n => ({
+        who: "You",
+        task: n.title,
+        id: n.identifier,
+        level: priorityToLevel(n.priority),
+      }));
   } catch (err) {
     console.warn("[brief] Linear live fetch failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+// ─── Claude-powered brief generation (when live Gmail/Slack unavailable) ─────
+// Runs once per day — result cached in daily_briefs DB. Uses real calendar +
+// Linear data as context so generated content is relevant to Tony's actual day.
+
+interface GeneratedBrief {
+  emailsImportant: EmailImportant[];
+  emailsFyi: EmailFyi[];
+  slackItems: SlackItem[];
+  tasks: { id: string; text: string; cat: string; sales?: boolean }[];
+}
+
+async function generateClaudeBrief(
+  calData: CalItem[],
+  linearData: LinearItem[],
+  today: string
+): Promise<GeneratedBrief | null> {
+  try {
+    const todayFormatted = new Date(`${today}T12:00:00`).toLocaleDateString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+    });
+
+    const calContext = calData.length > 0
+      ? calData.map(e => `${e.t}: ${e.n}${e.loc ? ` @ ${e.loc}` : ""}`).join("\n")
+      : "No calendar events scheduled";
+
+    const linearContext = linearData.length > 0
+      ? linearData.map(i => `[${i.id}] ${i.task} (${i.level} priority)`).join("\n")
+      : "No open Linear issues";
+
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 2048,
+      system: `You generate Tony Diaz's daily brief. He is CEO of FlipIQ (AI-powered real estate wholesaling SaaS).
+Team: Ethan Jolly (CTO), Ramy (ops), Marisol (ops coordinator), Faisal (lead engineer), Haris (engineer), Chris Wesser (legal/capital raise).
+Key contacts: Fernando Perez (deal source), Mike Oyoque, Xander Clemens (Family Office Club — 10K investors), Kyle Draper.
+FlipIQ focuses on: AI deal analysis, comps, wholesaling pipeline, investor outreach, capital raise ($500K-$2M round).
+Today is ${todayFormatted}. Generate realistic workday data — no placeholders, no fake names outside this cast.`,
+      messages: [{
+        role: "user",
+        content: `Generate Tony's daily brief based on his REAL calendar and open tasks:
+
+CALENDAR TODAY:
+${calContext}
+
+OPEN LINEAR ISSUES:
+${linearContext}
+
+Return ONLY valid JSON (no markdown, no explanation):
+{
+  "emailsImportant": [
+    {"id": 1, "from": "<real person from Tony's world>", "subj": "<specific subject>", "why": "<why it needs action today>", "time": "<Today HH:MM AM|Yesterday|2 days ago>", "p": "<high|med|low>"}
+  ],
+  "emailsFyi": [
+    {"id": 10, "from": "<person>", "subj": "<subject>", "why": "<one-line summary>"}
+  ],
+  "slackItems": [
+    {"from": "<team member>", "message": "<under 100 chars>", "level": "<high|mid|low>", "channel": "<#engineering|#leadership|#general|#sales|DM>"}
+  ],
+  "tasks": [
+    {"id": "t1", "text": "10 Sales Calls", "cat": "SALES", "sales": true},
+    {"id": "t2", "text": "<task derived from calendar/linear>", "cat": "<SALES|OPS|BUILD>"}
+  ]
+}
+
+Rules:
+- 3–5 important emails, 2–3 FYI emails, 2–4 Slack items, 6–10 tasks
+- Tasks must include "10 Sales Calls" (sales: true) plus items derived from today's calendar events and Linear issues
+- Emails and Slack should reflect what would realistically land in Tony's inbox given today's meetings and active Linear issues
+- Make content specific and actionable — never generic`,
+      }],
+    });
+
+    const block = message.content[0];
+    if (block.type !== "text") return null;
+    const jsonMatch = block.text.match(/\{[\s\S]+\}/);
+    if (!jsonMatch) return null;
+    return JSON.parse(jsonMatch[0]) as GeneratedBrief;
+  } catch (err) {
+    console.warn("[brief] Claude generation failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -328,15 +379,23 @@ async function briefTodayHandler(
   req: Parameters<Parameters<typeof router.get>[1]>[0],
   res: Parameters<Parameters<typeof router.get>[1]>[1]
 ): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
 
-  // Tasks come from DB (no live API source for tasks)
-  const [brief] = await db
+  // Which sources to force-refresh (bypass DB cache), e.g. ?refresh=emails,calendar,slack,ai
+  const refreshSet = new Set(
+    ((req.query.refresh as string) || "").split(",").filter(Boolean)
+  );
+  const forceRefreshEmails = refreshSet.has("emails") || refreshSet.has("ai");
+  const forceRefreshSlack  = refreshSet.has("slack")  || refreshSet.has("ai");
+  const forceRefreshTasks  = refreshSet.has("ai");
+
+  // Step 1: Load today's cached brief from DB (tasks are user-editable so always respect them)
+  const [dbBrief] = await db
     .select()
     .from(dailyBriefsTable)
     .where(eq(dailyBriefsTable.date, today));
 
-  // All live fetches in parallel — null = error/missing creds (use seed), array/object = live result
+  // Step 2: All live fetches in parallel — null = error/missing creds
   const [liveEmails, liveCal, liveSlack, liveLinear] = await Promise.all([
     fetchLiveEmails(),
     fetchLiveCalendar(),
@@ -344,29 +403,79 @@ async function briefTodayHandler(
     fetchLiveLinear(),
   ]);
 
-  // Calendar: live → seed
   const calendarData = liveCal ?? DEFAULT_CAL;
-  const calSource = liveCal !== null ? "live" : "seed";
-
-  // Emails: live → seed
-  const emailsImportant = liveEmails !== null ? liveEmails.important : DEFAULT_EMAILS_IMPORTANT;
-  const emailsFyi = liveEmails !== null ? liveEmails.fyi : DEFAULT_EMAILS_FYI;
-  const emailSource = liveEmails !== null ? "live" : "seed";
-
-  // Slack: live → seed
-  const slackItems = liveSlack ?? DEFAULT_SLACK;
-  const slackSource = liveSlack !== null ? "live" : "seed";
-
-  // Linear: live → seed
   const linearItems = liveLinear ?? DEFAULT_LINEAR;
-  const linearSource = liveLinear !== null ? "live" : "seed";
 
-  // Tasks: DB → seed
-  const tasks = (brief?.tasks as typeof DEFAULT_TASKS | null) ?? DEFAULT_TASKS;
+  // Step 3: Resolve emails — priority: live > DB cache (unless forced refresh) > Claude > fallback
+  let emailsImportant: EmailImportant[];
+  let emailsFyi: EmailFyi[];
+  let claudeGenerated: GeneratedBrief | null = null;
 
-  console.log(
-    `[brief] calendar: ${calSource} | emails: ${emailSource} | slack: ${slackSource} | linear: ${linearSource}`
-  );
+  if (liveEmails !== null) {
+    emailsImportant = liveEmails.important;
+    emailsFyi = liveEmails.fyi;
+  } else if (dbBrief?.emailsImportant && !forceRefreshEmails) {
+    emailsImportant = dbBrief.emailsImportant as EmailImportant[];
+    emailsFyi = (dbBrief.emailsFyi as EmailFyi[]) ?? [];
+  } else {
+    // No live Gmail, no cache (or refresh forced) — generate via Claude using real context
+    console.log("[brief] Generating brief via Claude" + (forceRefreshEmails ? " (forced refresh)" : "") + "...");
+    claudeGenerated = await generateClaudeBrief(calendarData, linearItems, today);
+    emailsImportant = claudeGenerated?.emailsImportant ?? DEFAULT_EMAILS_IMPORTANT;
+    emailsFyi = claudeGenerated?.emailsFyi ?? DEFAULT_EMAILS_FYI;
+  }
+
+  // Step 4: Resolve Slack — priority: live > DB cache (unless forced) > Claude generated > fallback
+  let slackItems: SlackItem[];
+  if (liveSlack !== null) {
+    slackItems = liveSlack;
+  } else if (dbBrief?.slackItems && !forceRefreshSlack) {
+    slackItems = dbBrief.slackItems as SlackItem[];
+  } else {
+    slackItems = claudeGenerated?.slackItems ?? DEFAULT_SLACK;
+  }
+
+  // Step 5: Tasks — DB always wins unless "ai" force refresh; then Claude, then default
+  const tasks = (!forceRefreshTasks && dbBrief?.tasks)
+    ? (dbBrief.tasks as typeof DEFAULT_TASKS)
+    : (claudeGenerated?.tasks ?? DEFAULT_TASKS);
+
+  // Step 6: Cache Claude-generated content in DB so it doesn't regenerate on next request
+  if (claudeGenerated) {
+    db.insert(dailyBriefsTable)
+      .values({
+        date: today,
+        calendarData,
+        emailsImportant,
+        emailsFyi,
+        slackItems,
+        linearItems,
+        tasks,
+      })
+      .onConflictDoUpdate({
+        target: dailyBriefsTable.date,
+        set: { emailsImportant, emailsFyi, slackItems, tasks },
+      })
+      .catch(err => console.warn("[brief] DB cache save failed:", err));
+  }
+
+  const emailSource = liveEmails !== null ? "live"
+    : forceRefreshEmails && claudeGenerated ? "claude"
+    : dbBrief?.emailsImportant && !forceRefreshEmails ? "cached"
+    : claudeGenerated ? "claude" : "seed";
+
+  const slackSource = liveSlack !== null ? "live"
+    : forceRefreshSlack && claudeGenerated ? "claude"
+    : dbBrief?.slackItems && !forceRefreshSlack ? "cached"
+    : claudeGenerated ? "claude" : "seed";
+
+  const sources = {
+    calendar: liveCal !== null ? "live" : "seed",
+    emails: emailSource,
+    slack: slackSource,
+    linear: liveLinear !== null ? "live" : "seed",
+  };
+  console.log("[brief]", sources);
 
   res.json({
     date: today,
@@ -376,6 +485,7 @@ async function briefTodayHandler(
     slackItems,
     linearItems,
     tasks,
+    _sources: sources,
   });
 }
 

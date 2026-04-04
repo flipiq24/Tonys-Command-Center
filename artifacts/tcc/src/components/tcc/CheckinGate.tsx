@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { post } from "@/lib/api";
+import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR, card, inp, btn1, btn2, lbl } from "./constants";
+import type { CheckinState } from "./types";
 
-interface CheckinState {
-  bed: string; wake: string; sleep: string;
-  bible: boolean; workout: boolean; journal: boolean;
-  nut: string; unplug: boolean; done: boolean;
+interface PatternAlert {
+  type: string;
+  message: string;
+  level: "high" | "mid" | "low";
 }
 
 interface Props {
@@ -13,15 +15,19 @@ interface Props {
   onComplete: (ck: CheckinState) => void;
 }
 
+const levelStyle = (level: "high" | "mid" | "low") => ({
+  background: level === "high" ? C.redBg : level === "mid" ? C.ambBg : C.bluBg,
+  color: level === "high" ? C.red : level === "mid" ? C.amb : C.blu,
+  icon: level === "high" ? "🚨" : level === "mid" ? "⚠️" : "💡",
+});
+
 export function CheckinGate({ initial, onComplete }: Props) {
   const [ck, setCk] = useState<CheckinState>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
-  useEffect(() => {
-    const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 60000);
-    return () => clearInterval(i);
-  }, []);
+  const [clock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+  const [patternAlerts, setPatternAlerts] = useState<PatternAlert[]>([]);
+  const [showAlerts, setShowAlerts] = useState(false);
 
   const upCk = (k: keyof CheckinState, v: unknown) => {
     const u = { ...ck, [k]: v } as CheckinState;
@@ -47,22 +53,88 @@ export function CheckinGate({ initial, onComplete }: Props) {
     setSaving(true);
     setError("");
     try {
-      await post("/checkin", {
+      const result = await post("/checkin", {
         bedtime: ck.bed, waketime: ck.wake, sleepHours: ck.sleep || undefined,
         bible: ck.bible, workout: ck.workout, journal: ck.journal,
         nutrition: ck.nut, unplug: ck.unplug,
-      });
+      }) as { patternAlerts?: PatternAlert[] };
+
+      const alerts: PatternAlert[] = result?.patternAlerts ?? [];
       const done = { ...ck, done: true };
       setCk(done);
-      onComplete(done);
+
+      if (alerts.length > 0) {
+        setPatternAlerts(alerts);
+        setShowAlerts(true);
+      } else {
+        onComplete(done);
+      }
     } catch {
       setError("Failed to save check-in. Please try again.");
     }
     setSaving(false);
   };
 
+  // Pattern alert screen
+  if (showAlerts) {
+    const highAlerts = patternAlerts.filter(a => a.level === "high");
+    const otherAlerts = patternAlerts.filter(a => a.level !== "high");
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <FontLink />
+        <div style={{ ...card, padding: "36px 40px", maxWidth: 480, width: "100%" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
+          <h1 style={{ fontFamily: FS, fontSize: 24, margin: 0, marginBottom: 4 }}>Pattern Alert</h1>
+          <p style={{ color: C.mut, margin: "0 0 24px", fontSize: 13 }}>
+            Based on your last {patternAlerts.length > 0 ? "7" : "3"} days of check-ins:
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+            {[...highAlerts, ...otherAlerts].map((alert, i) => {
+              const style = levelStyle(alert.level);
+              return (
+                <div key={i} style={{
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  background: style.background,
+                  border: `1px solid ${style.color}22`,
+                }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>{style.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: style.color, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{alert.type}</div>
+                      <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5 }}>{alert.message}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <p style={{ fontFamily: FS, fontSize: 13, color: C.sub, fontStyle: "italic", borderLeft: `3px solid ${C.brd}`, paddingLeft: 12, margin: "0 0 24px" }}>
+            "Follow the plan I gave you!" — God
+          </p>
+
+          <button
+            onClick={() => onComplete({ ...ck, done: true })}
+            style={{ ...btn1, width: "100%" }}
+          >
+            Acknowledged — Let's Go →
+          </button>
+          <button
+            onClick={() => onComplete({ ...ck, done: true })}
+            style={{ ...btn2, width: "100%", marginTop: 8, textAlign: "center" }}
+          >
+            Skip
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <FontLink />
       <div style={{ ...card, padding: "36px 40px", maxWidth: 480, width: "100%" }}>
         <h1 style={{ fontFamily: FS, fontSize: 28, margin: 0 }}>Morning Check-in</h1>
         <p style={{ color: C.mut, margin: "6px 0 0", fontSize: 13 }}>{TODAY_STR} · {clock}</p>

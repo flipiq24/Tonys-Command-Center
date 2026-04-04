@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
 import type { EmailItem } from "./types";
@@ -11,29 +11,33 @@ interface Props {
 export function EmailReplyModal({ email, onClose }: Props) {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!email) return;
+    // Abort any in-flight request from a previous email
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setDraft("");
-    setError("");
-    setCopied(false);
     setLoading(true);
     post<{ ok: boolean; draft?: string }>("/emails/action", {
       action: "suggest_reply", sender: email.from, subject: email.subj
-    }).then(r => { setDraft(r.draft || ""); setLoading(false); }).catch(() => { setError("Failed to generate reply. You can type one manually."); setLoading(false); });
-  }, [email]);
+    }).then(r => {
+      if (controller.signal.aborted) return;
+      setDraft(r.draft || "");
+      setLoading(false);
+    }).catch(err => {
+      if (controller.signal.aborted) return;
+      console.error("[EmailReplyModal] Draft fetch failed:", err);
+      setLoading(false);
+    });
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(draft);
-      setCopied(true);
-      setTimeout(() => onClose(), 600);
-    } catch {
-      setError("Could not copy to clipboard.");
-    }
-  };
+    return () => {
+      controller.abort();
+    };
+  }, [email]);
 
   if (!email) return null;
   return (
@@ -45,10 +49,9 @@ export function EmailReplyModal({ email, onClose }: Props) {
           ? <div style={{ padding: 20, textAlign: "center", color: C.mut }}>AI is drafting...</div>
           : <textarea value={draft} onChange={e => setDraft(e.target.value)} style={{ ...inp, minHeight: 140, resize: "vertical", marginBottom: 12 }} />
         }
-        {error && <div style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ ...btn2, flex: 1 }}>Cancel</button>
-          <button onClick={handleCopy} disabled={!draft} style={{ ...btn1, flex: 2, opacity: draft ? 1 : 0.4 }}>{copied ? "Copied ✓" : "Copy & Close"}</button>
+          <button onClick={() => { navigator.clipboard?.writeText(draft); onClose(); }} style={{ ...btn1, flex: 2 }}>Copy & Close</button>
         </div>
       </div>
     </div>

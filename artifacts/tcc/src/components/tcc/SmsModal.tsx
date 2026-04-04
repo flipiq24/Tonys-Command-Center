@@ -6,10 +6,10 @@ import type { Contact } from "./types";
 interface Props {
   contact: Contact;
   onClose: () => void;
-  apiBase: string;
+  apiBase?: string;
 }
 
-export function SmsModal({ contact, onClose, apiBase }: Props) {
+export function SmsModal({ contact, onClose }: Props) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -30,7 +30,8 @@ export function SmsModal({ contact, onClose, apiBase }: Props) {
         setError("Logged! (MacroDroid webhook not configured — SMS not sent from phone yet)");
       }
       setTimeout(onClose, 1800);
-    } catch {
+    } catch (err) {
+      console.error("[SmsModal] Send failed:", err);
       setError("Network error. Try again.");
     } finally {
       setSending(false);

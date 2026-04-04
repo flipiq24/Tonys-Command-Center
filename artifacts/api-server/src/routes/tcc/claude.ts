@@ -259,12 +259,21 @@ async function executeTool(
     }
 
     case "create_calendar_event": {
+      // F8 — Morning Protection: block external meetings before noon
+      const startStr = String(input.start);
+      const startDate = new Date(startStr);
+      const pacificStart = new Date(startDate.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      const startHour = pacificStart.getHours();
+      const hasAttendees = Array.isArray(input.attendees) && input.attendees.length > 0;
+      if (startHour < 12 && hasAttendees) {
+        return `⛔ Morning Protection: Tony's morning (before noon PT) is reserved for outbound sales calls only. No external meetings allowed before noon. Please schedule this for 12 PM or later, or use the afternoon block (2–5 PM). If this is truly urgent, Tony can override manually on his calendar.`;
+      }
       const result = await createEvent({
         summary: String(input.summary),
         description: input.description ? String(input.description) : undefined,
-        start: String(input.start),
+        start: startStr,
         end: String(input.end),
-        attendees: Array.isArray(input.attendees) ? input.attendees.map(String) : undefined,
+        attendees: hasAttendees ? (input.attendees as string[]).map(String) : undefined,
       });
       if (result.ok) return `✓ Calendar event created: "${input.summary}" (id: ${result.eventId})`;
       if (result.error?.includes("not connected")) return `⚠️ Google Calendar not yet authorized`;

@@ -3,13 +3,34 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for Tony's Command Center
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: checkin
+    description: Daily check-in operations
+  - name: journal
+    description: Journal operations
+  - name: emails
+    description: Email operations
+  - name: contacts
+    description: Contact/sales operations
+  - name: calls
+    description: Call log operations
+  - name: ideas
+    description: Ideas parking lot
+  - name: brief
+    description: Daily brief
+  - name: claude
+    description: Claude AI operations
+  - name: tasks
+    description: Task completions
+  - name: demos
+    description: Demo tracking
+
 paths:
   /healthz:
     get:
@@ -24,6 +45,281 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /checkin/today:
+    get:
+      operationId: getTodayCheckin
+      tags: [checkin]
+      summary: Get today's check-in
+      responses:
+        "200":
+          description: Today's check-in or null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckinResponse"
+
+  /checkin:
+    post:
+      operationId: saveCheckin
+      tags: [checkin]
+      summary: Save daily check-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckinBody"
+      responses:
+        "200":
+          description: Saved check-in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckinResponse"
+
+  /journal/today:
+    get:
+      operationId: getTodayJournal
+      tags: [journal]
+      summary: Get today's journal entry
+      responses:
+        "200":
+          description: Today's journal or null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalResponse"
+
+  /journal:
+    post:
+      operationId: saveJournal
+      tags: [journal]
+      summary: Save and format journal entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JournalBody"
+      responses:
+        "200":
+          description: Saved journal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalResponse"
+
+  /brief/today:
+    get:
+      operationId: getTodayBrief
+      tags: [brief]
+      summary: Get today's morning brief
+      responses:
+        "200":
+          description: Today's brief with calendar, emails, tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyBriefResponse"
+
+  /emails/action:
+    post:
+      operationId: emailAction
+      tags: [emails]
+      summary: Perform action on an email (snooze, suggest reply, thumbs up/down)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailActionBody"
+      responses:
+        "200":
+          description: Action result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailActionResponse"
+
+  /contacts:
+    get:
+      operationId: listContacts
+      tags: [contacts]
+      summary: List all sales contacts
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+          required: false
+      responses:
+        "200":
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contact"
+
+  /calls:
+    get:
+      operationId: listTodayCalls
+      tags: [calls]
+      summary: Get today's call log
+      responses:
+        "200":
+          description: Call log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CallLogEntry"
+
+    post:
+      operationId: logCall
+      tags: [calls]
+      summary: Log a call attempt or connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogCallBody"
+      responses:
+        "201":
+          description: Call logged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CallLogEntry"
+
+  /ideas:
+    get:
+      operationId: listIdeas
+      tags: [ideas]
+      summary: List all parked ideas
+      responses:
+        "200":
+          description: List of ideas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Idea"
+
+    post:
+      operationId: parkIdea
+      tags: [ideas]
+      summary: Park a new idea
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParkIdeaBody"
+      responses:
+        "201":
+          description: Idea parked with priority position
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Idea"
+
+  /claude:
+    post:
+      operationId: claudePrompt
+      tags: [claude]
+      summary: Send a message to Claude AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaudePromptBody"
+      responses:
+        "200":
+          description: Claude response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaudeResponse"
+
+  /demos/count:
+    get:
+      operationId: getDemoCount
+      tags: [demos]
+      summary: Get today's demo count
+      responses:
+        "200":
+          description: Demo count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoCountResponse"
+
+  /demos/increment:
+    post:
+      operationId: incrementDemo
+      tags: [demos]
+      summary: Increment demo count
+      responses:
+        "200":
+          description: Updated demo count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoCountResponse"
+
+  /demos/decrement:
+    post:
+      operationId: decrementDemo
+      tags: [demos]
+      summary: Decrement demo count
+      responses:
+        "200":
+          description: Updated demo count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoCountResponse"
+
+  /tasks/completed:
+    get:
+      operationId: listCompletedTasks
+      tags: [tasks]
+      summary: Get today's completed tasks
+      responses:
+        "200":
+          description: Completed task IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskCompletion"
+
+    post:
+      operationId: markTaskComplete
+      tags: [tasks]
+      summary: Mark a task as complete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCompletionBody"
+      responses:
+        "201":
+          description: Task marked complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskCompletion"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +330,320 @@ components:
       required:
         - status
 
+    CheckinBody:
+      type: object
+      properties:
+        bedtime:
+          type: ["string", "null"]
+        waketime:
+          type: ["string", "null"]
+        sleepHours:
+          type: ["string", "null"]
+        bible:
+          type: ["boolean", "null"]
+        workout:
+          type: ["boolean", "null"]
+        journal:
+          type: ["boolean", "null"]
+        nutrition:
+          type: ["string", "null"]
+        unplug:
+          type: ["boolean", "null"]
+
+    CheckinResponse:
+      type: object
+      properties:
+        id:
+          type: ["string", "null"]
+        date:
+          type: ["string", "null"]
+        bedtime:
+          type: ["string", "null"]
+        waketime:
+          type: ["string", "null"]
+        sleepHours:
+          type: ["string", "null"]
+        bible:
+          type: ["boolean", "null"]
+        workout:
+          type: ["boolean", "null"]
+        journal:
+          type: ["boolean", "null"]
+        nutrition:
+          type: ["string", "null"]
+        unplug:
+          type: ["boolean", "null"]
+        done:
+          type: boolean
+
+    JournalBody:
+      type: object
+      properties:
+        rawText:
+          type: string
+      required:
+        - rawText
+
+    JournalResponse:
+      type: object
+      properties:
+        id:
+          type: ["string", "null"]
+        date:
+          type: ["string", "null"]
+        rawText:
+          type: ["string", "null"]
+        formattedText:
+          type: ["string", "null"]
+        mood:
+          type: ["string", "null"]
+        keyEvents:
+          type: ["string", "null"]
+        reflection:
+          type: ["string", "null"]
+
+    DailyBriefResponse:
+      type: object
+      properties:
+        date:
+          type: string
+        calendarData:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarItem"
+        emailsImportant:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailItem"
+        emailsFyi:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailItem"
+        slackItems:
+          type: array
+          items:
+            type: object
+        linearItems:
+          type: array
+          items:
+            type: object
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/TaskItem"
+
+    CalendarItem:
+      type: object
+      properties:
+        t:
+          type: string
+        n:
+          type: string
+        loc:
+          type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+        real:
+          type: ["boolean", "null"]
+
+    EmailItem:
+      type: object
+      properties:
+        id:
+          type: ["integer", "null"]
+        from:
+          type: string
+        subj:
+          type: string
+        why:
+          type: string
+        time:
+          type: ["string", "null"]
+        p:
+          type: ["string", "null"]
+        snoozed:
+          type: ["boolean", "null"]
+
+    TaskItem:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        cat:
+          type: string
+        sales:
+          type: ["boolean", "null"]
+        done:
+          type: ["boolean", "null"]
+
+    EmailActionBody:
+      type: object
+      properties:
+        action:
+          type: string
+        emailId:
+          type: ["integer", "null"]
+        sender:
+          type: ["string", "null"]
+        subject:
+          type: ["string", "null"]
+        reason:
+          type: ["string", "null"]
+        snoozeUntil:
+          type: ["string", "null"]
+      required:
+        - action
+
+    EmailActionResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        draft:
+          type: ["string", "null"]
+        message:
+          type: ["string", "null"]
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        company:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        type:
+          type: ["string", "null"]
+        nextStep:
+          type: ["string", "null"]
+        lastContactDate:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    LogCallBody:
+      type: object
+      properties:
+        contactId:
+          type: ["string", "null"]
+        contactName:
+          type: string
+        type:
+          type: string
+        notes:
+          type: ["string", "null"]
+        instructions:
+          type: ["string", "null"]
+      required:
+        - contactName
+        - type
+
+    CallLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        contactName:
+          type: string
+        type:
+          type: string
+        notes:
+          type: ["string", "null"]
+        followUpSent:
+          type: ["boolean", "null"]
+        createdAt:
+          type: ["string", "null"]
+
+    ParkIdeaBody:
+      type: object
+      properties:
+        text:
+          type: string
+        category:
+          type: string
+        urgency:
+          type: string
+        techType:
+          type: ["string", "null"]
+      required:
+        - text
+        - category
+        - urgency
+
+    Idea:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        category:
+          type: string
+        urgency:
+          type: string
+        techType:
+          type: ["string", "null"]
+        priorityPosition:
+          type: ["integer", "null"]
+        status:
+          type: ["string", "null"]
+        createdAt:
+          type: ["string", "null"]
+
+    ClaudePromptBody:
+      type: object
+      properties:
+        prompt:
+          type: string
+        context:
+          type: ["string", "null"]
+      required:
+        - prompt
+
+    ClaudeResponse:
+      type: object
+      properties:
+        text:
+          type: string
+        ok:
+          type: boolean
+
+    DemoCountResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        date:
+          type: string
+
+    TaskCompletion:
+      type: object
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        taskText:
+          type: string
+        completedAt:
+          type: ["string", "null"]
+
+    TaskCompletionBody:
+      type: object
+      properties:
+        taskId:
+          type: string
+        taskText:
+          type: string
+      required:
+        - taskId
+        - taskText

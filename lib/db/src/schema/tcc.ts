@@ -1,0 +1,126 @@
+import { pgTable, text, boolean, numeric, integer, jsonb, date, timestamp, uuid } from "drizzle-orm/pg-core";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const checkinsTable = pgTable("checkins", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull().unique(),
+  bedtime: text("bedtime"),
+  waketime: text("waketime"),
+  sleepHours: numeric("sleep_hours", { precision: 3, scale: 1 }),
+  bible: boolean("bible").default(false),
+  workout: boolean("workout").default(false),
+  journal: boolean("journal").default(false),
+  nutrition: text("nutrition"),
+  unplug: boolean("unplug").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const journalsTable = pgTable("journals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull().unique(),
+  rawText: text("raw_text"),
+  formattedText: text("formatted_text"),
+  mood: text("mood"),
+  keyEvents: text("key_events"),
+  reflection: text("reflection"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const ideasTable = pgTable("ideas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  text: text("text").notNull(),
+  category: text("category").notNull(),
+  urgency: text("urgency").notNull(),
+  techType: text("tech_type"),
+  priorityPosition: integer("priority_position"),
+  status: text("status").default("parked"),
+  override: boolean("override").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const contactsTable = pgTable("contacts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  company: text("company"),
+  status: text("status").default("New"),
+  phone: text("phone"),
+  email: text("email"),
+  type: text("type"),
+  nextStep: text("next_step"),
+  lastContactDate: date("last_contact_date"),
+  notes: text("notes"),
+  source: text("source"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const callLogTable = pgTable("call_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contactId: uuid("contact_id"),
+  contactName: text("contact_name").notNull(),
+  type: text("type").notNull(),
+  notes: text("notes"),
+  followUpSent: boolean("follow_up_sent").default(false),
+  followUpText: text("follow_up_text"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const emailTrainingTable = pgTable("email_training", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  sender: text("sender").notNull(),
+  subject: text("subject"),
+  action: text("action").notNull(),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const dailyBriefsTable = pgTable("daily_briefs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  date: date("date").notNull().unique(),
+  calendarData: jsonb("calendar_data"),
+  emailsImportant: jsonb("emails_important"),
+  emailsFyi: jsonb("emails_fyi"),
+  slackItems: jsonb("slack_items"),
+  linearItems: jsonb("linear_items"),
+  tasks: jsonb("tasks"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const taskCompletionsTable = pgTable("task_completions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taskId: text("task_id").notNull(),
+  taskText: text("task_text").notNull(),
+  completedAt: timestamp("completed_at").defaultNow(),
+});
+
+export const demosTable = pgTable("demos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  contactName: text("contact_name"),
+  scheduledDate: date("scheduled_date"),
+  status: text("status").default("scheduled"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertCheckinSchema = createInsertSchema(checkinsTable).omit({ id: true, createdAt: true });
+export const insertJournalSchema = createInsertSchema(journalsTable).omit({ id: true, createdAt: true });
+export const insertIdeaSchema = createInsertSchema(ideasTable).omit({ id: true, createdAt: true });
+export const insertContactSchema = createInsertSchema(contactsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCallLogSchema = createInsertSchema(callLogTable).omit({ id: true, createdAt: true });
+export const insertEmailTrainingSchema = createInsertSchema(emailTrainingTable).omit({ id: true, createdAt: true });
+export const insertDailyBriefSchema = createInsertSchema(dailyBriefsTable).omit({ id: true, createdAt: true });
+export const insertTaskCompletionSchema = createInsertSchema(taskCompletionsTable).omit({ id: true, completedAt: true });
+
+export type Checkin = typeof checkinsTable.$inferSelect;
+export type InsertCheckin = z.infer<typeof insertCheckinSchema>;
+export type Journal = typeof journalsTable.$inferSelect;
+export type InsertJournal = z.infer<typeof insertJournalSchema>;
+export type Idea = typeof ideasTable.$inferSelect;
+export type InsertIdea = z.infer<typeof insertIdeaSchema>;
+export type Contact = typeof contactsTable.$inferSelect;
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type CallLog = typeof callLogTable.$inferSelect;
+export type InsertCallLog = z.infer<typeof insertCallLogSchema>;
+export type DailyBrief = typeof dailyBriefsTable.$inferSelect;
+export type Demo = typeof demosTable.$inferSelect;

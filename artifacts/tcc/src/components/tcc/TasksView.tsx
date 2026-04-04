@@ -23,9 +23,44 @@ interface DriveFile {
   id: string;
   name: string;
   mimeType: string;
-  webViewLink: string;
-  iconLink?: string;
+  isFolder?: boolean;
+  webViewLink?: string;
   modifiedTime?: string;
+}
+
+interface FolderCrumb { id: string; name: string; }
+
+function driveIcon(f: DriveFile) {
+  if (f.isFolder || f.mimeType === "application/vnd.google-apps.folder") return "📁";
+  if (f.mimeType?.includes("spreadsheet")) return "📊";
+  if (f.mimeType?.includes("document") || f.mimeType?.includes("word")) return "📝";
+  if (f.mimeType?.includes("presentation") || f.mimeType?.includes("powerpoint")) return "📋";
+  if (f.mimeType?.includes("pdf")) return "📕";
+  if (f.mimeType?.includes("image")) return "🖼";
+  return "📄";
+}
+
+function DriveRow({ item, onFolder, onFile }: { item: DriveFile; onFolder: (f: DriveFile) => void; onFile: (f: DriveFile) => void }) {
+  const isFolder = item.isFolder || item.mimeType === "application/vnd.google-apps.folder";
+  return (
+    <div
+      onClick={() => isFolder ? onFolder(item) : onFile(item)}
+      style={{ padding: "9px 14px", cursor: "pointer", fontSize: 13, borderBottom: `1px solid ${C.brd}`, display: "flex", alignItems: "center", gap: 8 }}
+      onMouseEnter={e => (e.currentTarget.style.background = "#F8F8F8")}
+      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+    >
+      <span style={{ fontSize: 15, flexShrink: 0 }}>{driveIcon(item)}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: isFolder ? 600 : 400, color: C.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+        {!isFolder && item.modifiedTime && (
+          <div style={{ fontSize: 11, color: "#999" }}>
+            {new Date(item.modifiedTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </div>
+        )}
+      </div>
+      {isFolder && <span style={{ fontSize: 13, color: "#BBB" }}>›</span>}
+    </div>
+  );
 }
 
 interface LocalTask {
@@ -88,12 +123,15 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [noteError, setNoteError] = useState("");
   const [todayNotes, setTodayNotes] = useState<Record<string, WorkNote>>({});
 
-  // Drive search
+  // Drive picker
   const [driveQuery, setDriveQuery] = useState("");
-  const [driveResults, setDriveResults] = useState<DriveFile[]>([]);
-  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveSearchResults, setDriveSearchResults] = useState<DriveFile[]>([]);
+  const [driveSearchLoading, setDriveSearchLoading] = useState(false);
   const [selectedDriveFile, setSelectedDriveFile] = useState<DriveFile | null>(null);
-  const [showDriveResults, setShowDriveResults] = useState(false);
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [driveFolderStack, setDriveFolderStack] = useState<FolderCrumb[]>([]);
+  const [driveFolderItems, setDriveFolderItems] = useState<DriveFile[]>([]);
+  const [driveFolderLoading, setDriveFolderLoading] = useState(false);
   const driveRef = useRef<HTMLDivElement>(null);
   const driveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -106,47 +144,82 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
     }).catch(() => {});
   }, []);
 
-  // Close drive dropdown on outside click
+  // Close drive picker on outside click
   useEffect(() => {
     function onClickOut(e: MouseEvent) {
       if (driveRef.current && !driveRef.current.contains(e.target as Node))
-        setShowDriveResults(false);
+        setDrivePickerOpen(false);
     }
     document.addEventListener("mousedown", onClickOut);
     return () => document.removeEventListener("mousedown", onClickOut);
   }, []);
 
+  const loadFolder = useCallback(async (folderId: string) => {
+    setDriveFolderLoading(true);
+    try {
+      const res = await get<{ folderId: string; folderName: string; items: DriveFile[] }>(
+        `/drive/folder?folderId=${encodeURIComponent(folderId)}`
+      );
+      setDriveFolderItems(res.items);
+    } catch {
+      setDriveFolderItems([]);
+    } finally {
+      setDriveFolderLoading(false);
+    }
+  }, []);
+
   const handleDriveSearch = useCallback((val: string) => {
     setDriveQuery(val);
-    setSelectedDriveFile(null);
     if (driveTimer.current) clearTimeout(driveTimer.current);
-    if (val.length < 2) { setDriveResults([]); setShowDriveResults(false); return; }
+    if (!val.trim()) { setDriveSearchResults([]); return; }
     driveTimer.current = setTimeout(async () => {
-      setDriveLoading(true);
+      setDriveSearchLoading(true);
       try {
         const results = await get<DriveFile[]>(`/drive/search?q=${encodeURIComponent(val)}`);
-        setDriveResults(results);
-        setShowDriveResults(results.length > 0);
-      } catch { setDriveResults([]); setShowDriveResults(false); }
-      finally { setDriveLoading(false); }
+        setDriveSearchResults(results);
+      } catch { setDriveSearchResults([]); }
+      finally { setDriveSearchLoading(false); }
     }, 350);
   }, []);
 
   const selectDriveFile = (f: DriveFile) => {
     setSelectedDriveFile(f);
+    setDrivePickerOpen(false);
     setDriveQuery("");
-    setDriveResults([]);
-    setShowDriveResults(false);
+    setDriveSearchResults([]);
   };
+
+  const navigateFolder = useCallback((item: DriveFile) => {
+    setDriveFolderStack(prev => [...prev, { id: item.id, name: item.name }]);
+    setDriveQuery("");
+    setDriveSearchResults([]);
+    loadFolder(item.id);
+  }, [loadFolder]);
+
+  const navigateBreadcrumb = useCallback((idx: number) => {
+    if (idx < 0) {
+      setDriveFolderStack([]);
+      loadFolder("root");
+    } else {
+      const target = driveFolderStack[idx];
+      setDriveFolderStack(prev => prev.slice(0, idx + 1));
+      loadFolder(target.id);
+    }
+  }, [driveFolderStack, loadFolder]);
 
   const openWork = (task: TaskItem) => {
     setWorkNoteTask(task);
     setWorkNoteText("");
+    setWorkNextSteps("");
     setNoteError("");
     setWorkNotePct("25");
     setNextSessionDate(nextWeekdayDate());
     setSelectedDriveFile(null);
     setDriveQuery("");
+    setDriveSearchResults([]);
+    setDrivePickerOpen(false);
+    setDriveFolderStack([]);
+    setDriveFolderItems([]);
     const prev = todayNotes[task.id];
     if (prev) setWorkNotePct(String(prev.progress ?? 25));
   };
@@ -399,55 +472,70 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
             </div>
 
             {/* Google Drive file */}
-            <div ref={driveRef} style={{ position: "relative" }}>
+            <div ref={driveRef}>
               <label style={{ fontSize: 13, color: "#666", display: "block", marginBottom: 6 }}>Attach Google Drive file (optional)</label>
 
               {selectedDriveFile ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "#F5F5F5", borderRadius: 8, border: `1px solid ${C.brd}` }}>
-                  <span style={{ fontSize: 13, flex: 1, color: C.tx, fontWeight: 600 }}>📄 {selectedDriveFile.name}</span>
-                  <a href={selectedDriveFile.webViewLink} target="_blank" rel="noopener noreferrer"
-                    style={{ fontSize: 11, color: C.blu, textDecoration: "none" }}>Open ↗</a>
+                  <span style={{ fontSize: 15, flexShrink: 0 }}>{driveIcon(selectedDriveFile)}</span>
+                  <span style={{ fontSize: 13, flex: 1, minWidth: 0, color: C.tx, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedDriveFile.name}</span>
+                  {selectedDriveFile.webViewLink && (
+                    <a href={selectedDriveFile.webViewLink} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 11, color: C.blu, textDecoration: "none", flexShrink: 0 }}>Open ↗</a>
+                  )}
                   <button onClick={() => setSelectedDriveFile(null)} style={{ background: "none", border: "none", color: "#999", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
                 </div>
               ) : (
                 <>
+                  {/* Search / browse input */}
                   <div style={{ position: "relative" }}>
                     <input
                       value={driveQuery}
                       onChange={e => handleDriveSearch(e.target.value)}
-                      onFocus={() => driveResults.length > 0 && setShowDriveResults(true)}
-                      placeholder="Search Drive files…"
-                      style={{ ...inp, fontSize: 14, paddingRight: driveLoading ? 36 : 14 }}
+                      onFocus={() => {
+                        setDrivePickerOpen(true);
+                        if (!driveFolderItems.length && !driveFolderLoading) loadFolder("root");
+                      }}
+                      placeholder="Search or browse Drive…"
+                      style={{ ...inp, fontSize: 14, borderRadius: drivePickerOpen ? "8px 8px 0 0" : 8, paddingRight: (driveSearchLoading || driveFolderLoading) ? 36 : 14 }}
                     />
-                    {driveLoading && (
+                    {(driveSearchLoading || driveFolderLoading) && (
                       <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "#999" }}>…</span>
                     )}
                   </div>
-                  {showDriveResults && driveResults.length > 0 && (
-                    <div style={{
-                      position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10,
-                      background: "#fff", border: `1px solid ${C.brd}`, borderRadius: 10,
-                      boxShadow: "0 4px 20px rgba(0,0,0,0.1)", maxHeight: 200, overflowY: "auto",
-                    }}>
-                      {driveResults.map(f => (
-                        <div key={f.id}
-                          onClick={() => selectDriveFile(f)}
-                          style={{
-                            padding: "10px 14px", cursor: "pointer", fontSize: 13,
-                            borderBottom: `1px solid ${C.brd}`,
-                            display: "flex", flexDirection: "column", gap: 2,
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.background = "#F5F5F5")}
-                          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                        >
-                          <div style={{ fontWeight: 600, color: C.tx }}>📄 {f.name}</div>
-                          {f.modifiedTime && (
-                            <div style={{ fontSize: 11, color: "#999" }}>
-                              Modified {new Date(f.modifiedTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                            </div>
-                          )}
+
+                  {drivePickerOpen && (
+                    <div style={{ border: `1px solid ${C.brd}`, borderTop: "none", borderRadius: "0 0 8px 8px", background: "#fff", maxHeight: 260, overflowY: "auto" }}>
+
+                      {/* Breadcrumb (folder mode only) */}
+                      {!driveQuery.trim() && (
+                        <div style={{ padding: "7px 12px", borderBottom: `1px solid ${C.brd}`, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", background: "#FAFAFA" }}>
+                          <span
+                            onClick={() => navigateBreadcrumb(-1)}
+                            style={{ fontSize: 11, fontWeight: 700, color: driveFolderStack.length ? C.blu : "#444", cursor: driveFolderStack.length ? "pointer" : "default" }}
+                          >My Drive</span>
+                          {driveFolderStack.map((crumb, i) => (
+                            <span key={crumb.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <span style={{ fontSize: 11, color: "#CCC" }}>/</span>
+                              <span
+                                onClick={() => navigateBreadcrumb(i)}
+                                style={{ fontSize: 11, color: i === driveFolderStack.length - 1 ? "#444" : C.blu, fontWeight: i === driveFolderStack.length - 1 ? 600 : 400, cursor: i === driveFolderStack.length - 1 ? "default" : "pointer" }}
+                              >{crumb.name}</span>
+                            </span>
+                          ))}
                         </div>
-                      ))}
+                      )}
+
+                      {/* Items */}
+                      {driveQuery.trim() ? (
+                        driveSearchResults.length === 0 && !driveSearchLoading
+                          ? <div style={{ padding: "16px", fontSize: 12, color: "#999", textAlign: "center" }}>No results</div>
+                          : driveSearchResults.map(f => <DriveRow key={f.id} item={f} onFolder={navigateFolder} onFile={selectDriveFile} />)
+                      ) : (
+                        driveFolderItems.length === 0 && !driveFolderLoading
+                          ? <div style={{ padding: "16px", fontSize: 12, color: "#999", textAlign: "center" }}>Empty folder</div>
+                          : driveFolderItems.map(f => <DriveRow key={f.id} item={f} onFolder={navigateFolder} onFile={selectDriveFile} />)
+                      )}
                     </div>
                   )}
                 </>

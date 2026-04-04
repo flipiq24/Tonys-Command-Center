@@ -118,34 +118,26 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
         boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
       }}>
 
-        {/* ── Left: Title + Date ── */}
+        {/* ── Left: Title + Quote + Date ── */}
         <div style={{ cursor: "pointer" }} onClick={() => onSetView("schedule")}>
           <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 700, color: C.tx, lineHeight: 1.1 }}>
             Tony's Command Center
           </div>
-          <div style={{ fontSize: 12, color: C.sub, marginTop: 2, fontFamily: F }}>
+          <div style={{ fontFamily: FS, fontSize: 15, color: C.sub, fontStyle: "italic", marginTop: 2 }}>
+            "Follow the plan I gave you!" — God
+          </div>
+          <div style={{ fontSize: 12, color: C.mut, marginTop: 2, fontFamily: F }}>
             {TODAY_STR} · {clock}
             {refreshing && (
-              <span style={{ marginLeft: 8, color: C.blu, fontWeight: 600, fontSize: 11 }}>
+              <span style={{ marginLeft: 8, color: C.blu, fontWeight: 600 }}>
                 ⟳ Refreshing…
               </span>
             )}
             {!refreshing && lastRefresh && (
-              <span style={{ marginLeft: 8, color: C.mut, fontSize: 11 }}>
-                · Updated {lastRefresh}
-              </span>
+              <span style={{ marginLeft: 8 }}>· Updated {lastRefresh}</span>
             )}
           </div>
         </div>
-
-        {/* ── Center: Quote ── */}
-        <p style={{
-          fontFamily: FS, fontSize: 18, color: C.sub, fontStyle: "italic",
-          margin: 0, position: "absolute", left: "50%", transform: "translateX(-50%)",
-          whiteSpace: "nowrap", pointerEvents: "none",
-        }}>
-          "Follow the plan I gave you!" — God
-        </p>
 
         {/* ── Right: Hamburger ── */}
         <div ref={menuRef} style={{ position: "relative" }}>

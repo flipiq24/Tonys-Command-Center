@@ -68,7 +68,7 @@ export function SalesView({ contacts, calls, demos, calSide, onAttempt, onConnec
                   </button>
                 )}
                 <Tip tip={TIPS.attempt}>
-                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "7px 12px", fontSize: 11 }}>📋 Attempt</button>
+                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "7px 12px", fontSize: 11 }}>📋 Log Attempt</button>
                 </Tip>
                 <Tip tip={TIPS.connected}>
                   <button

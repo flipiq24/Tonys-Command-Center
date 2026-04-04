@@ -58,8 +58,11 @@ router.get("/contacts", async (req, res): Promise<void> => {
   });
 });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 router.get("/contacts/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
+  if (!UUID_RE.test(id)) { res.status(404).json({ error: "Not found" }); return; }
   const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
   if (!contact) { res.status(404).json({ error: "Not found" }); return; }
 

@@ -28,6 +28,7 @@ import contactsResearchRouter from "./tcc/contacts-research";
 import contactsBriefRouter from "./tcc/contacts-brief";
 import sheetsSyncRouter from "./tcc/sheets-sync";
 import linearRouter from "./tcc/linear";
+import scheduleRouter from "./tcc/schedule";
 
 const router: IRouter = Router();
 
@@ -60,6 +61,7 @@ router.use(contactsResearchRouter);
 router.use(contactsBriefRouter);
 router.use(sheetsSyncRouter);
 router.use(linearRouter);
+router.use(scheduleRouter);
 
 // ─── Canonical aliases ────────────────────────────────────────────────────────
 router.post("/email-action", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {

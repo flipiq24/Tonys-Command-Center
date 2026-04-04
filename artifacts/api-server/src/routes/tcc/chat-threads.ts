@@ -10,6 +10,7 @@ import { sendViaAgentMail } from "../../lib/agentmail";
 import { listRecentEmails, draftReply } from "../../lib/gmail";
 import { getTodayEvents, createEvent } from "../../lib/gcal";
 import { getDrive } from "../../lib/google-auth";
+import { sendAutoEod } from "./eod";
 
 const router: IRouter = Router();
 
@@ -205,6 +206,11 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
       required: ["query"],
     },
   },
+  {
+    name: "send_eod_report",
+    description: "Generate and send today's End of Day (EOD) report. Sends Tony's performance summary to tony@flipiq.com and Ethan's accountability brief to ethan@flipiq.com. Guards against double-sending.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  },
 ];
 
 async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -365,6 +371,12 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       } catch (err) {
         return `Drive search failed: ${err instanceof Error ? err.message : String(err)}`;
       }
+    }
+    case "send_eod_report": {
+      const result = await sendAutoEod();
+      if (result.alreadySent) return `✓ EOD report already sent today — no duplicate sent.`;
+      if (!result.ok) return `✗ EOD report failed to generate.`;
+      return `✓ EOD report sent!\n- Calls: ${result.callsMade ?? 0}\n- Demos: ${result.demosBooked ?? 0}\n- Tasks: ${result.tasksCompleted ?? 0}\n\nTony → tony@flipiq.com\nEthan → ethan@flipiq.com`;
     }
     default:
       return `Unknown tool: ${name}`;

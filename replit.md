@@ -68,7 +68,7 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 - All state persists to DB (not localStorage) — resume where Tony left off on reload
 - Calendar sidebar is the only floating panel (collapsible)
 - Default brief data embedded in backend for day-1 experience without live integrations
-- **Slack**: Integration dismissed by user during OAuth — Slack posting is implemented in `lib/slack.ts` and gracefully skips when not connected. To enable, complete the Slack OAuth flow in Replit integrations (connector ID: `ccfg_slack_01KH7W1T1D6TGP3BJGNQ2N9PEH`) or provide a `SLACK_BOT_TOKEN` secret for a direct API approach.
+- **Slack**: Uses `SLACK_TOKEN` secret (set) — direct Slack Web API calls in `lib/slack.ts`. Supports postMessage, channel history, list channels, and search. Claude has 4 Slack tools: `send_slack_message`, `read_slack_channel`, `list_slack_channels`, `search_slack`. Note: search requires a user token (xoxp-); bot tokens (xoxb-) only support read/post.
 - **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues.
 - **AgentMail**: Connected via Replit connector (`conn_agentmail`). EOD report emails sent to tony@flipiq.com and ethan@flipiq.com.
 - Gmail/Google Calendar: Available via Replit integrations — currently using default/mock brief data.

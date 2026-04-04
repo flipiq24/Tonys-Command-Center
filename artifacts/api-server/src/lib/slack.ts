@@ -1,35 +1,110 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
+// Slack integration via SLACK_TOKEN env var (Bot/User OAuth token)
+// Used by Claude's tool-use loop for reading and posting to Slack
 
-const connectors = new ReplitConnectors();
+const SLACK_API = "https://slack.com/api";
 
+function getToken(): string | null {
+  return process.env.SLACK_TOKEN || null;
+}
+
+async function slackFetch<T = Record<string, unknown>>(
+  endpoint: string,
+  body?: Record<string, unknown>
+): Promise<T & { ok: boolean; error?: string }> {
+  const token = getToken();
+  if (!token) {
+    return { ok: false, error: "slack_not_connected" } as T & { ok: boolean; error?: string };
+  }
+
+  const res = await fetch(`${SLACK_API}/${endpoint}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify(body || {}),
+  });
+
+  const data = await res.json() as T & { ok: boolean; error?: string };
+  return data;
+}
+
+// ─── Post a message ────────────────────────────────────────────────────────────
 export async function postSlackMessage(params: {
   channel: string;
   text: string;
   blocks?: unknown[];
 }): Promise<{ ok: boolean; ts?: string; error?: string }> {
-  try {
-    const res = await connectors.proxy("slack", "/api/chat.postMessage", {
-      method: "POST",
-      body: JSON.stringify({
-        channel: params.channel,
-        text: params.text,
-        ...(params.blocks ? { blocks: params.blocks } : {}),
-      }),
-    }) as { ok?: boolean; ts?: string; error?: string };
+  const result = await slackFetch<{ ts?: string }>("chat.postMessage", {
+    channel: params.channel,
+    text: params.text,
+    ...(params.blocks ? { blocks: params.blocks } : {}),
+  });
 
-    return { ok: !!res.ok, ts: res.ts, error: res.error };
-  } catch (err) {
-    const msg = String(err);
-    // Graceful fallback — Slack not yet connected (OAuth not completed)
-    if (msg.includes("not_setup") || msg.includes("not_added") || msg.includes("unauthorized") || msg.includes("404")) {
-      console.warn("[Slack] Not connected — skipping message to", params.channel);
-      return { ok: false, error: "slack_not_connected" };
+  if (!result.ok) {
+    if (result.error === "slack_not_connected") {
+      console.warn("[Slack] SLACK_TOKEN not set — skipping message to", params.channel);
+    } else {
+      console.warn("[Slack] postMessage error:", result.error);
     }
-    console.error("[Slack] postMessage error:", err);
-    return { ok: false, error: String(err) };
   }
+  return { ok: result.ok, ts: result.ts, error: result.error };
 }
 
+// ─── Read recent messages from a channel ──────────────────────────────────────
+export async function getSlackChannelHistory(params: {
+  channel: string;
+  limit?: number;
+}): Promise<{
+  ok: boolean;
+  messages?: { text: string; user?: string; ts: string; username?: string }[];
+  error?: string;
+}> {
+  const result = await slackFetch<{
+    messages?: { text: string; user?: string; ts: string; username?: string }[];
+  }>("conversations.history", {
+    channel: params.channel,
+    limit: params.limit ?? 20,
+  });
+
+  return { ok: result.ok, messages: result.messages, error: result.error };
+}
+
+// ─── List channels ─────────────────────────────────────────────────────────────
+export async function listSlackChannels(): Promise<{
+  ok: boolean;
+  channels?: { id: string; name: string; is_member: boolean }[];
+  error?: string;
+}> {
+  const result = await slackFetch<{
+    channels?: { id: string; name: string; is_member: boolean }[];
+  }>("conversations.list", {
+    types: "public_channel,private_channel",
+    limit: 100,
+    exclude_archived: true,
+  });
+
+  return { ok: result.ok, channels: result.channels, error: result.error };
+}
+
+// ─── Search Slack messages ─────────────────────────────────────────────────────
+export async function searchSlack(query: string): Promise<{
+  ok: boolean;
+  messages?: { text: string; channel?: { name: string }; ts: string; permalink?: string }[];
+  error?: string;
+}> {
+  const result = await slackFetch<{
+    messages?: { matches?: { text: string; channel?: { name: string }; ts: string; permalink?: string }[] };
+  }>("search.messages", { query, count: 10 });
+
+  return {
+    ok: result.ok,
+    messages: result.messages?.matches,
+    error: result.error,
+  };
+}
+
+// ─── Tech idea helper ─────────────────────────────────────────────────────────
 export async function postTechIdeaToSlack(idea: {
   text: string;
   urgency: string;
@@ -37,15 +112,11 @@ export async function postTechIdeaToSlack(idea: {
   linearIdentifier?: string;
 }): Promise<{ ok: boolean }> {
   const urgencyEmoji: Record<string, string> = {
-    "Now": "🔴",
-    "This Week": "🟡",
-    "This Month": "🟢",
-    "Someday": "⚪",
+    "Now": "🔴", "This Week": "🟡", "This Month": "🟢", "Someday": "⚪",
   };
   const emoji = urgencyEmoji[idea.urgency] ?? "💡";
   const typeLabel = idea.techType ? ` [${idea.techType}]` : "";
   const linearRef = idea.linearIdentifier ? ` • Linear: ${idea.linearIdentifier}` : "";
-
   const text = `${emoji} *New Tech Idea${typeLabel}* (${idea.urgency})${linearRef}\n> ${idea.text}`;
 
   return postSlackMessage({ channel: "#tech-ideas", text });

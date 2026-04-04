@@ -2,8 +2,8 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, dailyBriefsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { getUncachableGmailClient } from "../../lib/gmail.js";
-import { getUncachableGoogleCalendarClient } from "../../lib/gcal.js";
+import { getGmail } from "../../lib/google-auth.js";
+import { getCalendar } from "../../lib/google-auth.js";
 import { getSlackChannelHistory } from "../../lib/slack.js";
 import { getLinearIssues } from "../../lib/linear.js";
 import { todayPacific } from "../../lib/dates.js";
@@ -81,7 +81,7 @@ type LinearItem = { who: string; task: string; id: string; level: string };
 
 async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: EmailFyi[] } | null> {
   try {
-    const gmail = await getUncachableGmailClient();
+    const gmail = getGmail();
     const since = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000);
     const list = await gmail.users.messages.list({
       userId: "me",
@@ -152,7 +152,7 @@ FYI shape: { "from": string, "subj": string, "why": string }`,
 
 async function fetchLiveCalendar(): Promise<CalItem[] | null> {
   try {
-    const cal = await getUncachableGoogleCalendarClient();
+    const cal = getCalendar();
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);

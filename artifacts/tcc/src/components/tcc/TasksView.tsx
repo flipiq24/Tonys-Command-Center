@@ -71,6 +71,8 @@ interface LocalTask {
   status?: string;
   overrideWarning?: string | null;
   googleTaskId?: string | null;
+  taskType?: string | null;
+  size?: string | null;
 }
 
 interface Props {
@@ -381,7 +383,28 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                 <button onClick={() => completeLocalTask(t.id)} style={CIRCLE} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: C.tx, lineHeight: 1.45 }}>{t.text}</div>
-                  {t.dueDate && <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>Due {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+                    {t.size && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 800, letterSpacing: 0.5,
+                        padding: "2px 7px", borderRadius: 4,
+                        background: t.size === "XL" ? "#2a1a1a" : t.size === "L" ? "#1a1a2a" : t.size === "M" ? "#1a2a1a" : "#2a2a2a",
+                        color: t.size === "XL" ? C.red : t.size === "L" ? C.blu : t.size === "M" ? C.grn : C.sub,
+                        border: `1px solid ${t.size === "XL" ? C.red + "40" : t.size === "L" ? C.blu + "40" : t.size === "M" ? C.grn + "40" : C.brd}`,
+                      }}>{t.size}</span>
+                    )}
+                    {t.taskType === "ongoing" && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+                        background: "#1a2a2a", color: C.blu, border: `1px solid ${C.blu}40`,
+                      }}>↻ Ongoing</span>
+                    )}
+                    {t.dueDate && (
+                      <span style={{ fontSize: 11, color: "#999" }}>
+                        Due {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    )}
+                  </div>
                   {t.overrideWarning && <div style={{ fontSize: 11, color: C.red, marginTop: 2 }}>{t.overrideWarning}</div>}
                 </div>
               </div>

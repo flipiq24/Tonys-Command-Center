@@ -3,7 +3,7 @@ import { F, FS } from "./constants";
 import { get } from "@/lib/api";
 import type { TaskItem, CalItem, EmailItem, SlackItem, LinearItem } from "./types";
 
-interface LocalTask { id: string; text: string; dueDate?: string | null; priority?: number | null; }
+interface LocalTask { id: string; text: string; dueDate?: string | null; priority?: number | null; taskType?: string | null; size?: string | null; }
 interface Contact { name: string; phone?: string; company?: string; nextStep?: string; status?: string; }
 
 interface Props {

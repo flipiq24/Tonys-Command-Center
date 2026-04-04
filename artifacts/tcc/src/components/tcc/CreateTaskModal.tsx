@@ -33,9 +33,14 @@ interface Props {
 
 type Step = "input" | "checking" | "review" | "pushback" | "saving";
 
+type TaskType = "one_time" | "ongoing";
+type TaskSize = "XS" | "S" | "M" | "L" | "XL";
+
 export function CreateTaskModal({ open, onClose, onSave }: Props) {
   const [text, setText] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [taskType, setTaskType] = useState<TaskType>("one_time");
+  const [size, setSize] = useState<TaskSize | null>(null);
   const [step, setStep] = useState<Step>("input");
   const [priorityCheck, setPriorityCheck] = useState<PriorityCheck | null>(null);
   const [error, setError] = useState("");
@@ -49,6 +54,8 @@ export function CreateTaskModal({ open, onClose, onSave }: Props) {
   const reset = () => {
     setText("");
     setDueDate("");
+    setTaskType("one_time");
+    setSize(null);
     setStep("input");
     setPriorityCheck(null);
     setError("");
@@ -65,6 +72,8 @@ export function CreateTaskModal({ open, onClose, onSave }: Props) {
         text: text.trim(),
         dueDate: dueDate || undefined,
         checkOnly: true,
+        taskType,
+        size: size ?? undefined,
       });
       setPriorityCheck(res.priorityCheck);
       if (res.priorityCheck.hasHigherPriority) {
@@ -87,6 +96,8 @@ export function CreateTaskModal({ open, onClose, onSave }: Props) {
         text: text.trim(),
         dueDate: dueDate || undefined,
         overrideWarning,
+        taskType,
+        size: size ?? undefined,
       });
       if (mountedRef.current) {
         onSave(task);
@@ -129,8 +140,61 @@ export function CreateTaskModal({ open, onClose, onSave }: Props) {
               />
             </div>
 
+            {/* Type toggle */}
             <div style={{ marginBottom: 16 }}>
-              <label style={lbl}>Due Date (optional)</label>
+              <label style={lbl}>Task Type</label>
+              <div style={{ display: "flex", gap: 0, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.brd}` }}>
+                {(["one_time", "ongoing"] as TaskType[]).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setTaskType(t)}
+                    style={{
+                      flex: 1, padding: "9px 0", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+                      border: "none", cursor: "pointer",
+                      background: taskType === t ? (t === "ongoing" ? C.blu : C.tx) : C.card,
+                      color: taskType === t ? (t === "ongoing" ? "#fff" : C.bg) : C.sub,
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {t === "one_time" ? "✓ One Time" : "↻ Ongoing"}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: C.mut, marginTop: 5 }}>
+                {taskType === "ongoing" ? "This task repeats — it won't disappear when checked off." : "This task gets done once and is removed."}
+              </div>
+            </div>
+
+            {/* Shirt size */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={lbl}>Effort Size <span style={{ fontWeight: 400, color: C.mut }}>(optional)</span></label>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["XS", "S", "M", "L", "XL"] as TaskSize[]).map(s => {
+                  const isSelected = size === s;
+                  const sizeColor = s === "XL" ? C.red : s === "L" ? C.blu : s === "M" ? C.grn : C.sub;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setSize(isSelected ? null : s)}
+                      style={{
+                        flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 800, fontFamily: "inherit",
+                        borderRadius: 8, border: `2px solid ${isSelected ? sizeColor : C.brd}`,
+                        cursor: "pointer",
+                        background: isSelected ? sizeColor + "22" : C.card,
+                        color: isSelected ? sizeColor : C.sub,
+                        transition: "all 0.1s",
+                      }}
+                    >{s}</button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: C.mut, marginTop: 5 }}>
+                XS = 15 min · S = 1 hr · M = half day · L = full day · XL = multi-day
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={lbl}>Due Date <span style={{ fontWeight: 400, color: C.mut }}>(optional)</span></label>
               <input
                 type="date"
                 value={dueDate}

@@ -70,9 +70,12 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 - Default brief data embedded in backend for day-1 experience without live integrations
 - **Slack**: Uses `SLACK_TOKEN` secret (set) — direct Slack Web API calls in `lib/slack.ts`. Supports postMessage, channel history, list channels, and search. Claude has 4 Slack tools: `send_slack_message`, `read_slack_channel`, `list_slack_channels`, `search_slack`. Note: search requires a user token (xoxp-); bot tokens (xoxb-) only support read/post.
 - **MacroDroid (Android phone bridge)**: `phone_log` table added to DB. `POST /phone-log?key=$MACRODROID_SECRET` receives call/SMS webhooks from Tony's phone. `POST /send-sms` triggers MacroDroid to send SMS natively. Secrets: `MACRODROID_SECRET` (webhook auth key), `MACRODROID_WEBHOOK_URL` (MacroDroid trigger URL). See spec for 4 macros to configure on phone.
-- **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues.
 - **AgentMail**: Connected via Replit connector (`conn_agentmail`). EOD report emails sent to tony@flipiq.com and ethan@flipiq.com.
-- Gmail/Google Calendar: Available via Replit integrations — currently using default/mock brief data.
+- **Google Calendar**: Connected via Replit connector (`conn_google-calendar_*`). Morning brief fetches real today's events live. Client in `lib/gcal.ts`.
+- **Gmail (brief)**: Replit Gmail connector has add-on scopes only (no `gmail.readonly`). Brief falls back to seed data. To enable live inbox: set `GMAIL_TOKEN` secret (OAuth refresh token with `gmail.readonly` scope from Google Cloud Console). The Claude tool `list_recent_emails` uses the same connector and may also need this.
+- **Slack (brief)**: `SLACK_TOKEN` bot token missing `channels:read` scope. Brief falls back to seed. Claude tools (postMessage, history) work fine. To enable live brief: add `channels:read` scope in api.slack.com/apps.
+- **Linear**: Connected via Replit connector (`conn_linear_*`) using `@replit/connectors-sdk`. Tech ideas auto-create Linear issues. Brief fetches assigned open issues live.
+- **Contacts DB**: 3,396 contacts total (3,381 imported from 5,344-record master list + 15 seed contacts). Import script: `lib/db/import-contacts.mjs`. Contacts API supports `?search=`, `?limit=`, `?offset=` with Hot→Warm→New priority ordering.
 
 ## Email Brain System
 

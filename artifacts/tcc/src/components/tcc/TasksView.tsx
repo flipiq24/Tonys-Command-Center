@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { post, get } from "@/lib/api";
 import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
 import { VoiceField } from "./VoiceField";

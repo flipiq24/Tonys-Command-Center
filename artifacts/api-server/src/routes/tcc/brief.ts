@@ -79,7 +79,7 @@ const DEFAULT_TASKS = [
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean; attendeeCount?: number; calendarEventId?: string; htmlLink?: string; };
-type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string; contactContext?: string };
+type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string; contactContext?: string; gmailMessageId?: string; };
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
@@ -112,16 +112,20 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
       )
     );
 
+    // Build lookup: normalized(from + subject) → gmail message ID
+    const msgIdMap = new Map<string, string>();
     const rawEmails: { from: string; subject: string; snippet: string; date: string }[] = [];
-    for (const detail of details) {
+    for (let i = 0; i < details.length; i++) {
+      const detail = details[i];
+      const msgId = messages[i]?.id || "";
       const hdrs = detail.data.payload?.headers || [];
       const hdr = (name: string) => hdrs.find(h => h.name === name)?.value || "";
-      rawEmails.push({
-        from: hdr("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim(),
-        subject: hdr("Subject"),
-        snippet: detail.data.snippet || "",
-        date: hdr("Date"),
-      });
+      const from = hdr("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim();
+      const subject = hdr("Subject");
+      rawEmails.push({ from, subject, snippet: detail.data.snippet || "", date: hdr("Date") });
+      // Key: first 30 chars of lowercased from + first 40 chars of lowercased subject
+      const key = from.toLowerCase().slice(0, 30) + "|" + subject.toLowerCase().slice(0, 40);
+      if (msgId) msgIdMap.set(key, msgId);
     }
 
     const claudeResponse = await anthropic.messages.create({
@@ -148,8 +152,16 @@ Promotions shape: { "from": string, "subj": string, "why": string }`,
     if (!jsonMatch) return null;
 
     const parsed = JSON.parse(jsonMatch[0]) as { important?: EmailImportant[]; fyi?: EmailFyi[]; promotions?: EmailPromotion[] };
+
+    // Attach gmailMessageId by matching back to the original message list
+    const attachMsgId = (e: EmailImportant): EmailImportant => {
+      const key = e.from.toLowerCase().slice(0, 30) + "|" + e.subj.toLowerCase().slice(0, 40);
+      const gmailMessageId = msgIdMap.get(key);
+      return gmailMessageId ? { ...e, gmailMessageId } : e;
+    };
+
     return {
-      important: (parsed.important || []).slice(0, 8).map((e, i) => ({ ...e, id: i + 1 })),
+      important: (parsed.important || []).slice(0, 8).map((e, i) => attachMsgId({ ...e, id: i + 1 })),
       fyi: (parsed.fyi || []).slice(0, 5).map((e, i) => ({ ...e, id: i + 10 })),
       promotions: (parsed.promotions || []).slice(0, 10).map((e, i) => ({ ...e, id: i + 20 })),
     };

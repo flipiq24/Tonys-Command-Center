@@ -81,6 +81,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
+  const [workNextSteps, setWorkNextSteps] = useState("");
   const [workNotePct, setWorkNotePct] = useState("25");
   const [nextSessionDate, setNextSessionDate] = useState(nextWeekdayDate());
   const [savingNote, setSavingNote] = useState(false);
@@ -170,12 +171,15 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
         note: workNoteText.trim(),
         progress: pct,
         nextSessionDate: pct < 100 ? nextSessionDate : undefined,
+        nextSteps: workNextSteps.trim() || undefined,
         driveFileId: selectedDriveFile?.id || undefined,
         driveFileName: selectedDriveFile?.name || undefined,
         driveLinkUrl: selectedDriveFile?.webViewLink || undefined,
       });
       setTodayNotes(prev => ({ ...prev, [workNoteTask.id]: note }));
       setWorkNoteTask(null);
+      setWorkNoteText("");
+      setWorkNextSteps("");
     } catch (err) {
       setNoteError(String(err).replace("Error: POST /tasks/work-note failed: 400", "").trim() || "Failed to save — try again.");
     }
@@ -255,13 +259,9 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                           In progress ({progress}%)
                           {worked.nextSessionDate ? ` — continuing ${fmtDate(worked.nextSessionDate)}` : ""}
                         </div>
-                        {worked.note && (
-                          <div style={{
-                            fontSize: 12, color: "#555", marginTop: 3,
-                            padding: "5px 8px", background: "#F5F5F5",
-                            borderRadius: 6, borderLeft: "2px solid #CCC",
-                          }}>
-                            {worked.note.length > 80 ? worked.note.slice(0, 80) + "…" : worked.note}
+                        {(worked as any).nextSteps && (
+                          <div style={{ fontSize: 12, color: "#555", marginTop: 3 }}>
+                            Next: {(worked as any).nextSteps}
                           </div>
                         )}
                         {worked.driveLinkUrl && (
@@ -373,15 +373,28 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
               </div>
             )}
 
-            {/* Notes */}
+            {/* What you worked on */}
             <div>
+              <label style={{ fontSize: 13, color: "#666", display: "block", marginBottom: 6 }}>What did you work on?</label>
               <VoiceField
                 as="textarea"
                 value={workNoteText}
                 onChange={setWorkNoteText}
-                placeholder="What did you work on?"
+                placeholder="Describe what you did…"
                 autoFocus
                 style={{ ...inp, minHeight: 80, resize: "vertical", fontSize: 14 }}
+              />
+            </div>
+
+            {/* Next Steps */}
+            <div>
+              <label style={{ fontSize: 13, color: "#666", display: "block", marginBottom: 6 }}>Next steps</label>
+              <VoiceField
+                as="textarea"
+                value={workNextSteps}
+                onChange={setWorkNextSteps}
+                placeholder="What's the next action when you pick this up?"
+                style={{ ...inp, minHeight: 60, resize: "vertical", fontSize: 14 }}
               />
             </div>
 
@@ -444,7 +457,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
             {noteError && <div style={{ color: C.red, fontSize: 12 }}>{noteError}</div>}
 
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setWorkNoteTask(null)} style={{ ...btn2, flex: 1 }}>Cancel</button>
+              <button onClick={() => { setWorkNoteTask(null); setWorkNoteText(""); setWorkNextSteps(""); }} style={{ ...btn2, flex: 1 }}>Cancel</button>
               <button
                 onClick={saveWorkNote}
                 disabled={savingNote || !workNoteText.trim() || (pct < 100 && !nextSessionDate)}

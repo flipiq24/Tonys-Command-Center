@@ -27,6 +27,24 @@ interface StreamEvent {
   error?: string;
 }
 
+function stripMd(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, m => m.replace(/```[^\n]*\n?/g, "").trim()) // fenced code blocks → keep content
+    .replace(/#{1,6}\s+(.+)/g, "$1")           // ## Heading → Heading
+    .replace(/\*\*\*(.+?)\*\*\*/g, "$1")       // ***bold italic*** → plain
+    .replace(/\*\*(.+?)\*\*/g, "$1")           // **bold** → plain
+    .replace(/\*(.+?)\*/g, "$1")               // *italic* → plain
+    .replace(/__(.+?)__/g, "$1")               // __bold__ → plain
+    .replace(/_(.+?)_/g, "$1")                 // _italic_ → plain
+    .replace(/`(.+?)`/g, "$1")                 // `code` → plain
+    .replace(/^\s*[-*+]\s+/gm, "• ")           // - item → • item
+    .replace(/^\s*\d+\.\s+/gm, "")             // 1. item → item
+    .replace(/\[(.+?)\]\(.+?\)/g, "$1")        // [link](url) → link
+    .replace(/^[-_*]{3,}$/gm, "─────────────") // --- → line
+    .replace(/\n{3,}/g, "\n\n")                // collapse excess blank lines
+    .trim();
+}
+
 interface Props {
   onBack: () => void;
   initialContextType?: string;
@@ -275,7 +293,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
                 border: msg.role === "user" ? "none" : `1px solid ${C.brd}`,
                 whiteSpace: "pre-wrap",
               }}>
-                {msg.content}
+                {msg.role === "assistant" ? stripMd(msg.content) : msg.content}
                 {msg.toolCalls && msg.toolCalls.length > 0 && (
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.brd}44`, fontSize: 11, color: C.mut }}>
                     Used: {msg.toolCalls.map(t => t.name.replace(/_/g, " ")).join(", ")}
@@ -304,7 +322,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
                     ⚙ {toolActivity}
                   </div>
                 )}
-                {streamingText}
+                {stripMd(streamingText)}
                 <span style={{ display: "inline-block", width: 8, height: 14, background: C.blu, marginLeft: 2, animation: "pulse 1s infinite", verticalAlign: "middle" }} />
               </div>
             </div>

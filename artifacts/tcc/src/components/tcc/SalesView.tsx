@@ -10,11 +10,9 @@ import type { Contact, CallEntry } from "./types";
 interface Props {
   contacts: Contact[];
   calls: CallEntry[];
-  demos: number;
   calSide: boolean;
   onAttempt: (contact: { id: string | number; name: string }) => void;
   onConnected: (contactName: string) => void;
-  onDemoChange: (delta: number) => void;
   onSwitchToTasks: () => void;
   onBackToSchedule: () => void;
   onCompose?: (contact: Contact) => void;
@@ -28,7 +26,7 @@ function isOverdue(date?: string | null): boolean {
   return new Date(date) < new Date(new Date().toDateString());
 }
 
-export function SalesView({ contacts: initialContacts, calls, demos, calSide, onAttempt, onConnected, onDemoChange, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
+export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt, onConnected, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
@@ -115,11 +113,6 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, on
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: C.sub }}>Calls: {calls.length}</span>
               {overdue > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.red, background: C.redBg, padding: "2px 8px", borderRadius: 6 }}>{overdue} overdue</span>}
-              <span style={{ color: C.blu, fontSize: 13, fontWeight: 700 }}>Demos: {demos}</span>
-              <div style={{ display: "flex", gap: 4 }}>
-                <button onClick={() => onDemoChange(-1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.brd}`, background: C.card, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>−</button>
-                <button onClick={() => onDemoChange(1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.grn}`, background: C.grnBg, cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.grn }}>+</button>
-              </div>
               <button
                 onClick={() => setShowAddContact(true)}
                 style={{ padding: "6px 14px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}

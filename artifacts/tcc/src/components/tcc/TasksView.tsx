@@ -70,6 +70,7 @@ interface LocalTask {
   priority?: number | null;
   status?: string;
   overrideWarning?: string | null;
+  googleTaskId?: string | null;
 }
 
 interface Props {
@@ -122,6 +123,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState("");
   const [todayNotes, setTodayNotes] = useState<Record<string, WorkNote>>({});
+  const [refreshing, setRefreshing] = useState(false);
 
   // Drive picker
   const [driveQuery, setDriveQuery] = useState("");
@@ -135,14 +137,29 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const driveRef = useRef<HTMLDivElement>(null);
   const driveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const loadLocalTasks = useCallback(async (sync = false) => {
+    try {
+      if (sync) {
+        setRefreshing(true);
+        const fresh = await get<LocalTask[]>("/tasks/refresh");
+        setLocalTasks(fresh);
+      } else {
+        const tasks = await get<LocalTask[]>("/tasks/local");
+        setLocalTasks(tasks);
+      }
+    } catch { /* ignore */ } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
-    get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
+    loadLocalTasks(false);
     get<WorkNote[]>("/tasks/work-notes-today").then(notes => {
       const map: Record<string, WorkNote> = {};
       for (const n of notes) map[n.taskId] = n;
       setTodayNotes(map);
     }).catch(() => {});
-  }, []);
+  }, [loadLocalTasks]);
 
   // Close drive picker on outside click
   useEffect(() => {
@@ -227,6 +244,8 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const completeLocalTask = async (id: string) => {
     setLocalDone(prev => new Set([...prev, id]));
     await patch(`/tasks/local/${id}`, { status: "done" }).catch(() => {});
+    // Refresh list so Google-completed tasks also update
+    setTimeout(() => loadLocalTasks(false), 300);
   };
 
   const saveWorkNote = async () => {
@@ -283,11 +302,26 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
             <span style={{ fontSize: 20, fontWeight: 800, fontFamily: FS }}>Tasks</span>
             <span style={{ fontSize: 14, color: "#999", marginLeft: 10 }}>{totalDone} of {totalTasks} done</span>
           </div>
-          <button onClick={() => setShowCreateTask(true)} style={{
-            background: "none", border: `1px solid ${C.brd}`, color: C.tx,
-            borderRadius: 6, padding: "5px 12px", fontSize: 13, fontWeight: 600,
-            cursor: "pointer", fontFamily: F,
-          }}>+ New</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => loadLocalTasks(true)}
+              disabled={refreshing}
+              title="Sync with Google Tasks"
+              style={{
+                background: "none", border: `1px solid ${C.brd}`, color: C.sub,
+                borderRadius: 6, padding: "5px 10px", fontSize: 14, cursor: refreshing ? "not-allowed" : "pointer",
+                fontFamily: F, lineHeight: 1, opacity: refreshing ? 0.5 : 1,
+                display: "flex", alignItems: "center", gap: 4,
+              }}
+            >
+              <span style={{ display: "inline-block", animation: refreshing ? "spin 1s linear infinite" : "none" }}>↻</span>
+            </button>
+            <button onClick={() => setShowCreateTask(true)} style={{
+              background: "none", border: `1px solid ${C.brd}`, color: C.tx,
+              borderRadius: 6, padding: "5px 12px", fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: F,
+            }}>+ New</button>
+          </div>
         </div>
 
         {/* My Tasks (local) */}
@@ -399,7 +433,11 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
       </div>
 
       <CreateTaskModal open={showCreateTask} onClose={() => setShowCreateTask(false)}
-        onSave={task => { setLocalTasks(prev => [...prev, task as LocalTask]); setShowCreateTask(false); }} />
+        onSave={task => {
+          setLocalTasks(prev => [...prev, task as LocalTask]);
+          setShowCreateTask(false);
+          setTimeout(() => loadLocalTasks(false), 500);
+        }} />
 
       {/* Log Progress Modal */}
       {workNoteTask && (

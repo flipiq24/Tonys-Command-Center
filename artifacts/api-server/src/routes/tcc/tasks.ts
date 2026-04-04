@@ -7,6 +7,7 @@ import { todayPacific } from "../../lib/dates.js";
 import { localTasksTable } from "../../lib/schema-v2";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { z } from "zod/v4";
+import { createGoogleTask, completeGoogleTask, listGoogleTasks } from "../../lib/gtasks.js";
 
 const router: IRouter = Router();
 
@@ -160,10 +161,20 @@ router.get("/tasks/local", async (req, res): Promise<void> => {
 router.patch("/tasks/local/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
   const { status } = req.body as { status?: string };
-  await db
+
+  const [updated] = await db
     .update(localTasksTable)
     .set({ status: status || "done" })
-    .where(eq(localTasksTable.id, id));
+    .where(eq(localTasksTable.id, id))
+    .returning();
+
+  // Sync completion to Google Tasks
+  if ((status === "done" || !status) && updated?.googleTaskId) {
+    completeGoogleTask(updated.googleTaskId).catch(err =>
+      console.warn("[tasks] Google Task complete sync failed:", err)
+    );
+  }
+
   res.json({ ok: true });
 });
 
@@ -290,7 +301,7 @@ router.post("/tasks/create-with-check", async (req, res): Promise<void> => {
     return;
   }
 
-  // Save the task
+  // Save the task to local DB first
   const [task] = await db
     .insert(localTasksTable)
     .values({
@@ -302,7 +313,82 @@ router.post("/tasks/create-with-check", async (req, res): Promise<void> => {
     })
     .returning();
 
+  // Create matching Google Task (fire-and-forget, update googleTaskId when done)
+  createGoogleTask(text, dueDate ?? null).then(async googleTaskId => {
+    if (googleTaskId) {
+      await db
+        .update(localTasksTable)
+        .set({ googleTaskId })
+        .where(eq(localTasksTable.id, task.id));
+    }
+  }).catch(err => console.warn("[tasks] Google Task create sync failed:", err));
+
   res.status(201).json(task);
+});
+
+async function syncGoogleCompletions(): Promise<number> {
+  const localTasks = await db
+    .select()
+    .from(localTasksTable)
+    .where(eq(localTasksTable.status, "active"));
+
+  const linked = localTasks.filter(t => t.googleTaskId);
+  if (linked.length === 0) return 0;
+
+  const { google } = await import("googleapis");
+  const { getGoogleAuth } = await import("../../lib/google-auth.js");
+  const gtasks = google.tasks({ version: "v1", auth: getGoogleAuth() });
+  const gRes = await gtasks.tasks.list({
+    tasklist: "@default",
+    showCompleted: true,
+    showHidden: true,
+    maxResults: 200,
+  });
+
+  const completedIds = new Set(
+    (gRes.data.items || [])
+      .filter(t => t.status === "completed" && t.id)
+      .map(t => t.id!)
+  );
+
+  let synced = 0;
+  for (const local of linked) {
+    if (local.googleTaskId && completedIds.has(local.googleTaskId)) {
+      await db
+        .update(localTasksTable)
+        .set({ status: "done" })
+        .where(eq(localTasksTable.id, local.id));
+      synced++;
+    }
+  }
+  return synced;
+}
+
+// Sync Google Tasks → TCC: mark any Google-completed tasks as done locally
+router.post("/tasks/sync-google", async (req, res): Promise<void> => {
+  try {
+    const synced = await syncGoogleCompletions();
+    res.json({ ok: true, synced });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+// Refresh: sync from Google Tasks then return updated active task list
+router.get("/tasks/refresh", async (req, res): Promise<void> => {
+  try {
+    await syncGoogleCompletions();
+  } catch (err) {
+    console.warn("[tasks/refresh] Google sync step failed:", err instanceof Error ? err.message : err);
+  }
+
+  const tasks = await db
+    .select()
+    .from(localTasksTable)
+    .where(eq(localTasksTable.status, "active"))
+    .orderBy(localTasksTable.priority, localTasksTable.createdAt);
+
+  res.json(tasks);
 });
 
 export default router;

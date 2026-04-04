@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { get, patch, post, del } from "@/lib/api";
-import { C, F, FS, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS } from "./constants";
+import { C, F, FS, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import type { Contact, ContactNote, CallEntry } from "./types";
 
 interface Props {
@@ -98,7 +98,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
       const payload: Record<string, unknown> = {};
       const fields: (keyof Contact)[] = [
         "name", "company", "title", "phone", "email", "status", "pipelineStage",
-        "dealValue", "dealProbability", "leadSource", "linkedinUrl", "website",
+        "type", "category", "dealValue", "dealProbability", "leadSource", "linkedinUrl", "website",
         "nextStep", "notes", "followUpDate", "expectedCloseDate", "lastContactDate", "tags",
       ];
       for (const f of fields) {
@@ -236,6 +236,23 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                     <div style={{ flex: 1 }}>
                       <label style={lbl}>Expected Close</label>
                       <input type="date" value={draft.expectedCloseDate ?? ""} onChange={e => updateDraft("expectedCloseDate", e.target.value)} style={inp} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={lbl}>Contact Type</label>
+                      <select value={draft.type || ""} onChange={e => updateDraft("type", e.target.value)} style={sel}>
+                        <option value="">— Select —</option>
+                        {CONTACT_TYPES.map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={lbl}>Category</label>
+                      <select value={draft.category || ""} onChange={e => updateDraft("category", e.target.value)} style={sel}>
+                        <option value="">— Select —</option>
+                        {CONTACT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                      </select>
                     </div>
                   </div>
 

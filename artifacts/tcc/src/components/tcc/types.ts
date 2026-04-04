@@ -17,6 +17,7 @@ export interface Contact {
   phone?: string;
   email?: string;
   type?: string;
+  category?: string;
   title?: string;
   nextStep?: string;
   lastContactDate?: string;

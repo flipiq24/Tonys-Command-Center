@@ -31,6 +31,8 @@ export const PCBg: Record<string, string> = {
 
 export const LEAD_SOURCES = ["LinkedIn", "Referral", "Cold Outreach", "Event", "Website", "Partner", "Other"] as const;
 export const STATUS_OPTIONS = ["Hot", "Warm", "New", "Cold"] as const;
+export const CONTACT_TYPES = ["Prospect", "Client", "Partner", "Vendor", "Investor", "Referral", "Other"] as const;
+export const CONTACT_CATEGORIES = ["Real Estate", "Insurance", "Finance", "Tech", "Healthcare", "Legal", "Government", "Non-Profit", "Retail", "Other"] as const;
 
 export const TIPS: Record<string, string> = {
   checkin: "Morning gate. System locked until done. Bedtime, wake, Bible, workout, journal, nutrition, unplug. Saved to database.",

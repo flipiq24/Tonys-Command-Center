@@ -52,6 +52,7 @@ export const contactsTable = pgTable("contacts", {
   phoneNormalized: text("phone_normalized").generatedAlwaysAs(sql`regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g')`),
   email: text("email"),
   type: text("type"),
+  category: text("category"),
   title: text("title"),
   nextStep: text("next_step"),
   lastContactDate: date("last_contact_date"),

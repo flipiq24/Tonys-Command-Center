@@ -18,6 +18,10 @@ export interface CalItem {
   slackMessageTs?: string;
   gmailMessageId?: string;
   linearIdentifier?: string;
+  colorId?: string;
+  meetLink?: string;
+  priority?: string;
+  attendeeCount?: number;
 }
 export interface EmailItem { id: number; from: string; subj: string; why: string; time?: string; p?: string; gmailMessageId?: string; }
 export interface TaskItem { id: string; text: string; cat: string; sales?: boolean; }

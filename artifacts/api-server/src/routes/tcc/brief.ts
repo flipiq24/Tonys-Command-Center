@@ -217,7 +217,8 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
           })
         : "";
       const attendeeCount = e.attendees?.length ?? 0;
-      const hasVideo = !!(e.conferenceData || (e.description || "").match(/zoom|meet|teams/i));
+      const meetLink = e.conferenceData?.entryPoints?.find((ep: any) => ep.entryPointType === "video")?.uri;
+      const hasVideo = !!(meetLink || (e.description || "").match(/zoom|meet|teams/i));
       const item: CalItem = {
         t: timeLabel,
         n: e.summary || "(no title)",
@@ -233,6 +234,8 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
       if (e.description) item.note = e.description.slice(0, 120);
       if (e.id) item.calendarEventId = e.id;
       if (e.htmlLink) item.htmlLink = e.htmlLink;
+      if (e.colorId) item.colorId = e.colorId;
+      if (meetLink) item.meetLink = meetLink;
       return item;
     });
   } catch (err) {

@@ -30,6 +30,19 @@ async function getTodayCallCount(): Promise<number> {
   } catch { return 0; }
 }
 
+const CATEGORY_COLOR_ID: Record<string, string> = {
+  "TECH":           "9",  // Basil (dark green)
+  "OPERATIONS":     "4",  // Flamingo (salmon)
+  "DONE":           "11", // Graphite (gray)
+  "FINANCE":        "1",  // Lavender (blue-purple)
+  "IMPORTANT":      "10", // Tomato (red)
+  "PROJECTS":       "5",  // Banana (yellow)
+  "PERSONAL":       "3",  // Grape (purple)
+  "MEETING":        "6",  // Tangerine (orange)
+  "NEEDS PLANNING": "8",  // Blueberry (indigo)
+  "SALES Tech":     "2",  // Sage (light green)
+};
+
 const AddEventBody = z.object({
   title: z.string().min(1),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -41,6 +54,8 @@ const AddEventBody = z.object({
   notification: z.number().optional().default(10), // minutes
   guests: z.array(z.string()).optional().default([]),
   forceOverride: z.boolean().optional().default(false),
+  category: z.string().optional(),
+  priority: z.string().optional(),
 });
 
 router.post("/schedule/add", async (req, res): Promise<void> => {
@@ -50,7 +65,8 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
     return;
   }
 
-  const { title, date, allDay, startTime, endTime, location, description, notification, guests, forceOverride } = parsed.data;
+  const { title, date, allDay, startTime, endTime, location, description, notification, guests, forceOverride, category, priority } = parsed.data;
+  const colorId = category ? CATEGORY_COLOR_ID[category] : undefined;
 
   // ── Guilt-trip check (only for timed events during call hours) ───────────
   let guiltTrip = false;
@@ -85,13 +101,18 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
     gcalEnd   = buildISO(date, endTime   || "10:00");
   }
 
+  const descParts = [];
+  if (priority) descParts.push(`Priority: ${priority}`);
+  if (description) descParts.push(description);
+
   const gcalResult = await createEvent({
     summary: title,
     start: gcalStart,
     end: gcalEnd,
     attendees: guests.length > 0 ? guests : undefined,
-    description: description,
+    description: descParts.join("\n\n") || undefined,
     location: location,
+    colorId,
   });
 
   if (!gcalResult.ok) {

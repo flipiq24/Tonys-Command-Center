@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, gte } from "drizzle-orm";
 import { db, eodReportsTable, callLogTable, demosTable, taskCompletionsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { gte } from "drizzle-orm";
+import { sendViaAgentMail } from "../../lib/agentmail";
 
 const router: IRouter = Router();
 
@@ -33,10 +33,9 @@ router.post("/eod-report", async (req, res): Promise<void> => {
     const message = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
-      messages: [
-        {
-          role: "user",
-          content: `Generate an EOD (End of Day) report for Tony Diaz, CEO of FlipIQ.
+      messages: [{
+        role: "user",
+        content: `Generate an EOD (End of Day) report for Tony Diaz, CEO of FlipIQ.
 
 Today's Data:
 - Calls Made: ${callsMade}
@@ -53,40 +52,48 @@ Write a brief EOD report (3-4 paragraphs) in Tony's voice:
 4. One motivating closing thought
 
 Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and ethan@flipiq.com.`,
-        },
-      ],
+      }],
     });
     const block = message.content[0];
     if (block.type === "text") reportText = block.text;
   } catch (err) {
     req.log.warn({ err }, "Claude EOD report generation failed");
-    reportText = `EOD Report — ${today}
-
-Calls Made: ${callsMade}
-Demos Booked: ${demosBooked}  
-Tasks Completed: ${tasksCompleted}
-
-${callList}
-
-Keep pushing forward tomorrow.`;
+    reportText = `EOD Report — ${today}\n\nCalls Made: ${callsMade}\nDemos Booked: ${demosBooked}\nTasks Completed: ${tasksCompleted}\n\n${callList}\n\nKeep pushing forward tomorrow.`;
   }
+
+  // Send via AgentMail to tony@flipiq.com and ethan@flipiq.com
+  const recipients = ["tony@flipiq.com", "ethan@flipiq.com"];
+  const sentResults: { to: string; ok: boolean }[] = [];
+  for (const to of recipients) {
+    const result = await sendViaAgentMail({
+      to,
+      subject: `FlipIQ EOD Report — ${today}`,
+      body: reportText,
+    });
+    sentResults.push({ to, ok: result.ok });
+    if (!result.ok) {
+      req.log.warn({ to }, "AgentMail EOD send failed");
+    }
+  }
+
+  const sentTo = sentResults.filter(r => r.ok).map(r => r.to).join(",") || "failed";
 
   const [existing] = await db.select().from(eodReportsTable).where(eq(eodReportsTable.date, today));
   let report;
   if (existing) {
     [report] = await db
       .update(eodReportsTable)
-      .set({ callsMade, demosBooked, tasksCompleted, reportText, sentTo: "tony@flipiq.com,ethan@flipiq.com" })
+      .set({ callsMade, demosBooked, tasksCompleted, reportText, sentTo })
       .where(eq(eodReportsTable.date, today))
       .returning();
   } else {
     [report] = await db
       .insert(eodReportsTable)
-      .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText, sentTo: "tony@flipiq.com,ethan@flipiq.com" })
+      .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText, sentTo })
       .returning();
   }
 
-  res.json({ ...report, ok: true });
+  res.json({ ...report, ok: true, emailsSent: sentResults });
 });
 
 export default router;

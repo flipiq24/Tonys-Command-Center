@@ -19,7 +19,7 @@ interface Props {
 }
 
 export function Header({ clock, ideas, unresolved, calSide, eod, customTips, onSetView, onToggleCal, onShowIdea, onShowChat, onEod, onTipSaved }: Props) {
-  const tip = (key: string) => customTips[key] ?? TIPS[key] ?? "";
+  const tip = (key: string) => (customTips ?? {})[key] ?? TIPS[key] ?? "";
 
   return (
     <div style={{ background: C.card, borderBottom: `1px solid ${C.brd}`, padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>

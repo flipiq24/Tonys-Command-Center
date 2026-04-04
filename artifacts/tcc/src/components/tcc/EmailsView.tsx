@@ -18,7 +18,7 @@ interface Props {
 export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, onSnooze, onDone, onTipSaved }: Props) {
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const unresolved = emailsImportant.filter(e => !snoozed[e.id]).length;
-  const tip = (key: string) => customTips[key] ?? TIPS[key] ?? "";
+  const tip = (key: string) => (customTips ?? {})[key] ?? TIPS[key] ?? "";
 
   return (
     <>

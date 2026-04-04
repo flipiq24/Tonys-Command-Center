@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { C, F, FS, card, btn1, btn2 } from "./constants";
 import type { CalItem } from "./types";
+import { DeepLink } from "./DeepLink";
 
 interface Props {
   items: CalItem[];
@@ -101,12 +102,18 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks }: Props) {
                 {c.loc && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>📍 {c.loc}</div>}
                 {c.note && <div style={{ fontSize: 12, color: C.amb, marginTop: 2 }}>⚡ {c.note}</div>}
               </div>
-              {c.real
-                ? <span style={{ fontSize: 10, fontWeight: 700, color: isCurrent ? "#2563EB" : C.blu, background: "#fff", padding: "2px 8px", borderRadius: 4, alignSelf: "center" }}>
-                    {isCurrent ? "▶ NOW" : "MEETING"}
-                  </span>
-                : <span style={{ fontSize: 10, color: C.mut, alignSelf: "center" }}>note</span>
-              }
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, alignSelf: "center", flexShrink: 0 }}>
+                {c.real
+                  ? <span style={{ fontSize: 10, fontWeight: 700, color: isCurrent ? "#2563EB" : C.blu, background: "#fff", padding: "2px 8px", borderRadius: 4 }}>
+                      {isCurrent ? "▶ NOW" : "MEETING"}
+                    </span>
+                  : <span style={{ fontSize: 10, color: C.mut }}>note</span>
+                }
+                {c.calendarEventId && <DeepLink type="calendar" id={c.calendarEventId} />}
+                {c.gmailMessageId && <DeepLink type="email" id={c.gmailMessageId} />}
+                {c.slackChannelId && c.slackMessageTs && <DeepLink type="slack" id="" channelId={c.slackChannelId} messageTs={c.slackMessageTs} />}
+                {c.linearIdentifier && <DeepLink type="linear" id="" identifier={c.linearIdentifier} />}
+              </div>
             </div>
           );
         })}

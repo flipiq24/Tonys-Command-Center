@@ -5,6 +5,7 @@ import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
 import { ContactDrawer } from "./ContactDrawer";
 import { AddContactModal } from "./AddContactModal";
+import { TimeRoutingBanner } from "./TimeRoutingBanner";
 import type { Contact, CallEntry } from "./types";
 
 interface Props {
@@ -243,6 +244,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
       <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
 
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "16px 20px 40px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
+        <TimeRoutingBanner />
 
         <div style={{ ...card, marginBottom: 12, padding: "16px 20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>

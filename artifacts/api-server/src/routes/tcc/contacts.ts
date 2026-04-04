@@ -76,11 +76,13 @@ router.post("/contacts", async (req, res): Promise<void> => {
     return;
   }
 
+  const newPhone = body.phone ? String(body.phone) : undefined;
   const [contact] = await db.insert(contactsTable).values({
     name: String(body.name),
     company: body.company ? String(body.company) : undefined,
     status: body.status ? String(body.status) : "New",
-    phone: body.phone ? String(body.phone) : undefined,
+    phone: newPhone,
+    phoneNormalized: newPhone ? newPhone.replace(/\D/g, "") : undefined,
     email: body.email ? String(body.email) : undefined,
     type: body.type ? String(body.type) : undefined,
     title: body.title ? String(body.title) : undefined,
@@ -105,11 +107,19 @@ router.patch("/contacts/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
   const body = req.body as Record<string, unknown>;
 
+  const [current] = await db.select({ status: contactsTable.status, pipelineStage: contactsTable.pipelineStage })
+    .from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+  if (!current) { res.status(404).json({ error: "Not found" }); return; }
+
   const updateFields: Partial<typeof contactsTable.$inferInsert> = {};
   if ("name" in body) updateFields.name = String(body.name);
   if ("company" in body) updateFields.company = body.company ? String(body.company) : null;
   if ("status" in body) updateFields.status = body.status ? String(body.status) : "New";
-  if ("phone" in body) updateFields.phone = body.phone ? String(body.phone) : null;
+  if ("phone" in body) {
+    const p = body.phone ? String(body.phone) : null;
+    updateFields.phone = p;
+    updateFields.phoneNormalized = p ? p.replace(/\D/g, "") : null;
+  }
   if ("email" in body) updateFields.email = body.email ? String(body.email) : null;
   if ("type" in body) updateFields.type = body.type ? String(body.type) : null;
   if ("title" in body) updateFields.title = body.title ? String(body.title) : null;
@@ -130,6 +140,17 @@ router.patch("/contacts/:id", async (req, res): Promise<void> => {
 
   const [updated] = await db.update(contactsTable).set(updateFields).where(eq(contactsTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+
+  const activityNotes: { contactId: string; text: string; kind: string }[] = [];
+  if ("status" in body && updateFields.status && updateFields.status !== current.status) {
+    activityNotes.push({ contactId: id, text: `Status changed: ${current.status ?? "—"} → ${updateFields.status}`, kind: "status_change" });
+  }
+  if ("pipelineStage" in body && updateFields.pipelineStage && updateFields.pipelineStage !== current.pipelineStage) {
+    activityNotes.push({ contactId: id, text: `Stage moved: ${current.pipelineStage ?? "—"} → ${updateFields.pipelineStage}`, kind: "stage_change" });
+  }
+  if (activityNotes.length > 0) {
+    await db.insert(contactNotesTable).values(activityNotes).catch(() => {});
+  }
 
   res.json(updated);
 });

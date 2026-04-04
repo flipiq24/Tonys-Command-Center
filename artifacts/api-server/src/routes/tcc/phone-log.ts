@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
-import { eq, desc, gte, and, sql } from "drizzle-orm";
+import { eq, desc, gte, and } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -11,7 +11,7 @@ type PhoneLogType = typeof VALID_TYPES[number];
 function checkSecret(req: import("express").Request, res: import("express").Response): boolean {
   const secret = req.query["key"] as string | undefined;
   const expected = process.env.MACRODROID_SECRET;
-  if (!expected) return true; // no secret set — allow (dev mode)
+  if (!expected) { res.status(401).json({ error: "MACRODROID_SECRET not configured" }); return false; }
   if (secret !== expected) {
     res.status(401).json({ error: "unauthorized" });
     return false;
@@ -41,11 +41,11 @@ router.post("/phone-log", async (req, res): Promise<void> => {
   }
   const normalizedIncoming = normalizePhone(phone_number);
 
-  // Auto-match to contact using functional index on regexp_replace(phone, '[^0-9]', '', 'g')
+  // Auto-match to contact via indexed phone_normalized column
   const [match] = await db
     .select({ id: contactsTable.id, name: contactsTable.name })
     .from(contactsTable)
-    .where(sql`regexp_replace(phone, '[^0-9]', '', 'g') = ${normalizedIncoming}`)
+    .where(eq(contactsTable.phoneNormalized, normalizedIncoming))
     .limit(1);
 
   const [entry] = await db

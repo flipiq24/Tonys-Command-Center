@@ -50,7 +50,7 @@ export async function createLinearIssue(params: {
           success issue { id identifier }
         }
       }`,
-      { title: params.title, description: params.description, priority: params.priority ?? 3, teamId: params.teamId ?? "" }
+      { title: params.title, description: params.description, priority: params.priority ?? 3, teamId: params.teamId || process.env.LINEAR_TEAM_ID || "" }
     );
     const issue = data?.issueCreate?.issue;
     return { id: issue?.id, identifier: issue?.identifier, ok: !!issue?.id };

@@ -12,10 +12,12 @@ interface Props {
 export function AttemptModal({ contact, onClose, onLog }: Props) {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const save = async () => {
     if (!contact) return;
     setSaving(true);
+    setError("");
     try {
       const call = await post<CallEntry>("/calls", {
         contactName: contact.name, type: "attempt", notes: note || undefined, instructions: note || undefined
@@ -24,9 +26,7 @@ export function AttemptModal({ contact, onClose, onLog }: Props) {
       setNote("");
       onClose();
     } catch {
-      onLog({ contactName: contact.name, type: "attempt", notes: note, createdAt: new Date().toISOString() });
-      setNote("");
-      onClose();
+      setError("Failed to log call. Try again.");
     }
     setSaving(false);
   };
@@ -38,6 +38,7 @@ export function AttemptModal({ contact, onClose, onLog }: Props) {
         <h3 style={{ fontFamily: FS, fontSize: 18, margin: "0 0 4px" }}>Attempt — {contact.name}</h3>
         <p style={{ fontSize: 12, color: C.mut, margin: "0 0 12px" }}>Instructions for follow-up email:</p>
         <textarea value={note} onChange={e => setNote(e.target.value)} placeholder='"No answer, send email about demo..."' style={{ ...inp, minHeight: 80, resize: "vertical" }} />
+        {error && <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button onClick={onClose} style={btn2}>Cancel</button>
           <button onClick={save} disabled={saving} style={{ ...btn1, opacity: saving ? 0.5 : 1 }}>{saving ? "Logging..." : "Log & Follow-up"}</button>

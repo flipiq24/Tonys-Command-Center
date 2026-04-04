@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { post } from "@/lib/api";
-import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR, card, inp, btn1, btn2, lbl } from "./constants";
 
 interface CheckinState {
@@ -18,7 +17,11 @@ export function CheckinGate({ initial, onComplete }: Props) {
   const [ck, setCk] = useState<CheckinState>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [clock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+  const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+  useEffect(() => {
+    const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 60000);
+    return () => clearInterval(i);
+  }, []);
 
   const upCk = (k: keyof CheckinState, v: unknown) => {
     const u = { ...ck, [k]: v } as CheckinState;
@@ -60,7 +63,6 @@ export function CheckinGate({ initial, onComplete }: Props) {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <FontLink />
       <div style={{ ...card, padding: "36px 40px", maxWidth: 480, width: "100%" }}>
         <h1 style={{ fontFamily: FS, fontSize: 28, margin: 0 }}>Morning Check-in</h1>
         <p style={{ color: C.mut, margin: "6px 0 0", fontSize: 13 }}>{TODAY_STR} · {clock}</p>

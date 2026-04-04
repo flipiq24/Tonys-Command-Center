@@ -1,5 +1,4 @@
 import { SmartTip } from "./SmartTip";
-import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR, btn2, TIPS } from "./constants";
 import type { Idea } from "./types";
 
@@ -23,7 +22,6 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips, onS
 
   return (
     <div style={{ background: C.card, borderBottom: `1px solid ${C.brd}`, padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
-      <FontLink />
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <h1 onClick={() => onSetView("schedule")} style={{ fontFamily: FS, fontSize: 18, margin: 0, cursor: "pointer" }}>Tony's Command Center</h1>
         <span style={{ fontSize: 11, color: C.mut }}>{TODAY_STR} · {clock}</span>

@@ -169,7 +169,6 @@ export function SmartTip({ tipKey, tip, children, onSaved }: SmartTipProps) {
                   Click to edit this instruction
                 </div>
               )}
-              <div style={arrowStyle} />
             </>
           )}
           {!editing && <div style={arrowStyle} />}

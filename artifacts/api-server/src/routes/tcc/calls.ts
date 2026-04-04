@@ -38,26 +38,29 @@ router.post("/calls", async (req, res): Promise<void> => {
     })
     .returning();
 
+  let followUpDraft: string | undefined;
   if (type === "attempt" && instructions) {
     try {
-      await anthropic.messages.create({
+      const response = await anthropic.messages.create({
         model: "claude-haiku-4-5",
         max_tokens: 8192,
         messages: [
           {
             role: "user",
-            content: `Tony Diaz (FlipIQ) tried to call ${contactName} but got no answer. 
+            content: `Tony Diaz (FlipIQ) tried to call ${contactName} but got no answer.
 Tony's instructions: "${instructions}"
 Draft a brief follow-up email based on these instructions. Keep it short and professional.`,
           },
         ],
       });
+      const textBlock = response.content.find(b => b.type === "text");
+      if (textBlock?.type === "text") followUpDraft = textBlock.text;
     } catch (err) {
       req.log.warn({ err }, "Claude follow-up email failed");
     }
   }
 
-  res.status(201).json(call);
+  res.status(201).json({ ...call, followUpDraft });
 });
 
 export default router;

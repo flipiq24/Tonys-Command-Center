@@ -71,7 +71,7 @@ export async function listRecentEmails(maxResults = 10): Promise<{
     const messages = list.data.messages || [];
     const results = [];
 
-    for (const msg of messages.slice(0, 5)) {
+    for (const msg of messages.slice(0, maxResults)) {
       const detail = await gmail.users.messages.get({
         userId: "me",
         id: msg.id!,

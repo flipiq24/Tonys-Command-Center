@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { get } from "@/lib/api";
 import { C, F, FS, card, btn2, TIPS, SC } from "./constants";
 import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
@@ -39,8 +40,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`${apiBase}/contacts?search=${encodeURIComponent(search)}&limit=100`);
-        const data = await res.json() as { contacts: Contact[]; total: number } | Contact[];
+        const data = await get<{ contacts: Contact[]; total: number } | Contact[]>(`/contacts?search=${encodeURIComponent(search)}&limit=100`);
         const list = Array.isArray(data) ? data : data.contacts;
         const tot = Array.isArray(data) ? list.length : data.total;
         setResults(list);
@@ -48,7 +48,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
       } catch { /* keep existing */ }
       finally { setSearching(false); }
     }, 300);
-  }, [search, apiBase, initialContacts]);
+  }, [search, initialContacts]);
 
   const displayedContacts = results;
 
@@ -101,11 +101,10 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
               <div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>Last: {c.lastContactDate} · {c.phone}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
-              {/* Native call — opens Android dialer */}
+              {/* Native call — opens dialer only (use Attempt button for logging) */}
               {c.phone && (
                 <a
                   href={`tel:${c.phone}`}
-                  onClick={() => onAttempt({ id: c.id, name: c.name })}
                   style={{ ...btn2, padding: "7px 12px", fontSize: 11, textDecoration: "none", display: "block", textAlign: "center" }}
                 >
                   📞 Call

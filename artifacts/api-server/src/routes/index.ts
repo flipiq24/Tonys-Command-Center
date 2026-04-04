@@ -27,4 +27,20 @@ router.use(demosRouter);
 router.use(tasksRouter);
 router.use(eodRouter);
 
+// ─── Canonical aliases (spec-matching paths) ─────────────────────────────────
+// /morning-brief is registered directly in briefRouter (both /brief/today and /morning-brief)
+// /email-action, /call-log, /idea route aliases share handler modules:
+router.post("/email-action", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {
+  req.url = "/emails/action";
+  emailsRouter(req, res, next);
+});
+router.post("/call-log", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {
+  req.url = "/calls";
+  callsRouter(req, res, next);
+});
+router.post("/idea", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {
+  req.url = "/ideas";
+  ideasRouter(req, res, next);
+});
+
 export default router;

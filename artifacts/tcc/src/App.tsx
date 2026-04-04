@@ -74,7 +74,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [checkin, journal, briefData, callData, ideaData, demoData, snoozedData] = await Promise.all([
+        const [checkin, journal, briefData, callData, ideaData, demoData, snoozedData, taskData] = await Promise.all([
           get<{ id?: string; done?: boolean; bedtime?: string; waketime?: string; sleepHours?: string; bible?: boolean; workout?: boolean; journal?: boolean; nutrition?: string; unplug?: boolean }>("/checkin/today").catch(() => null),
           get<{ formattedText?: string; rawText?: string }>("/journal/today").catch(() => null),
           get<DailyBrief>("/brief/today").catch(() => null),
@@ -82,6 +82,7 @@ export default function App() {
           get<Idea[]>("/ideas").catch(() => []),
           get<{ count: number }>("/demos/count").catch(() => ({ count: 0 })),
           get<Record<number, string>>("/emails/snoozed").catch(() => ({})),
+          get<{ taskId: string }[]>("/tasks/completed").catch(() => []),
         ]);
 
         if (checkin?.id) {
@@ -111,6 +112,11 @@ export default function App() {
         if (ideaData?.length) setIdeas(ideaData);
         if (demoData) setDemos(demoData.count);
         if (snoozedData) setSnoozed(snoozedData);
+        if (taskData?.length) {
+          const done: Record<string, boolean> = {};
+          for (const t of taskData) done[t.taskId] = true;
+          setTDone(done);
+        }
       } catch {
         /* start fresh */
       }

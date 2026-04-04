@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { get, patch, post, del } from "@/lib/api";
 import { C, F, FS, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import type { Contact, ContactNote, CallEntry } from "./types";
@@ -56,6 +56,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [saveMsg, setSaveMsg] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity">("details");
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); return; }
@@ -79,45 +80,38 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
     setHasChanges(true);
   }, []);
 
-  const handleQuickUpdate = useCallback(async (field: keyof Contact, value: string) => {
-    if (!contactId || !contact) return;
-    try {
-      const updated = await patch<Contact>(`/contacts/${contactId}`, { [field]: value });
-      setContact(updated);
-      setDraft(prev => ({ ...prev, [field]: value }));
-      onUpdated(updated);
-      setSaveMsg("Saved");
-      setTimeout(() => setSaveMsg(""), 1500);
-    } catch { /* silent */ }
-  }, [contactId, contact, onUpdated]);
-
-  const handleSave = useCallback(async () => {
-    if (!contactId || !hasChanges) return;
-    setSaving(true);
-    try {
-      const payload: Record<string, unknown> = {};
-      const fields: (keyof Contact)[] = [
-        "name", "company", "title", "phone", "email", "status", "pipelineStage",
-        "type", "category", "dealValue", "dealProbability", "leadSource", "linkedinUrl", "website",
-        "nextStep", "notes", "followUpDate", "expectedCloseDate", "lastContactDate", "tags",
-      ];
-      for (const f of fields) {
-        if (f in draft) payload[f] = draft[f as keyof Contact];
+  useEffect(() => {
+    if (!hasChanges || !contactId) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    setSaveMsg("Unsaved…");
+    autoSaveTimer.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        const payload: Record<string, unknown> = {};
+        const fields: (keyof Contact)[] = [
+          "name", "company", "title", "phone", "email", "status", "pipelineStage",
+          "type", "category", "dealValue", "dealProbability", "leadSource", "linkedinUrl", "website",
+          "nextStep", "notes", "followUpDate", "expectedCloseDate", "lastContactDate", "tags",
+        ];
+        for (const f of fields) {
+          if (f in draft) payload[f] = (draft as Record<string, unknown>)[f];
+        }
+        const updated = await patch<Contact>(`/contacts/${contactId}`, payload);
+        setContact(updated);
+        setDraft(updated);
+        setHasChanges(false);
+        onUpdated(updated);
+        setSaveMsg("Saved ✓");
+        setTimeout(() => setSaveMsg(""), 2000);
+      } catch {
+        setSaveMsg("Error saving");
+        setTimeout(() => setSaveMsg(""), 2000);
+      } finally {
+        setSaving(false);
       }
-      const updated = await patch<Contact>(`/contacts/${contactId}`, payload);
-      setContact(updated);
-      setDraft(updated);
-      setHasChanges(false);
-      onUpdated(updated);
-      setSaveMsg("Saved ✓");
-      setTimeout(() => setSaveMsg(""), 2000);
-    } catch {
-      setSaveMsg("Error saving");
-      setTimeout(() => setSaveMsg(""), 2000);
-    } finally {
-      setSaving(false);
-    }
-  }, [contactId, draft, hasChanges, onUpdated]);
+    }, 1500);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [draft, hasChanges, contactId, onUpdated]);
 
   const handleAddNote = useCallback(async () => {
     if (!contactId || !noteText.trim()) return;
@@ -205,13 +199,13 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                     <div style={{ flex: 1 }}>
                       <label style={lbl}>Status</label>
-                      <select value={draft.status || "New"} onChange={e => { updateDraft("status", e.target.value); handleQuickUpdate("status", e.target.value); }} style={sel}>
+                      <select value={draft.status || "New"} onChange={e => updateDraft("status", e.target.value)} style={sel}>
                         {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={lbl}>Pipeline Stage</label>
-                      <select value={draft.pipelineStage || "Lead"} onChange={e => { updateDraft("pipelineStage", e.target.value); handleQuickUpdate("pipelineStage", e.target.value); }} style={sel}>
+                      <select value={draft.pipelineStage || "Lead"} onChange={e => updateDraft("pipelineStage", e.target.value)} style={sel}>
                         {PIPELINE_STAGES.map(s => <option key={s}>{s}</option>)}
                       </select>
                     </div>
@@ -323,16 +317,8 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                     <input type="date" value={draft.lastContactDate ?? ""} onChange={e => updateDraft("lastContactDate", e.target.value)} style={inp} />
                   </div>
 
-                  {hasChanges && (
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-                      <button onClick={handleSave} disabled={saving} style={{ flex: 1, padding: "11px 0", background: C.tx, color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", fontFamily: F, opacity: saving ? 0.7 : 1 }}>
-                        {saving ? "Saving…" : "Save Changes"}
-                      </button>
-                      {saveMsg && <span style={{ fontSize: 12, color: saveMsg.includes("Error") ? C.red : C.grn, fontWeight: 600 }}>{saveMsg}</span>}
-                    </div>
-                  )}
-                  {!hasChanges && saveMsg && (
-                    <div style={{ fontSize: 12, color: C.grn, fontWeight: 600, textAlign: "center", marginTop: 4 }}>{saveMsg}</div>
+                  {saveMsg && (
+                    <div style={{ fontSize: 11, color: saveMsg.includes("Error") ? C.red : saveMsg === "Unsaved…" ? C.mut : C.grn, fontWeight: 600, textAlign: "right", marginTop: 4, transition: "color 0.3s" }}>{saveMsg}</div>
                   )}
                 </>
               )}

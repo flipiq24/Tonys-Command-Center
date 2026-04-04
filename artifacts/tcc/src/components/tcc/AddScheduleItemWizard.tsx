@@ -9,6 +9,17 @@ interface Props {
 
 interface Contact { name: string; email: string; }
 
+interface EmailThread {
+  id: string;
+  threadId: string;
+  from: string;
+  to: string;
+  subject: string;
+  snippet: string;
+  date: string;
+  unread: boolean;
+}
+
 interface GuiltTrip {
   msg: string;
   callsMade: number;
@@ -49,6 +60,8 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [guiltTrip, setGuiltTrip] = useState<GuiltTrip | null>(null);
+  const [guestEmailHistory, setGuestEmailHistory] = useState<Record<string, EmailThread[]>>({});
+  const [emailHistoryLoading, setEmailHistoryLoading] = useState<Set<string>>(new Set());
   const guestRef = useRef<HTMLDivElement>(null);
   const acTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -76,13 +89,26 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   }, []);
 
   const addGuest = (c: Contact) => {
-    if (!guests.find(g => g.email === c.email)) setGuests(prev => [...prev, c]);
+    if (!guests.find(g => g.email === c.email)) {
+      setGuests(prev => [...prev, c]);
+      // Auto-fetch email history for this guest
+      if (!guestEmailHistory[c.email]) {
+        setEmailHistoryLoading(prev => new Set([...prev, c.email]));
+        get<EmailThread[]>(`/contacts/email-history?email=${encodeURIComponent(c.email)}`)
+          .then(threads => setGuestEmailHistory(prev => ({ ...prev, [c.email]: threads })))
+          .catch(() => setGuestEmailHistory(prev => ({ ...prev, [c.email]: [] })))
+          .finally(() => setEmailHistoryLoading(prev => { const s = new Set(prev); s.delete(c.email); return s; }));
+      }
+    }
     setGuestInput("");
     setSuggestions([]);
     setShowSuggestions(false);
   };
 
-  const removeGuest = (email: string) => setGuests(prev => prev.filter(g => g.email !== email));
+  const removeGuest = (email: string) => {
+    setGuests(prev => prev.filter(g => g.email !== email));
+    setGuestEmailHistory(prev => { const n = { ...prev }; delete n[email]; return n; });
+  };
 
   const handleGuestKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === "Enter" || e.key === ",") && guestInput.includes("@")) {
@@ -248,20 +274,60 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
                   )}
                 </div>
                 {guests.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                    {guests.map(g => (
-                      <span key={g.email} style={{
-                        display: "flex", alignItems: "center", gap: 4,
-                        background: C.bluBg, color: C.blu,
-                        borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 600,
-                      }}>
-                        {g.name || g.email}
-                        <button onClick={() => removeGuest(g.email)} style={{
-                          background: "none", border: "none", cursor: "pointer",
-                          color: C.blu, fontSize: 14, lineHeight: 1, padding: 0,
-                        }}>×</button>
-                      </span>
-                    ))}
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {guests.map(g => (
+                        <span key={g.email} style={{
+                          display: "flex", alignItems: "center", gap: 4,
+                          background: "#F0F0F0", color: C.tx,
+                          borderRadius: 20, padding: "4px 10px", fontSize: 12, fontWeight: 600,
+                        }}>
+                          {g.name || g.email}
+                          <button onClick={() => removeGuest(g.email)} style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: "#999", fontSize: 14, lineHeight: 1, padding: 0,
+                          }}>×</button>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Email history per guest */}
+                    {guests.map(g => {
+                      const threads = guestEmailHistory[g.email];
+                      const loading = emailHistoryLoading.has(g.email);
+                      if (!loading && (!threads || threads.length === 0)) return null;
+                      return (
+                        <div key={g.email} style={{ marginTop: 10, borderTop: `1px solid ${C.brd}`, paddingTop: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6 }}>
+                            {loading ? `Loading emails with ${g.name || g.email}…` : `Recent emails with ${g.name || g.email}`}
+                          </div>
+                          {!loading && threads?.map(t => {
+                            const gmailUrl = `https://mail.google.com/mail/u/0/#all/${t.threadId}`;
+                            const dateStr = t.date ? new Date(t.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+                            const fromName = t.from.replace(/<.*>/, "").trim() || t.from;
+                            return (
+                              <a
+                                key={t.threadId}
+                                href={gmailUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ display: "block", textDecoration: "none", padding: "6px 0", borderBottom: `1px solid ${C.brd}` }}
+                              >
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                  <span style={{ fontSize: 12, fontWeight: t.unread ? 700 : 500, color: C.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                                    {t.subject || "(no subject)"}
+                                  </span>
+                                  <span style={{ fontSize: 11, color: "#999", flexShrink: 0 }}>{dateStr}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: "#777", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {fromName} — {t.snippet}
+                                </div>
+                              </a>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { getPeople } from "../../lib/google-auth";
+import { searchEmails } from "../../lib/gmail.js";
 
 const router: IRouter = Router();
 
@@ -58,6 +59,35 @@ router.get("/contacts/autocomplete", async (req, res): Promise<void> => {
     res.json(matches);
   } catch (err) {
     console.warn("[Contacts] autocomplete failed:", err instanceof Error ? err.message : err);
+    res.json([]);
+  }
+});
+
+// ── Email history for a contact ───────────────────────────────────────────────
+router.get("/contacts/email-history", async (req, res): Promise<void> => {
+  const email = String(req.query.email || "").trim();
+  if (!email || !email.includes("@")) {
+    res.json([]);
+    return;
+  }
+
+  try {
+    const results = await searchEmails(`from:${email} OR to:${email}`, 20);
+
+    // Deduplicate by threadId, keep most recent occurrence per thread
+    const seen = new Set<string>();
+    const threads: typeof results = [];
+    for (const r of results) {
+      if (!seen.has(r.threadId)) {
+        seen.add(r.threadId);
+        threads.push(r);
+      }
+      if (threads.length >= 6) break;
+    }
+
+    res.json(threads);
+  } catch (err) {
+    console.warn("[contacts/email-history] failed:", err instanceof Error ? err.message : err);
     res.json([]);
   }
 });

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, contactsTable, contactNotesTable, callLogTable } from "@workspace/db";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
 
@@ -183,6 +184,55 @@ router.post("/contacts/:id/notes", async (req, res): Promise<void> => {
   }).returning();
 
   res.status(201).json(note);
+});
+
+// ─── POST /contacts/scan-card ─────────────────────────────────────────────
+// Accepts a base64 image, uses Claude vision to extract contact details
+router.post("/contacts/scan-card", async (req, res): Promise<void> => {
+  const { imageBase64, mimeType } = req.body as { imageBase64?: string; mimeType?: string };
+  if (!imageBase64) { res.status(400).json({ error: "imageBase64 required" }); return; }
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  const mt = (mimeType && allowedTypes.includes(mimeType) ? mimeType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 512,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mt, data: imageBase64 },
+          },
+          {
+            type: "text",
+            text: `Extract contact information from this business card image. Return ONLY a JSON object with these fields (omit any field not found):
+{"name":"","company":"","title":"","phone":"","email":"","website":"","linkedin":"","notes":""}
+Rules: phone in format (xxx) xxx-xxxx if possible, notes = any extra info not in other fields. No markdown, no explanation.`,
+          },
+        ],
+      }],
+    });
+
+    const textBlock = response.content.find(b => b.type === "text");
+    const raw = textBlock?.type === "text" ? textBlock.text.trim() : "{}";
+
+    let parsed: Record<string, string> = {};
+    try {
+      // Handle potential markdown code fences
+      const cleaned = raw.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      parsed = {};
+    }
+
+    res.json(parsed);
+  } catch (err) {
+    req.log.error({ err }, "Business card scan failed");
+    res.status(500).json({ error: "Scan failed" });
+  }
 });
 
 export default router;

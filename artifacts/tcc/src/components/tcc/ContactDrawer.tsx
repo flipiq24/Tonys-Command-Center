@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { get, patch, post, del } from "@/lib/api";
-import { C, F, FS, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
+import { C, F, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import type { Contact, ContactNote, CallEntry } from "./types";
 
 interface Props {
@@ -25,19 +25,6 @@ const lbl: React.CSSProperties = {
 };
 const fieldRow: React.CSSProperties = { marginBottom: 12 };
 
-function Initials({ name }: { name: string }) {
-  const parts = name.trim().split(" ");
-  const init = (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
-  return (
-    <div style={{
-      width: 48, height: 48, borderRadius: "50%", background: C.tx, color: "#fff",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontFamily: FS, fontSize: 18, fontWeight: 700, flexShrink: 0, letterSpacing: 1,
-    }}>
-      {init.toUpperCase()}
-    </div>
-  );
-}
 
 function isOverdue(date?: string | null): boolean {
   if (!date) return false;
@@ -59,14 +46,16 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity" | "meetings">("details");
   const [meetings, setMeetings] = useState<{ id: string; date: string; contactName: string | null; summary: string | null; nextSteps: string | null; outcome: string | null }[]>([]);
   const [meetingsLoaded, setMeetingsLoaded] = useState(false);
+  const [interacted, setInteracted] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); setMeetings([]); setMeetingsLoaded(false); return; }
+    if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); setMeetings([]); setMeetingsLoaded(false); setInteracted(false); return; }
     setLoading(true);
     setActiveTab("details");
     setMeetings([]);
     setMeetingsLoaded(false);
+    setInteracted(false);
     get<Contact & { _notes: ContactNote[]; _calls: CallEntry[] }>(`/contacts/${contactId}`)
       .then(data => {
         const { _notes, _calls, ...c } = data;
@@ -90,6 +79,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const updateDraft = useCallback((field: keyof Contact, value: unknown) => {
     setDraft(prev => ({ ...prev, [field]: value }));
     setHasChanges(true);
+    setInteracted(true);
   }, []);
 
   useEffect(() => {
@@ -166,31 +156,36 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
         ) : contact ? (
           <>
             <div style={{ padding: "20px 20px 0", borderBottom: `1px solid ${C.brd}`, background: "#FAFAF8" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 12 }}>
-                <Initials name={contact.name} />
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 17, fontWeight: 700, color: C.tx, lineHeight: 1.2 }}>{contact.name}</div>
-                  {contact.company && <div style={{ fontSize: 13, color: C.sub, marginTop: 2 }}>{contact.company}{contact.title ? ` · ${contact.title}` : ""}</div>}
+                  <div style={{ fontSize: 19, fontWeight: 700, color: C.tx, lineHeight: 1.2 }}>{contact.name}</div>
+                  {contact.phone && (
+                    <div style={{ fontSize: 15, color: C.sub, marginTop: 4, fontWeight: 600, letterSpacing: 0.2 }}>{contact.phone}</div>
+                  )}
                   <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: contact.status === "Hot" ? C.redBg : contact.status === "Warm" ? C.ambBg : C.bluBg, color: SC[contact.status || "New"] || C.mut }}>{contact.status || "New"}</span>
                     {contact.pipelineStage && <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: PCBg[contact.pipelineStage] || "#F5F5F5", color: PC[contact.pipelineStage] || C.mut }}>{contact.pipelineStage}</span>}
-                    {contact.dealValue && <span style={{ fontSize: 11, fontWeight: 700, color: C.grn }}>💰 ${Number(contact.dealValue).toLocaleString()}</span>}
-                    {contact.followUpDate && <span style={{ fontSize: 11, fontWeight: 700, color: isOverdue(contact.followUpDate) ? C.red : C.mut }}>📅 {contact.followUpDate}</span>}
+                    {contact.dealValue && <span style={{ fontSize: 11, fontWeight: 700, color: C.grn }}>${Number(contact.dealValue).toLocaleString()}</span>}
+                    {contact.followUpDate && <span style={{ fontSize: 11, fontWeight: 700, color: isOverdue(contact.followUpDate) ? C.red : C.mut }}>{contact.followUpDate}</span>}
                   </div>
                 </div>
                 <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 20, padding: 4, lineHeight: 1, flexShrink: 0 }}>✕</button>
               </div>
               <div style={{ display: "flex", gap: 5, paddingBottom: 12, flexWrap: "wrap" }}>
                 {contact.phone && (
-                  <a href={`tel:${contact.phone}`} onClick={() => onAttempt({ id: contact.id, name: contact.name })} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F, textAlign: "center", textDecoration: "none", display: "block" }}>📞 Call</a>
+                  <a href={`tel:${contact.phone}`} onClick={() => onAttempt({ id: contact.id, name: contact.name })} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F, textAlign: "center", textDecoration: "none", display: "block" }}>Call</a>
                 )}
                 {contact.phone && (
-                  <button onClick={() => onSmsOpen(contact)} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>💬 Text</button>
+                  <button onClick={() => { setInteracted(true); onSmsOpen(contact); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Text</button>
                 )}
                 {onCompose && (
-                  <button onClick={() => { onCompose(contact); onClose(); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>✉ Email</button>
+                  <button onClick={() => { setInteracted(true); onCompose(contact); onClose(); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Email</button>
                 )}
-                <button onClick={() => onConnected(contact.name)} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.grnBg, color: C.grn, border: `1px solid ${C.grn}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>✓ Done</button>
+                <button
+                  onClick={() => { if (interacted) onConnected(contact.name); }}
+                  disabled={!interacted}
+                  title={interacted ? "Log as done" : "Send a text, email, or make an update first"}
+                  style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: interacted ? C.grnBg : "#F0F0EE", color: interacted ? C.grn : C.mut, border: `1px solid ${interacted ? C.grn : C.brd}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: interacted ? "pointer" : "not-allowed", fontFamily: F, transition: "all 0.2s" }}>Done</button>
                 <button onClick={() => setConfirmDelete(!confirmDelete)} style={{ padding: "8px 10px", background: C.redBg, color: C.red, border: `1px solid ${C.redBg}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>🗑</button>
               </div>
               {confirmDelete && (

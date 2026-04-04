@@ -111,9 +111,9 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
   const { text } = parsed.data;
   const recentIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt)).limit(5);
 
+  let classification: Awaited<ReturnType<typeof classifyIdea>>;
   try {
-    const classification = await classifyIdea(text, recentIdeas);
-    res.json({ ok: true, classification });
+    classification = await classifyIdea(text, recentIdeas);
   } catch (err) {
     req.log.warn({ err }, "Idea classification failed");
     res.json({
@@ -125,8 +125,126 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
         reason: "Could not auto-classify — defaulting to Operations.",
         businessFit: "Review manually.",
         priority: "medium",
+        pushback: null,
       }
     });
+    return;
+  }
+
+  // ── Pushback: check against all business context documents ──
+  let pushback: { message: string; priorityRank: number | null; action: "park" | "override" | "escalate" | null } | null = null;
+
+  try {
+    const contextDocs = await db.select().from(businessContextTable);
+    const northStar = contextDocs.find(d => d.documentType === "north_star")?.content || "";
+    const businessPlan = contextDocs.find(d => d.documentType === "business_plan")?.content || "";
+    const ninetyDayPlan = contextDocs.find(d => d.documentType === "90_day_plan")?.content || "";
+
+    const combinedContext = [
+      northStar ? `NORTH STAR:\n${northStar.substring(0, 1000)}` : "",
+      businessPlan ? `BUSINESS PLAN:\n${businessPlan.substring(0, 2000)}` : "",
+      ninetyDayPlan ? `90-DAY PLAN:\n${ninetyDayPlan.substring(0, 2000)}` : "",
+    ].filter(Boolean).join("\n\n");
+
+    if (combinedContext) {
+      const isTechBug = classification.category === "Tech" && classification.techType === "Bug";
+
+      if (isTechBug) {
+        pushback = {
+          message: "Tech bug detected. Auto-posting to #engineering with severity + priority recommendation.",
+          priorityRank: null,
+          action: null,
+        };
+        const { postToSlack } = await import("../../lib/slack");
+        postToSlack({
+          channel: "#engineering",
+          text: `*Bug Report (auto-filed from TCC)*\n\n> ${text}\n\n*Severity:* ${classification.urgency || "Unknown"}\n*Priority Recommendation:* ${classification.urgency === "Now" ? "P1" : classification.urgency === "This Week" ? "P2" : "P3"}`,
+        }).catch(() => {});
+      } else {
+        const pushbackCheck = await anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 512,
+          messages: [{
+            role: "user",
+            content: `Given these business priorities:\n${combinedContext}\n\nA new idea was submitted: "${text}"\n\nDoes this conflict with or distract from current priorities? If yes, estimate what priority rank (1-100) this would be on the 90-day plan. Is this unreasonable enough to park and escalate to Ethan?\n\nRespond as JSON only: { "conflicts": true/false, "rank": number|null, "reason": "brief explanation", "unreasonable": true/false }`,
+          }],
+        });
+
+        const pushbackText = pushbackCheck.content.find(b => b.type === "text");
+        if (pushbackText?.type === "text") {
+          try {
+            const raw = pushbackText.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+            const parsed2 = JSON.parse(raw);
+            if (parsed2.unreasonable) {
+              pushback = {
+                message: "I'm parking this and booking a meeting with Ethan to discuss.",
+                priorityRank: parsed2.rank ?? null,
+                action: "escalate",
+              };
+            } else if (parsed2.conflicts && parsed2.rank && parsed2.rank > 10) {
+              pushback = {
+                message: `This is #${parsed2.rank} on your 90-day plan. Convince me why it should jump to #1.`,
+                priorityRank: parsed2.rank,
+                action: "park",
+              };
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+    }
+  } catch { /* non-critical — pushback stays null */ }
+
+  res.json({ ok: true, classification: { ...classification, pushback } });
+});
+
+router.post("/ideas/notify-override", async (req, res): Promise<void> => {
+  const { text, justification } = req.body as { text?: string; justification?: string };
+  try {
+    const { postToSlack } = await import("../../lib/slack");
+    await postToSlack({
+      channel: "#leadership",
+      text: `*Priority Override Alert*\n\nTony overrode the 90-day plan to prioritize:\n> ${text || "Unknown idea"}\n\n*Justification:* ${justification || "No justification provided"}`,
+    });
+    postToSlack({
+      channel: "@ethan",
+      text: `Tony overrode the plan. New priority: "${text || ""}". Justification: ${justification || "None"}`,
+    }).catch(() => {});
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true, slackFailed: true });
+  }
+});
+
+router.post("/ideas/escalate-to-ethan", async (req, res): Promise<void> => {
+  const { text, rank, reasoning } = req.body as { text?: string; rank?: number; reasoning?: string };
+  try {
+    const { postToSlack } = await import("../../lib/slack");
+    await postToSlack({
+      channel: "@ethan",
+      text: `*Idea Parked + Meeting Requested*\n\nTony submitted an idea that was flagged as out-of-scope and auto-parked:\n> ${text || ""}\n\nPlease schedule a meeting to discuss if this should be prioritized.`,
+    });
+
+    try {
+      const { createEvent } = await import("../../lib/gcal");
+      const nextSlot = new Date();
+      nextSlot.setDate(nextSlot.getDate() + 1);
+      nextSlot.setHours(14, 0, 0, 0);
+      if (nextSlot.getDay() === 0) nextSlot.setDate(nextSlot.getDate() + 1);
+      if (nextSlot.getDay() === 6) nextSlot.setDate(nextSlot.getDate() + 2);
+      const endSlot = new Date(nextSlot.getTime() + 30 * 60 * 1000);
+
+      await createEvent({
+        summary: `Review plan change with Ethan — "${(text || "").substring(0, 50)}"`,
+        start: nextSlot.toISOString(),
+        end: endSlot.toISOString(),
+        attendees: ["ethan@flipiq.com"],
+        description: `Tony submitted: "${text}"\nAI priority: #${rank || "unknown"}\nTony's reasoning: "${reasoning || "Auto-parked, no justification"}"`,
+      });
+    } catch { /* calendar creation non-critical */ }
+
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true, slackFailed: true });
   }
 });
 

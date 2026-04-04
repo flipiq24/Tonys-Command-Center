@@ -8,6 +8,12 @@ const CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", 
 const URG = ["Now", "This Week", "This Month", "Someday"];
 const PRIORITY_COLOR: Record<string, string> = { high: C.red, medium: C.amb, low: C.grn };
 
+interface Pushback {
+  message: string;
+  priorityRank: number | null;
+  action: "park" | "override" | "escalate" | null;
+}
+
 interface Classification {
   category: string;
   urgency: string;
@@ -16,6 +22,7 @@ interface Classification {
   businessFit: string;
   priority: string;
   warningIfDistraction?: string;
+  pushback?: Pushback | null;
 }
 
 interface Props {
@@ -34,6 +41,8 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
   const [overrides, setOverrides] = useState<Partial<Classification>>({});
   const [error, setError] = useState("");
   const [linearId, setLinearId] = useState<string | null>(null);
+  const [pushback, setPushback] = useState<Pushback | null>(null);
+  const [override, setOverride] = useState<{ justification: string } | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -52,6 +61,8 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
     setOverrides({});
     setError("");
     setLinearId(null);
+    setPushback(null);
+    setOverride(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -60,10 +71,15 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
     if (!text.trim()) return;
     setStep("classifying");
     setError("");
+    setPushback(null);
+    setOverride(null);
     try {
       const res = await post<{ ok: boolean; classification: Classification }>("/ideas/classify", { text });
       setClassification(res.classification);
       setOverrides({});
+      if (res.classification.pushback) {
+        setPushback(res.classification.pushback);
+      }
       setStep("review");
     } catch {
       setError("Couldn't classify — please set category manually.");
@@ -84,7 +100,6 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
       });
       if (idea.linearIssue?.identifier) {
         setLinearId(idea.linearIssue.identifier);
-        // Show confirmation briefly then close — uses mounted ref to avoid setState after unmount
         await new Promise<void>(resolve => {
           const t = setTimeout(() => resolve(), 2000);
           if (!mountedRef.current) { clearTimeout(t); resolve(); }
@@ -175,6 +190,87 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
               </div>
             </div>
 
+            {/* ── PUSHBACK: Escalate (unreasonable) ── */}
+            {pushback && pushback.action === "escalate" && (
+              <div style={{ padding: 16, background: C.redBg, borderRadius: 10, marginBottom: 14, border: `1px solid ${C.red}` }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: C.red, marginBottom: 8 }}>🚨 Scope Check</div>
+                <div style={{ fontSize: 13, color: C.tx, marginBottom: 12 }}>{pushback.message}</div>
+                <button
+                  onClick={async () => {
+                    setStep("saving");
+                    try {
+                      await post("/ideas", { text, category: finalCat, urgency: "Someday" });
+                      await post("/ideas/escalate-to-ethan", { text, rank: pushback.priorityRank }).catch(() => {});
+                      onSave({ id: Date.now().toString(), text, category: finalCat, urgency: "Someday" } as Idea);
+                      handleClose();
+                    } catch { setError("Failed to park idea"); setStep("review"); }
+                  }}
+                  style={{ ...btn2, width: "100%", color: C.red, borderColor: C.red }}
+                >
+                  OK, Park It + Book Ethan Meeting
+                </button>
+              </div>
+            )}
+
+            {/* ── PUSHBACK: Park (conflicts with plan) ── */}
+            {pushback && pushback.action === "park" && !override && (
+              <div style={{ padding: 16, background: C.ambBg, borderRadius: 10, marginBottom: 14, border: `1px solid ${C.amb}` }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: C.amb, marginBottom: 8 }}>⚠️ Pushback</div>
+                <div style={{ fontSize: 13, color: C.tx, marginBottom: 12 }}>{pushback.message}</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={async () => {
+                      setStep("saving");
+                      try {
+                        const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: "Someday" });
+                        onSave(idea);
+                        handleClose();
+                      } catch { setError("Failed to park idea"); setStep("review"); }
+                    }}
+                    style={{ ...btn2, flex: 1, color: C.amb, borderColor: C.amb }}
+                  >
+                    Park It
+                  </button>
+                  <button
+                    onClick={() => { setOverride({ justification: "" }); setPushback(null); }}
+                    style={{ ...btn1, flex: 1, background: C.red }}
+                  >
+                    Override — Do It Anyway
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── OVERRIDE: Justification required ── */}
+            {override && (
+              <div style={{ padding: 16, background: C.redBg, borderRadius: 10, marginBottom: 14, border: `1px solid ${C.red}` }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: C.red, marginBottom: 8 }}>
+                  Why should this jump the queue?
+                </div>
+                <textarea
+                  value={override.justification}
+                  onChange={e => setOverride({ justification: e.target.value })}
+                  placeholder="Explain why this is urgent enough to override the plan..."
+                  style={{ ...inp, minHeight: 60, resize: "vertical", marginBottom: 8 }}
+                />
+                <button
+                  onClick={async () => {
+                    setStep("saving");
+                    try {
+                      const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: finalUrg });
+                      await post("/ideas/notify-override", { text, justification: override.justification }).catch(() => {});
+                      onSave(idea);
+                      handleClose();
+                    } catch { setError("Failed to save idea"); setStep("review"); }
+                  }}
+                  disabled={!override.justification.trim()}
+                  style={{ ...btn1, width: "100%", opacity: override.justification.trim() ? 1 : 0.4 }}
+                >
+                  Confirm Override + Notify Leadership
+                </button>
+              </div>
+            )}
+
             {/* Category override */}
             <div style={{ marginBottom: 12 }}>
               <label style={lbl}>Category {overrides.category && overrides.category !== classification.category ? "(overridden)" : "(AI suggestion)"}</label>
@@ -237,12 +333,15 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
 
             {error && <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
 
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setStep("input")} style={{ ...btn2, flex: 1 }}>← Edit</button>
-              <button onClick={save} style={{ ...btn1, flex: 2 }}>
-                Park It → Back to Calls
-              </button>
-            </div>
+            {/* Only show Park button if there's no active pushback / override flow */}
+            {!pushback && !override && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setStep("input")} style={{ ...btn2, flex: 1 }}>← Edit</button>
+                <button onClick={save} style={{ ...btn1, flex: 2 }}>
+                  Park It → Back to Calls
+                </button>
+              </div>
+            )}
           </>
         )}
 

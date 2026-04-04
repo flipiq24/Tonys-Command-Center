@@ -85,6 +85,12 @@ export default function App() {
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
   const [meetingWarning, setMeetingWarning] = useState<{ title: string; time: string; location?: string } | null>(null);
+  const [scopeWarn, setScopeWarn] = useState<{
+    message: string;
+    type: "morning" | "scope";
+    onOverride: () => void;
+    onAccept: () => void;
+  } | null>(null);
 
   // Custom instructions (Ctrl+hover editable tooltips)
   const [customTips, setCustomTips] = useState<Record<string, string>>({});
@@ -129,31 +135,31 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-EOD at 4:30 PM Pacific (Prompt 09)
+  // Auto-EOD at 4:30 PM Pacific — polls every minute, handles retroactive send
   useEffect(() => {
-    const scheduleAutoEod = () => {
+    let eodSentToday = false;
+
+    const checkAutoEod = async () => {
+      if (eodSentToday) return;
       const now = new Date();
-      const pacificNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
-      const target = new Date(pacificNow);
-      target.setHours(16, 30, 0, 0);
+      const pacific = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      const hour = pacific.getHours();
+      const minute = pacific.getMinutes();
 
-      if (pacificNow >= target) {
-        target.setDate(target.getDate() + 1);
+      if ((hour === 16 && minute >= 30) || hour >= 17) {
+        try {
+          const result = await post<{ ok: boolean; alreadySent: boolean }>("/eod-report/auto", {});
+          eodSentToday = true;
+          if (!result.alreadySent) setEod(true);
+        } catch {
+          /* silent — Tony can say "send EOD" in Claude Chat */
+        }
       }
-
-      const msUntil = target.getTime() - pacificNow.getTime();
-      if (msUntil > 0 && msUntil < 24 * 60 * 60 * 1000) {
-        return setTimeout(() => {
-          post("/eod-report/auto", {}).then((r: any) => {
-            if (!r?.alreadySent) setEod(true);
-          }).catch(() => {});
-        }, msUntil);
-      }
-      return null;
     };
 
-    const timer = scheduleAutoEod();
-    return () => { if (timer) clearTimeout(timer); };
+    checkAutoEod();
+    const interval = setInterval(checkAutoEod, 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   // Persist active view so Tony resumes exactly where he left off on reload
@@ -318,6 +324,43 @@ export default function App() {
     post("/eod-report", {}).catch(() => {});
   }, []);
 
+  // Morning protection: block non-sales scheduling before noon Pacific
+  const checkMorningProtection = useCallback((onAccept: () => void, onOverride: () => void) => {
+    try {
+      const now = new Date();
+      const pacific = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      const h = pacific.getHours();
+      const isBeforeNoon = h < 12;
+      if (isBeforeNoon) {
+        setScopeWarn({
+          message: "Mornings are protected for sales calls (before noon Pacific). Move this to afternoon?",
+          type: "morning",
+          onAccept,
+          onOverride,
+        });
+        return true;
+      }
+    } catch { /* ignore */ }
+    return false;
+  }, []);
+
+  // Scope gatekeeper: Sales > Ramy support > everything else
+  const checkScopeGuard = useCallback((taskDescription: string, onAccept: () => void, onOverride: () => void) => {
+    const lower = taskDescription.toLowerCase();
+    const isSales = lower.includes("sales") || lower.includes("call") || lower.includes("demo") || lower.includes("prospect") || lower.includes("pipeline");
+    const isRamy = lower.includes("ramy") || lower.includes("support");
+    if (!isSales && !isRamy) {
+      setScopeWarn({
+        message: `"${taskDescription.substring(0, 60)}" isn't in your scope (Sales or Ramy support). Delegate to Ethan or park it?`,
+        type: "scope",
+        onAccept,
+        onOverride,
+      });
+      return true;
+    }
+    return false;
+  }, []);
+
   // Prompt 03: open chat with context from another view
   const openChatWithContext = useCallback((contextType: string, contextId: string, contextLabel: string) => {
     setChatContext({ contextType, contextId, contextLabel });
@@ -390,6 +433,42 @@ export default function App() {
 
   const sharedModals = (
     <>
+      {/* Scope / Morning Protection Banner */}
+      {scopeWarn && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 10001,
+          background: scopeWarn.type === "morning" ? C.ambBg : C.redBg,
+          borderBottom: `2px solid ${scopeWarn.type === "morning" ? C.amb : C.red}`,
+          padding: "14px 20px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          animation: "slideDown 0.3s ease-out",
+        }}>
+          <div style={{ fontSize: 14, color: C.tx, flex: 1 }}>
+            {scopeWarn.type === "morning" ? "🌅 " : "🚦 "}{scopeWarn.message}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 12 }}>
+            <button
+              onClick={() => { scopeWarn.onAccept(); setScopeWarn(null); }}
+              style={{ padding: "6px 14px", fontSize: 12, borderRadius: 8, border: "none", cursor: "pointer",
+                background: scopeWarn.type === "morning" ? C.amb : C.red, color: "#fff", fontWeight: 700 }}>
+              {scopeWarn.type === "morning" ? "Move to Afternoon" : "Delegate / Park"}
+            </button>
+            <button
+              onClick={() => {
+                scopeWarn.onOverride();
+                post("/ideas/notify-override", {
+                  text: scopeWarn.message,
+                  justification: scopeWarn.type === "morning" ? "Tony chose to schedule in morning anyway" : "Tony overrode scope check",
+                }).catch(() => {});
+                setScopeWarn(null);
+              }}
+              style={{ padding: "6px 14px", fontSize: 12, borderRadius: 8, border: `1px solid ${C.brd}`, cursor: "pointer",
+                background: C.card, color: C.tx }}>
+              Override
+            </button>
+          </div>
+        </div>
+      )}
       <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
       <EmailCompose

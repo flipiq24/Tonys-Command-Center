@@ -1,4 +1,4 @@
-import { C, FS, C as colors } from "./constants";
+import { C, FS } from "./constants";
 import type { CalItem } from "./types";
 
 interface Props {

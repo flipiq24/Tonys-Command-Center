@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { post } from "@/lib/api";
-import { FontLink } from "./FontLink";
 import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
 
 interface Props {
@@ -31,7 +30,6 @@ export function JournalGate({ onComplete }: Props) {
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <FontLink />
       <div style={{ ...card, padding: "36px 40px", maxWidth: 540, width: "100%" }}>
         <h1 style={{ fontFamily: FS, fontSize: 28, margin: 0 }}>Journal</h1>
         <p style={{ color: C.mut, margin: "6px 0 20px", fontSize: 13 }}>Brain dump — speak or type. AI will format it.</p>

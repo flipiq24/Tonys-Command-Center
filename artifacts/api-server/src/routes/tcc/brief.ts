@@ -246,8 +246,13 @@ async function fetchLiveSlack(): Promise<SlackItem[] | null> {
         { headers }
       ).then(r => r.json()) as { ok: boolean; error?: string; messages?: { text: string; user: string }[] };
       if (!histRes.ok) throw new Error(`Slack history(#${ch.name}) failed: ${histRes.error}`);
+      // Slack encodes user mentions as <@UXXXXX>, not @name — also check plain text fallback
+      const tonyUserId = process.env.SLACK_TONY_USER_ID || "";
       const mentions = (histRes.messages || []).filter(m =>
-        m.text?.includes("@tony") || m.text?.includes("@here") || m.text?.includes("@channel")
+        (tonyUserId && m.text?.includes(`<@${tonyUserId}>`)) ||
+        m.text?.toLowerCase().includes("@tony") ||
+        m.text?.includes("@here") || m.text?.includes("@channel") ||
+        m.text?.includes("<!here") || m.text?.includes("<!channel")
       );
       for (const m of mentions.slice(0, 2)) {
         items.push({ from: m.user || "Unknown", message: (m.text || "").slice(0, 120), level: toLevel(m.text || ""), channel: `#${ch.name}` });

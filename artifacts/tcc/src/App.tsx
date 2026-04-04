@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { get, post } from "@/lib/api";
-import { FontLink } from "@/components/tcc/FontLink";
+// FontLink moved to index.html <head> — no longer rendered in React
 import { CheckinGate } from "@/components/tcc/CheckinGate";
 import { JournalGate } from "@/components/tcc/JournalGate";
 import { Header } from "@/components/tcc/Header";
@@ -174,8 +174,10 @@ export default function App() {
     setTDone(prev => ({ ...prev, [task.id]: newVal }));
     if (newVal) {
       post("/tasks/completed", { taskId: task.id, taskText: task.text }).catch(() => {});
+    } else {
+      post("/tasks/uncomplete", { taskId: task.id }).catch(() => {});
     }
-  }, [tDone]);
+  }, [tDone, persistView]);
 
   const handleLogCall = useCallback(async (contactName: string, type: string) => {
     try {
@@ -210,7 +212,6 @@ export default function App() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <FontLink />
         <div style={{ textAlign: "center" }}>
           <div style={{ fontFamily: FS, fontSize: 24, marginBottom: 8 }}>Tony's Command Center</div>
           <div style={{ color: C.mut, fontSize: 14 }}>Loading your day...</div>
@@ -229,15 +230,15 @@ export default function App() {
     return <JournalGate onComplete={() => setView("emails")} />;
   }
 
-  // ═══ SHARED UI ELEMENTS ═══
-  const SharedModals = () => (
+  // ═══ SHARED UI ELEMENTS (inlined JSX — not components, to avoid remount on every render) ═══
+  const sharedModals = (
     <>
       <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
     </>
   );
 
-  const SharedHeader = () => (
+  const sharedHeader = (
     <Header
       clock={clock}
       ideas={ideas}
@@ -257,8 +258,8 @@ export default function App() {
   // ═══ EMAILS VIEW ═══
   if (view === "emails") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
-      <SharedModals />
+      {sharedHeader}
+      {sharedModals}
       <EmailsView
         emailsImportant={brief?.emailsImportant || []}
         emailsFyi={brief?.emailsFyi || []}
@@ -274,9 +275,9 @@ export default function App() {
   // ═══ SALES VIEW ═══
   if (view === "sales") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
+      {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
-      <SharedModals />
+      {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
       <SalesView
         contacts={contacts}
@@ -296,9 +297,9 @@ export default function App() {
   // ═══ TASKS VIEW ═══
   if (view === "tasks") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
+      {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
-      <SharedModals />
+      {sharedModals}
       <TasksView
         tasks={brief?.tasks || []}
         tDone={tDone}
@@ -313,9 +314,9 @@ export default function App() {
   // ═══ SCHEDULE VIEW (default) ═══
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      <SharedHeader />
+      {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
-      <SharedModals />
+      {sharedModals}
       <ScheduleView
         items={brief?.calendarData || []}
         onEnterSales={() => { persistView("sales"); setCalSide(true); }}

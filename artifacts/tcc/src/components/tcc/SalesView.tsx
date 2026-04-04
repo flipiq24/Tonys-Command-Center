@@ -28,9 +28,9 @@ export function SalesView({ contacts, calls, demos, calSide, apiBase, onAttempt,
           <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Sales Mode</h3>
           <div style={{ display: "flex", gap: 12, alignItems: "center", fontSize: 13, fontWeight: 700 }}>
             <span>Calls: {calls.length}</span>
-            <span style={{ color: C.blu }}>Demos: {demos}</span>
+            {demos > 0 && <span style={{ color: C.blu }}>Demos: {demos}</span>}
             <div style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => onDemoChange(-1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.brd}`, background: C.card, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>−</button>
+              {demos > 0 && <button onClick={() => onDemoChange(-1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.brd}`, background: C.card, cursor: "pointer", fontSize: 14, fontWeight: 700 }}>−</button>}
               <button onClick={() => onDemoChange(1)} style={{ width: 24, height: 24, borderRadius: 6, border: `1px solid ${C.grn}`, background: C.grnBg, cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.grn }}>+</button>
             </div>
           </div>

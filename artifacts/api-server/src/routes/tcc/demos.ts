@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db, demosTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
 
 async function getTodayDemoCount(): Promise<number> {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const demos = await db
     .select()
     .from(demosTable)
@@ -14,13 +15,13 @@ async function getTodayDemoCount(): Promise<number> {
 }
 
 router.get("/demos/count", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const count = await getTodayDemoCount();
   res.json({ count, date: today });
 });
 
 router.post("/demos/increment", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   await db.insert(demosTable).values({
     scheduledDate: today,
     status: "scheduled",
@@ -30,7 +31,7 @@ router.post("/demos/increment", async (req, res): Promise<void> => {
 });
 
 router.post("/demos/decrement", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const [demo] = await db
     .select()
     .from(demosTable)

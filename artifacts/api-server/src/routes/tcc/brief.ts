@@ -6,6 +6,7 @@ import { getUncachableGmailClient } from "../../lib/gmail.js";
 import { getUncachableGoogleCalendarClient } from "../../lib/gcal.js";
 import { getSlackChannelHistory } from "../../lib/slack.js";
 import { getLinearIssues } from "../../lib/linear.js";
+import { todayPacific } from "../../lib/dates.js";
 
 // ─── Full seed defaults — matches TCC_Seed_Data JSON ─────────────────────────
 
@@ -216,7 +217,7 @@ async function fetchLiveSlack(): Promise<SlackItem[] | null> {
         const hist = await getSlackChannelHistory({ channel: ch.id, limit: 30 });
         if (!hist.ok) continue;
         const mentions = (hist.messages || []).filter(m =>
-          m.text?.includes("@tony") || m.text?.includes("@here") || m.text?.includes("@channel")
+          m.text?.includes("<@U0991BAS0TC>") || m.text?.includes("@here") || m.text?.includes("@channel")
         );
         for (const m of mentions.slice(0, 2)) {
           items.push({
@@ -378,7 +379,7 @@ async function briefTodayHandler(
   req: Parameters<Parameters<typeof router.get>[1]>[0],
   res: Parameters<Parameters<typeof router.get>[1]>[1]
 ): Promise<void> {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
 
   // Which sources to force-refresh (bypass DB cache), e.g. ?refresh=emails,calendar,slack,ai
   const refreshSet = new Set(

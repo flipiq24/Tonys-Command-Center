@@ -1,14 +1,15 @@
 import { useState } from "react";
+import { post } from "@/lib/api";
 import { C, F, FS } from "./constants";
 import type { Contact } from "./types";
 
 interface Props {
   contact: Contact;
   onClose: () => void;
-  apiBase: string;
+  apiBase?: string;
 }
 
-export function SmsModal({ contact, onClose, apiBase }: Props) {
+export function SmsModal({ contact, onClose }: Props) {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -19,26 +20,18 @@ export function SmsModal({ contact, onClose, apiBase }: Props) {
     setSending(true);
     setError("");
     try {
-      const res = await fetch(`${apiBase}/send-sms`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone_number: contact.phone,
-          message: message.trim(),
-          contact_id: String(contact.id),
-        }),
+      const data = await post<{ sent?: boolean; macrodroid_configured?: boolean }>("/send-sms", {
+        phone_number: contact.phone,
+        message: message.trim(),
+        contact_id: String(contact.id),
       });
-      const data = await res.json() as { sent?: boolean; macrodroid_configured?: boolean };
-      if (res.ok) {
-        setSent(true);
-        if (!data.macrodroid_configured) {
-          setError("Logged! (MacroDroid webhook not configured — SMS not sent from phone yet)");
-        }
-        setTimeout(onClose, 1800);
-      } else {
-        setError("Failed to send. Try again.");
+      setSent(true);
+      if (!data.macrodroid_configured) {
+        setError("Logged! (MacroDroid webhook not configured — SMS not sent from phone yet)");
       }
-    } catch {
+      setTimeout(onClose, 1800);
+    } catch (err) {
+      console.error("[SmsModal] Send failed:", err);
       setError("Network error. Try again.");
     } finally {
       setSending(false);

@@ -16,7 +16,7 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks }: Props) {
           <span style={{ fontSize: 12, color: C.mut }}>{items.length} items</span>
         </div>
         {items.map((c, i) => (
-          <div key={i} style={{ display: "flex", gap: 12, padding: "12px 14px", marginBottom: 4, background: c.real ? C.bluBg : "#FAFAF8", borderRadius: 10, borderLeft: `4px solid ${c.real ? C.blu : C.brd}` }}>
+          <div key={`${c.t}-${c.n}-${i}`} style={{ display: "flex", gap: 12, padding: "12px 14px", marginBottom: 4, background: c.real ? C.bluBg : "#FAFAF8", borderRadius: 10, borderLeft: `4px solid ${c.real ? C.blu : C.brd}` }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: c.real ? C.blu : C.mut, minWidth: 75, flexShrink: 0 }}>{c.t}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: c.real ? 700 : 500 }}>{c.n}</div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
 import type { EmailItem } from "./types";
@@ -11,14 +11,32 @@ interface Props {
 export function EmailReplyModal({ email, onClose }: Props) {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!email) return;
+    // Abort any in-flight request from a previous email
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setDraft("");
     setLoading(true);
     post<{ ok: boolean; draft?: string }>("/emails/action", {
       action: "suggest_reply", sender: email.from, subject: email.subj
-    }).then(r => { setDraft(r.draft || ""); setLoading(false); }).catch(() => setLoading(false));
+    }).then(r => {
+      if (controller.signal.aborted) return;
+      setDraft(r.draft || "");
+      setLoading(false);
+    }).catch(err => {
+      if (controller.signal.aborted) return;
+      console.error("[EmailReplyModal] Draft fetch failed:", err);
+      setLoading(false);
+    });
+
+    return () => {
+      controller.abort();
+    };
   }, [email]);
 
   if (!email) return null;

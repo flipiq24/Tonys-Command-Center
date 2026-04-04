@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import { db, emailTrainingTable, emailSnoozesTable, systemInstructionsTable } from "@workspace/db";
 import { EmailActionBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
 
@@ -60,22 +61,13 @@ Keep it concise and actionable. This will be injected into Claude to help classi
 }
 
 async function saveBrain(brain: string): Promise<void> {
-  const [existing] = await db
-    .select()
-    .from(systemInstructionsTable)
-    .where(eq(systemInstructionsTable.section, "email_brain"));
-
-  if (existing) {
-    await db
-      .update(systemInstructionsTable)
-      .set({ content: brain, updatedAt: new Date() })
-      .where(eq(systemInstructionsTable.section, "email_brain"));
-  } else {
-    await db.insert(systemInstructionsTable).values({
-      section: "email_brain",
-      content: brain,
+  await db
+    .insert(systemInstructionsTable)
+    .values({ section: "email_brain", content: brain })
+    .onConflictDoUpdate({
+      target: systemInstructionsTable.section,
+      set: { content: brain, updatedAt: new Date() },
     });
-  }
 }
 
 // ─── GET brain ────────────────────────────────────────────────────────────────
@@ -101,7 +93,7 @@ router.get("/emails/brain", async (req, res): Promise<void> => {
 
 // ─── GET snoozed ─────────────────────────────────────────────────────────────
 router.get("/emails/snoozed", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const snoozes = await db
     .select()
     .from(emailSnoozesTable)
@@ -138,16 +130,20 @@ router.post("/emails/action", async (req, res): Promise<void> => {
     // Fire and forget brain regeneration
     regenerateBrain()
       .then(brain => brain ? saveBrain(brain) : Promise.resolve())
-      .catch(() => {});
+      .catch(err => console.error("[emails] Brain regeneration failed:", err));
     return;
   }
 
   if (action === "snooze") {
     if (emailId !== null && emailId !== undefined) {
-      const today = new Date().toISOString().split("T")[0];
+      const today = todayPacific();
       await db
         .insert(emailSnoozesTable)
-        .values({ date: today, emailId, snoozeUntil: snoozeUntil || "tomorrow" });
+        .values({ date: today, emailId, snoozeUntil: snoozeUntil || "tomorrow" })
+        .onConflictDoUpdate({
+          target: [emailSnoozesTable.date, emailSnoozesTable.emailId],
+          set: { snoozeUntil: snoozeUntil || "tomorrow" },
+        });
     }
     res.json({ ok: true, message: `Email ${emailId} snoozed` });
     return;

@@ -2,11 +2,12 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, checkinsTable } from "@workspace/db";
 import { SaveCheckinBody } from "@workspace/api-zod";
+import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
 
 router.get("/checkin/today", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const [checkin] = await db
     .select()
     .from(checkinsTable)
@@ -27,7 +28,7 @@ router.post("/checkin", async (req, res): Promise<void> => {
     return;
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const data = parsed.data;
 
   // Use ON CONFLICT DO UPDATE to avoid select-then-insert race condition

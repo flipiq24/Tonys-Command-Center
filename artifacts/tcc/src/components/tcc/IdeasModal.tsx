@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2, lbl } from "./constants";
 import type { Idea } from "./types";
@@ -33,6 +33,12 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
   const [overrides, setOverrides] = useState<Partial<Classification>>({});
   const [error, setError] = useState("");
   const [linearId, setLinearId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const finalCat = overrides.category ?? classification?.category ?? "Tech";
   const finalUrg = overrides.urgency ?? classification?.urgency ?? "This Week";
@@ -77,8 +83,11 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
       });
       if (idea.linearIssue?.identifier) {
         setLinearId(idea.linearIssue.identifier);
-        // Show confirmation briefly then close
-        await new Promise(r => setTimeout(r, 2000));
+        // Show confirmation briefly then close — uses mounted ref to avoid setState after unmount
+        await new Promise<void>(resolve => {
+          const t = setTimeout(() => resolve(), 2000);
+          if (!mountedRef.current) { clearTimeout(t); resolve(); }
+        });
       }
       onSave(idea);
       reset();

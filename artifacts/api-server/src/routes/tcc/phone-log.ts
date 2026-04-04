@@ -1,11 +1,20 @@
 import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq, desc, gte, and } from "drizzle-orm";
+import { z } from "zod/v4";
 
 const router: IRouter = Router();
 
 const VALID_TYPES = ["call_outbound", "call_inbound", "sms_outbound", "sms_inbound"] as const;
 type PhoneLogType = typeof VALID_TYPES[number];
+
+const PhoneLogBody = z.object({
+  type: z.enum(VALID_TYPES),
+  phone_number: z.string().min(1, "phone_number is required"),
+  duration_seconds: z.number().optional(),
+  sms_body: z.string().optional(),
+  logged_at: z.string().optional(),
+});
 
 // ─── Shared secret check ──────────────────────────────────────────────────────
 function checkSecret(req: import("express").Request, res: import("express").Response): boolean {
@@ -28,17 +37,13 @@ function normalizePhone(p: string): string {
 router.post("/phone-log", async (req, res): Promise<void> => {
   if (!checkSecret(req, res)) return;
 
-  const body = req.body as Record<string, unknown>;
-  const type = body["type"] as string;
-  const phone_number = body["phone_number"] as string;
-  const duration_seconds = body["duration_seconds"] as number | undefined;
-  const sms_body = body["sms_body"] as string | undefined;
-  const logged_at = body["logged_at"] as string | undefined;
-
-  if (!phone_number || !VALID_TYPES.includes(type as PhoneLogType)) {
-    res.status(400).json({ error: "invalid body: phone_number and valid type required" });
+  const parsed = PhoneLogBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  const { type, phone_number, duration_seconds, sms_body, logged_at } = parsed.data;
   const normalizedIncoming = normalizePhone(phone_number);
 
   // Auto-match to contact via indexed phone_normalized column
@@ -68,7 +73,7 @@ router.post("/phone-log", async (req, res): Promise<void> => {
       .update(contactsTable)
       .set({ lastContactDate: new Date().toISOString().split("T")[0], updatedAt: new Date() })
       .where(eq(contactsTable.id, match.id))
-      .catch(() => {});
+      .catch(err => console.error("[phone-log] Failed to update lastContactDate:", err));
   }
 
   res.status(201).json({

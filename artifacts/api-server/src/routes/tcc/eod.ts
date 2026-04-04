@@ -3,17 +3,18 @@ import { eq, gte } from "drizzle-orm";
 import { db, eodReportsTable, callLogTable, demosTable, taskCompletionsTable } from "@workspace/db";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { sendViaAgentMail } from "../../lib/agentmail";
+import { todayPacific } from "../../lib/dates.js";
 
 const router: IRouter = Router();
 
 router.get("/eod-report/today", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const [report] = await db.select().from(eodReportsTable).where(eq(eodReportsTable.date, today));
   res.json(report || null);
 });
 
 router.post("/eod-report", async (req, res): Promise<void> => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayPacific();
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
 
@@ -61,37 +62,32 @@ Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and
     reportText = `EOD Report — ${today}\n\nCalls Made: ${callsMade}\nDemos Booked: ${demosBooked}\nTasks Completed: ${tasksCompleted}\n\n${callList}\n\nKeep pushing forward tomorrow.`;
   }
 
-  // Send via AgentMail to tony@flipiq.com and ethan@flipiq.com
+  // Send to both recipients in parallel
   const recipients = ["tony@flipiq.com", "ethan@flipiq.com"];
-  const sentResults: { to: string; ok: boolean }[] = [];
-  for (const to of recipients) {
-    const result = await sendViaAgentMail({
-      to,
-      subject: `FlipIQ EOD Report — ${today}`,
-      body: reportText,
-    });
-    sentResults.push({ to, ok: result.ok });
-    if (!result.ok) {
-      req.log.warn({ to }, "AgentMail EOD send failed");
-    }
-  }
+  const sentResults = await Promise.all(
+    recipients.map(async to => {
+      const result = await sendViaAgentMail({
+        to,
+        subject: `FlipIQ EOD Report — ${today}`,
+        body: reportText,
+      });
+      if (!result.ok) {
+        req.log.warn({ to }, "AgentMail EOD send failed");
+      }
+      return { to, ok: result.ok };
+    })
+  );
 
   const sentTo = sentResults.filter(r => r.ok).map(r => r.to).join(",") || "failed";
 
-  const [existing] = await db.select().from(eodReportsTable).where(eq(eodReportsTable.date, today));
-  let report;
-  if (existing) {
-    [report] = await db
-      .update(eodReportsTable)
-      .set({ callsMade, demosBooked, tasksCompleted, reportText, sentTo })
-      .where(eq(eodReportsTable.date, today))
-      .returning();
-  } else {
-    [report] = await db
-      .insert(eodReportsTable)
-      .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText, sentTo })
-      .returning();
-  }
+  const [report] = await db
+    .insert(eodReportsTable)
+    .values({ date: today, callsMade, demosBooked, tasksCompleted, reportText, sentTo })
+    .onConflictDoUpdate({
+      target: eodReportsTable.date,
+      set: { callsMade, demosBooked, tasksCompleted, reportText, sentTo },
+    })
+    .returning();
 
   res.json({ ...report, ok: true, emailsSent: sentResults });
 });

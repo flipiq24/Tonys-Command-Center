@@ -230,7 +230,7 @@ export function SalesView({ contacts: initialContacts, calls, demos, calSide, ap
 
   return (
     <>
-      {smsContact && <SmsModal contact={smsContact} apiBase={apiBase} onClose={() => setSmsContact(null)} />}
+      {smsContact && <SmsModal contact={smsContact} onClose={() => setSmsContact(null)} />}
       <ContactDrawer
         contactId={selectedContactId}
         onClose={() => setSelectedContactId(null)}

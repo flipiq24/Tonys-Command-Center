@@ -11,6 +11,7 @@ interface Props {
   onAttempt: (contact: { id: string | number; name: string }) => void;
   onConnected: (contactName: string) => void;
   onSmsOpen: (contact: Contact) => void;
+  onCompose?: (contact: Contact) => void;
 }
 
 const inp: React.CSSProperties = {
@@ -43,7 +44,7 @@ function isOverdue(date?: string | null): boolean {
   return new Date(date) < new Date(new Date().toDateString());
 }
 
-export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAttempt, onConnected, onSmsOpen }: Props) {
+export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAttempt, onConnected, onSmsOpen, onCompose }: Props) {
   const [contact, setContact] = useState<Contact | null>(null);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [calls, setCalls] = useState<CallEntry[]>([]);
@@ -179,14 +180,17 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                 </div>
                 <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 20, padding: 4, lineHeight: 1, flexShrink: 0 }}>✕</button>
               </div>
-              <div style={{ display: "flex", gap: 6, paddingBottom: 12 }}>
+              <div style={{ display: "flex", gap: 5, paddingBottom: 12, flexWrap: "wrap" }}>
                 {contact.phone && (
-                  <a href={`tel:${contact.phone}`} onClick={() => onAttempt({ id: contact.id, name: contact.name })} style={{ flex: 1, padding: "8px 4px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F, textAlign: "center", textDecoration: "none", display: "block" }}>📞 Call</a>
+                  <a href={`tel:${contact.phone}`} onClick={() => onAttempt({ id: contact.id, name: contact.name })} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F, textAlign: "center", textDecoration: "none", display: "block" }}>📞 Call</a>
                 )}
                 {contact.phone && (
-                  <button onClick={() => onSmsOpen(contact)} style={{ flex: 1, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>💬 Text</button>
+                  <button onClick={() => onSmsOpen(contact)} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>💬 Text</button>
                 )}
-                <button onClick={() => onConnected(contact.name)} style={{ flex: 1, padding: "8px 4px", background: C.grnBg, color: C.grn, border: `1px solid ${C.grn}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>✓ Done</button>
+                {onCompose && (
+                  <button onClick={() => { onCompose(contact); onClose(); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>✉ Email</button>
+                )}
+                <button onClick={() => onConnected(contact.name)} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.grnBg, color: C.grn, border: `1px solid ${C.grn}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>✓ Done</button>
                 <button onClick={() => setConfirmDelete(!confirmDelete)} style={{ padding: "8px 10px", background: C.redBg, color: C.red, border: `1px solid ${C.redBg}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>🗑</button>
               </div>
               {confirmDelete && (
@@ -207,6 +211,29 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
               {activeTab === "details" && (
                 <>
+                  {/* Quick Note */}
+                  <div style={{ marginBottom: 16, padding: "12px 14px", background: "#FAFAF8", borderRadius: 10, border: `1px solid ${C.brd}` }}>
+                    <label style={lbl}>Quick Note</label>
+                    <textarea
+                      value={noteText}
+                      onChange={e => setNoteText(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleAddNote(); }}
+                      rows={2}
+                      placeholder="Jot a note… (⌘↵ to save)"
+                      style={{ ...inp, resize: "none", marginBottom: 6, fontSize: 12 }}
+                    />
+                    <button
+                      onClick={handleAddNote}
+                      disabled={addingNote || !noteText.trim()}
+                      style={{ padding: "6px 14px", background: noteText.trim() ? C.tx : "#E8E6E1", color: noteText.trim() ? "#fff" : C.mut, border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: noteText.trim() ? "pointer" : "not-allowed", fontFamily: F }}
+                    >
+                      {addingNote ? "Saving…" : "Save Note"}
+                    </button>
+                    {notes.length > 0 && (
+                      <span style={{ fontSize: 11, color: C.mut, marginLeft: 8 }}>{notes.length} note{notes.length !== 1 ? "s" : ""} · see Notes tab</span>
+                    )}
+                  </div>
+
                   <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                     <div style={{ flex: 1 }}>
                       <label style={lbl}>Status</label>

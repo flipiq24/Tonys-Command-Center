@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, sql } from "drizzle-orm";
 import { db, eodReportsTable, callLogTable, demosTable, taskCompletionsTable, taskWorkNotesTable, ideasTable } from "@workspace/db";
+import { linearGraphQL } from "../../lib/linear";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { sendViaAgentMail } from "../../lib/agentmail";
+import { sendEmail } from "../../lib/gmail";
 import { todayPacific } from "../../lib/dates.js";
 import { communicationLogTable, businessContextTable } from "../../lib/schema-v2";
 
@@ -67,13 +68,13 @@ Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and
   const recipients = ["tony@flipiq.com", "ethan@flipiq.com"];
   const sentResults = await Promise.all(
     recipients.map(async to => {
-      const result = await sendViaAgentMail({
+      const result = await sendEmail({
         to,
         subject: `FlipIQ EOD Report — ${today}`,
         body: reportText,
       });
       if (!result.ok) {
-        req.log.warn({ to }, "AgentMail EOD send failed");
+        req.log.warn({ to }, "Gmail EOD send failed");
       }
       return { to, ok: result.ok };
     })
@@ -131,22 +132,30 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
 
   let outOfSequenceItems: string[] = [];
   try {
-    const [businessCtx] = await db.select().from(businessContextTable).where(eq(businessContextTable.documentType, "90_day_plan"));
-    if (businessCtx?.content && taskCompletions.length > 0) {
-      const planContent = businessCtx.content.toLowerCase();
-      outOfSequenceItems = taskCompletions
-        .map(t => t.taskText || "")
-        .filter(t => t && !planContent.includes(t.toLowerCase().substring(0, 20)));
-    }
+    const linearData = await linearGraphQL<{ issues?: { nodes: { id: string; title: string; priority: number; state: { name: string; type: string } }[] } }>(
+      `query {
+        issues(filter: { state: { type: { nin: ["completed", "cancelled"] } } }, first: 50, orderBy: updatedAt) {
+          nodes { id title priority state { name type } }
+        }
+      }`
+    );
+    const linearIssues = linearData?.issues?.nodes ?? [];
+    const highPriorityStates = ["In Progress", "In Review"];
+    outOfSequenceItems = linearIssues
+      .filter(i => i.priority > 2 && highPriorityStates.some(s => i.state.name.includes(s)))
+      .map(i => `${i.title} (priority ${i.priority}, state: ${i.state.name})`);
   } catch { /* non-critical */ }
 
   let noDueDateItems: string[] = [];
   try {
-    const noteTaskIds = new Set(workedOnTasks.map(w => w.taskId));
-    noDueDateItems = taskCompletions
-      .filter(t => !noteTaskIds.has(t.taskId))
-      .map(t => t.taskText || "")
-      .filter(Boolean);
+    const linearNoDue = await linearGraphQL<{ issues?: { nodes: { id: string; title: string }[] } }>(
+      `query {
+        issues(filter: { dueDate: { null: true }, state: { type: { nin: ["completed", "cancelled"] } } }, first: 50) {
+          nodes { id title }
+        }
+      }`
+    );
+    noDueDateItems = (linearNoDue?.issues?.nodes ?? []).map(i => i.title);
   } catch { /* non-critical */ }
 
   let demoFeedback: string[] = [];
@@ -242,8 +251,8 @@ Format Ethan's brief with:
     ethanReportText = `Ethan's EOD Brief — ${today}\n\nAccountability: ${completionRate}%\nNo-due-date items: ${noDueDateItems.length}\nOut-of-sequence: ${outOfSequenceItems.length}\nOverrides: ${overridesToday.length}`;
   }
 
-  const tonyResult = await sendViaAgentMail({ to: "tony@flipiq.com", subject: `FlipIQ EOD — ${today}`, body: tonyReportText });
-  const ethanResult = await sendViaAgentMail({ to: "ethan@flipiq.com", subject: `Ethan's EOD Brief — ${today}`, body: ethanReportText });
+  const tonyResult = await sendEmail({ to: "tony@flipiq.com", subject: `FlipIQ EOD — ${today}`, body: tonyReportText });
+  const ethanResult = await sendEmail({ to: "ethan@flipiq.com", subject: `Ethan's EOD Brief — ${today}`, body: ethanReportText });
 
   const sentTo = [tonyResult.ok ? "tony@flipiq.com" : "", ethanResult.ok ? "ethan@flipiq.com" : ""].filter(Boolean).join(",") || "failed";
 

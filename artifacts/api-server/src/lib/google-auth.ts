@@ -3,6 +3,11 @@ import { google } from "googleapis";
 let _auth: InstanceType<typeof google.auth.OAuth2> | null = null;
 
 export function getGoogleAuth() {
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REFRESH_TOKEN) {
+    throw new Error(
+      "Google OAuth not configured. Required env vars: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN"
+    );
+  }
   if (!_auth) {
     _auth = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,

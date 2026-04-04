@@ -6,8 +6,7 @@ import { db, systemInstructionsTable, contactsTable } from "@workspace/db";
 import { chatThreadsTable, chatMessagesTable, communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2";
 import { createLinearIssue } from "../../lib/linear";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
-import { sendViaAgentMail } from "../../lib/agentmail";
-import { listRecentEmails, draftReply } from "../../lib/gmail";
+import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
 import { getTodayEvents, createEvent } from "../../lib/gcal";
 import { getDrive } from "../../lib/google-auth";
 import { sendAutoEod } from "./eod";
@@ -42,7 +41,7 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
   },
   {
     name: "send_email",
-    description: "Send an email on Tony's behalf via AgentMail relay.",
+    description: "Send an email on Tony's behalf via Gmail from tony@flipiq.com.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -249,8 +248,8 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       return result.ok ? `Linear issue created: ${result.identifier ?? result.id}` : `Linear issue creation failed`;
     }
     case "send_email": {
-      const result = await sendViaAgentMail({ to: String(input.to), subject: String(input.subject), body: String(input.body) });
-      return result.ok ? `Email sent to ${input.to}` : `Email send failed`;
+      const result = await sendEmail({ to: String(input.to), subject: String(input.subject), body: String(input.body) });
+      return result.ok ? `Email sent to ${input.to} via Gmail` : `Email send failed: ${result.error || "unknown error"}`;
     }
     case "compose_email": {
       return JSON.stringify({

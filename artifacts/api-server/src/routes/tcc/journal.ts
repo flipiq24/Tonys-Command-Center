@@ -4,7 +4,7 @@ import { db, journalsTable, checkinsTable } from "@workspace/db";
 import { SaveJournalBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates.js";
-import { appendToDoc } from "../../lib/google-docs.js";
+import { prependToDoc } from "../../lib/google-docs.js";
 
 const JOURNAL_DOC_ID = "1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE";
 
@@ -109,10 +109,10 @@ Output EXACTLY this format and nothing else (start immediately with ### Daily Jo
     .where(eq(checkinsTable.date, today))
     .catch(err => console.error("[journal] Failed to mark checkin journal=true:", err));
 
-  // Append to personal journal Google Doc (fire-and-forget, Tony only)
+  // Prepend to personal journal Google Doc (inserts at top so newest entries appear first)
   if (rawText !== "[skipped]" && formattedText) {
-    appendToDoc(JOURNAL_DOC_ID, `\n\n${formattedText}`)
-      .catch(err => console.error("[journal] Doc append failed (non-fatal):", err));
+    prependToDoc(JOURNAL_DOC_ID, formattedText)
+      .catch(err => console.error("[journal] Doc prepend failed (non-fatal):", err));
   }
 
   res.json(journal);

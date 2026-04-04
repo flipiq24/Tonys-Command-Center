@@ -71,15 +71,16 @@ const DEFAULT_TASKS = [
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean };
+type CalItem = { t: string; n: string; loc?: string; note?: string; real: boolean; attendeeCount?: number };
 type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string };
 type EmailFyi = { id: number; from: string; subj: string; why: string };
+type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
 type LinearItem = { who: string; task: string; id: string; level: string };
 
 // ─── Live Gmail fetch via Replit google-mail connector ────────────────────────
 
-async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: EmailFyi[] } | null> {
+async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: EmailFyi[]; promotions: EmailPromotion[] } | null> {
   try {
     const gmail = getGmail();
     const since = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000);
@@ -90,7 +91,7 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
     });
 
     const messages = list.data.messages || [];
-    if (messages.length === 0) return { important: [], fyi: [] };
+    if (messages.length === 0) return { important: [], fyi: [], promotions: [] };
 
     // Fetch all message details in parallel — avoids N+1 sequential awaits
     const details = await Promise.all(
@@ -120,15 +121,17 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
       model: "claude-haiku-4-5",
       max_tokens: 1024,
       system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
-Classify each email as "important" (requires Tony's reply/action) or "fyi" (info only, no reply needed).
+Classify each email into exactly 3 categories: "important", "fyi", or "promotions".
 Important: from @flipiq.com team, known contacts (chris.wesser, ethan, ramy, marisol, cesar@eoslab), or keywords: urgent, contract, payment, demo, equity, funding, deal.
-FYI: medical, receipts, real-person notifications.
-Skip: newsletters, marketing, automated notifications, social media.
+FYI: medical, receipts, real-person notifications, updates that are relevant but need no reply.
+Promotions: newsletters, marketing emails, automated notifications, social media, promotional offers.
 For important: extract from, subj, why (1 short sentence on WHY it needs action), time (friendly: Today/Yesterday/date), p (high/med/low).
 For fyi: extract from, subj, why (1 short sentence summary).
-Return ONLY valid JSON: { "important": [...], "fyi": [...] }
+For promotions: extract from, subj, why (1 short sentence).
+Return ONLY valid JSON: { "important": [...], "fyi": [...], "promotions": [...] }
 Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
-FYI shape: { "from": string, "subj": string, "why": string }`,
+FYI shape: { "from": string, "subj": string, "why": string }
+Promotions shape: { "from": string, "subj": string, "why": string }`,
       messages: [{ role: "user", content: `Classify these emails:\n${JSON.stringify(rawEmails, null, 2)}` }],
     });
 
@@ -137,10 +140,11 @@ FYI shape: { "from": string, "subj": string, "why": string }`,
     const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
-    const parsed = JSON.parse(jsonMatch[0]) as { important?: EmailImportant[]; fyi?: EmailFyi[] };
+    const parsed = JSON.parse(jsonMatch[0]) as { important?: EmailImportant[]; fyi?: EmailFyi[]; promotions?: EmailPromotion[] };
     return {
       important: (parsed.important || []).slice(0, 8).map((e, i) => ({ ...e, id: i + 1 })),
       fyi: (parsed.fyi || []).slice(0, 5).map((e, i) => ({ ...e, id: i + 10 })),
+      promotions: (parsed.promotions || []).slice(0, 10).map((e, i) => ({ ...e, id: i + 20 })),
     };
   } catch (err) {
     console.warn("[brief] Gmail live fetch failed:", err instanceof Error ? err.message : err);
@@ -175,12 +179,13 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
           })
         : "";
       // "real" = has 2+ attendees OR has a conference/video link
-      const attendees = e.attendees?.length ?? 0;
+      const attendeeCount = e.attendees?.length ?? 0;
       const hasVideo = !!(e.conferenceData || (e.description || "").match(/zoom|meet|teams/i));
       const item: CalItem = {
         t: timeLabel,
         n: e.summary || "(no title)",
-        real: attendees > 1 || hasVideo,
+        real: attendeeCount > 1 || hasVideo,
+        attendeeCount,
       };
       if (e.location) item.loc = e.location;
       if (e.description) item.note = e.description.slice(0, 120);
@@ -409,20 +414,24 @@ async function briefTodayHandler(
   // Step 3: Resolve emails — priority: live > DB cache (unless forced refresh) > Claude > fallback
   let emailsImportant: EmailImportant[];
   let emailsFyi: EmailFyi[];
+  let emailsPromotions: EmailPromotion[] = [];
   let claudeGenerated: GeneratedBrief | null = null;
 
   if (liveEmails !== null) {
     emailsImportant = liveEmails.important;
     emailsFyi = liveEmails.fyi;
+    emailsPromotions = liveEmails.promotions;
   } else if (dbBrief?.emailsImportant && !forceRefreshEmails) {
     emailsImportant = dbBrief.emailsImportant as EmailImportant[];
     emailsFyi = (dbBrief.emailsFyi as EmailFyi[]) ?? [];
+    emailsPromotions = [];
   } else {
     // No live Gmail, no cache (or refresh forced) — generate via Claude using real context
     console.log("[brief] Generating brief via Claude" + (forceRefreshEmails ? " (forced refresh)" : "") + "...");
     claudeGenerated = await generateClaudeBrief(calendarData, linearItems, today);
     emailsImportant = claudeGenerated?.emailsImportant ?? DEFAULT_EMAILS_IMPORTANT;
     emailsFyi = claudeGenerated?.emailsFyi ?? DEFAULT_EMAILS_FYI;
+    emailsPromotions = [];
   }
 
   // Step 4: Resolve Slack — priority: live > DB cache (unless forced) > Claude generated > fallback
@@ -442,7 +451,7 @@ async function briefTodayHandler(
 
   // Step 6: Cache Claude-generated content in DB so it doesn't regenerate on next request
   if (claudeGenerated) {
-    db.insert(dailyBriefsTable)
+    await db.insert(dailyBriefsTable)
       .values({
         date: today,
         calendarData,
@@ -482,6 +491,7 @@ async function briefTodayHandler(
     calendarData,
     emailsImportant,
     emailsFyi,
+    emailsPromotions,
     slackItems,
     linearItems,
     tasks,
@@ -514,7 +524,7 @@ router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
     const yesterdayStart = new Date(yesterdayStr + "T00:00:00Z");
     const yesterdayEnd = new Date(yesterdayStr + "T23:59:59Z");
 
-    const [yesterdayTasks] = await db
+    const yesterdayTasks = await db
       .select()
       .from(taskCompletionsTable)
       .where(gte(taskCompletionsTable.completedAt, yesterdayStart));

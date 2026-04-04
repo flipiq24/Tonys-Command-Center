@@ -109,7 +109,36 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks }: Props) {
                     </span>
                   : <span style={{ fontSize: 10, color: C.mut }}>note</span>
                 }
-                {c.calendarEventId && <DeepLink type="calendar" id={c.calendarEventId} />}
+                {c.calendarEventId
+                  ? <DeepLink type="calendar" id={c.calendarEventId} />
+                  : (
+                    <a
+                      href="https://calendar.google.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open Google Calendar"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 3,
+                        color: C.mut,
+                        fontSize: 11,
+                        textDecoration: "none",
+                        border: `1px solid ${C.brd}`,
+                        borderRadius: 4,
+                        padding: "2px 6px",
+                        background: C.card,
+                        flexShrink: 0,
+                        transition: "color 0.15s",
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = C.blu; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = C.mut; }}
+                    >
+                      <span>📅</span>
+                      <span>Calendar</span>
+                    </a>
+                  )
+                }
                 {c.gmailMessageId && <DeepLink type="email" id={c.gmailMessageId} />}
                 {c.slackChannelId && c.slackMessageTs && <DeepLink type="slack" id="" channelId={c.slackChannelId} messageTs={c.slackMessageTs} />}
                 {c.linearIdentifier && <DeepLink type="linear" id="" identifier={c.linearIdentifier} />}

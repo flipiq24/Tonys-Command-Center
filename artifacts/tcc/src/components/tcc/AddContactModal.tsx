@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, PIPELINE_STAGES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES, LEAD_SOURCES } from "./constants";
+import { VoiceInput } from "./VoiceInput";
 import type { Contact } from "./types";
 
 interface Props {
@@ -22,12 +23,77 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     name: "", company: "", title: "", phone: "", email: "",
     status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "",
+    notes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  // Business card scan state
+  const [scanning, setScanning] = useState(false);
+  const [cardPreview, setCardPreview] = useState<string | null>(null);
+  const [scanMsg, setScanMsg] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }));
+
+  const handleCardCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Show preview
+    const reader = new FileReader();
+    reader.onload = () => setCardPreview(reader.result as string);
+    reader.readAsDataURL(file);
+
+    // Convert to base64 and send to backend
+    setScanning(true);
+    setScanMsg("Scanning business card…");
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => {
+          const result = r.result as string;
+          resolve(result.split(",")[1]); // strip data:...;base64, prefix
+        };
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      });
+
+      const result = await post<{
+        name?: string; company?: string; title?: string;
+        phone?: string; email?: string; website?: string;
+        linkedin?: string; notes?: string;
+      }>("/contacts/scan-card", {
+        imageBase64: base64,
+        mimeType: file.type || "image/jpeg",
+      });
+
+      // Pre-fill form with extracted data
+      setForm(prev => ({
+        ...prev,
+        name: result.name || prev.name,
+        company: result.company || prev.company,
+        title: result.title || prev.title,
+        phone: result.phone || prev.phone,
+        email: result.email || prev.email,
+        notes: [
+          prev.notes,
+          result.website ? `Website: ${result.website}` : "",
+          result.linkedin ? `LinkedIn: ${result.linkedin}` : "",
+          result.notes || "",
+        ].filter(Boolean).join("\n").trim(),
+      }));
+
+      setScanMsg("Card scanned — review and confirm");
+    } catch {
+      setScanMsg("Scan failed — fill in manually");
+    } finally {
+      setScanning(false);
+      // Reset file input so same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,9 +112,12 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
         leadSource: form.leadSource || undefined,
         type: form.type || undefined,
         category: form.category || undefined,
+        notes: form.notes || undefined,
       });
       onCreated(contact);
-      setForm({ name: "", company: "", title: "", phone: "", email: "", status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "" });
+      setForm({ name: "", company: "", title: "", phone: "", email: "", status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "", notes: "" });
+      setCardPreview(null);
+      setScanMsg("");
       onClose();
     } catch {
       setError("Failed to create contact");
@@ -64,14 +133,74 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.22)", zIndex: 1100, backdropFilter: "blur(2px)" }} />
       <div style={{
         position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
-        width: 480, background: "#FFF", borderRadius: 16, padding: "28px 28px 24px",
+        width: 500, background: "#FFF", borderRadius: 16, padding: "24px 28px",
         zIndex: 1101, boxShadow: "0 20px 60px rgba(0,0,0,0.15)", border: `1px solid ${C.brd}`,
-        maxHeight: "90vh", overflowY: "auto",
+        maxHeight: "92vh", overflowY: "auto",
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <h2 style={{ fontFamily: FS, fontSize: 20, margin: 0, color: C.tx }}>Add Contact</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 20 }}>✕</button>
         </div>
+
+        {/* ── Business Card Scanner ── */}
+        <div style={{
+          marginBottom: 20, padding: "14px 16px", borderRadius: 12,
+          border: `1.5px dashed ${cardPreview ? C.grn : C.brd}`,
+          background: cardPreview ? C.grnBg : "#FAFAF8",
+          display: "flex", alignItems: "center", gap: 14,
+        }}>
+          {cardPreview ? (
+            <img
+              src={cardPreview}
+              alt="Business card"
+              style={{ width: 80, height: 52, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.brd}`, flexShrink: 0 }}
+            />
+          ) : (
+            <div style={{
+              width: 80, height: 52, borderRadius: 6, background: C.brd + "44",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 26, flexShrink: 0,
+            }}>
+              📇
+            </div>
+          )}
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.tx, marginBottom: 4 }}>
+              Business Card Scan
+            </div>
+            {scanMsg ? (
+              <div style={{ fontSize: 12, color: scanning ? C.blu : cardPreview ? C.grn : C.red, fontWeight: 600 }}>
+                {scanning ? "⟳ " : cardPreview ? "✓ " : "⚠ "}{scanMsg}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: C.mut }}>Take a photo or upload — AI fills the form</div>
+            )}
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleCardCapture}
+            style={{ display: "none" }}
+          />
+          <button
+            type="button"
+            disabled={scanning}
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              padding: "8px 14px", borderRadius: 8, border: `1px solid ${C.brd}`,
+              background: C.card, color: scanning ? C.mut : C.tx,
+              fontSize: 13, fontWeight: 600, cursor: scanning ? "not-allowed" : "pointer",
+              fontFamily: F, flexShrink: 0, opacity: scanning ? 0.6 : 1,
+            }}
+          >
+            {scanning ? "Scanning…" : cardPreview ? "Rescan" : "📷 Scan"}
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 14 }}>
             <label style={lbl}>Full Name *</label>
@@ -127,13 +256,32 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
               </select>
             </div>
           </div>
-          <div style={{ marginBottom: 20 }}>
+          <div style={{ marginBottom: 14 }}>
             <label style={lbl}>Lead Source</label>
             <select value={form.leadSource} onChange={set("leadSource")} style={{ ...inp, cursor: "pointer" }}>
               <option value="">— Select —</option>
               {LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
+
+          {/* ── Voice Notes ── */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+              <label style={lbl}>Notes</label>
+              <VoiceInput
+                onTranscript={t => setForm(prev => ({ ...prev, notes: prev.notes ? prev.notes + " " + t : t }))}
+                size={30}
+              />
+            </div>
+            <textarea
+              value={form.notes}
+              onChange={set("notes")}
+              rows={3}
+              placeholder="Tap the mic to speak notes, or type here…"
+              style={{ ...inp, resize: "vertical", lineHeight: 1.5, fontSize: 13 } as React.CSSProperties}
+            />
+          </div>
+
           {error && <div style={{ color: C.red, fontSize: 13, marginBottom: 12 }}>{error}</div>}
           <div style={{ display: "flex", gap: 8 }}>
             <button type="button" onClick={onClose} style={{ flex: 1, padding: "12px 0", background: "none", color: C.mut, border: `1px solid ${C.brd}`, borderRadius: 10, fontSize: 14, cursor: "pointer", fontFamily: F }}>Cancel</button>

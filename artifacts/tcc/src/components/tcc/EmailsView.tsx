@@ -28,7 +28,22 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
   const [training, setTraining] = useState<TrainingState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [nwPickEmailId, setNwPickEmailId] = useState<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function getNextWeekDay(dayOffset: number): Date {
+    // dayOffset: 0=Mon 1=Tue 2=Wed 3=Thu 4=Fri
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun 1=Mon ... 6=Sat
+    const daysToNextMon = day === 0 ? 1 : 8 - day;
+    const d = new Date(now);
+    d.setDate(now.getDate() + daysToNextMon + dayOffset);
+    return d;
+  }
+  const NW_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  function toDateStr(d: Date) {
+    return d.toISOString().split("T")[0];
+  }
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
@@ -126,17 +141,18 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
                   </SmartTip>
                   <SmartTip tipKey="snooze" tip={tip("snooze")} onSaved={onTipSaved}>
                     <select onChange={ev => {
-                      if (ev.target.value) {
-                        onSnooze(e.id, ev.target.value);
-                        post("/emails/action", { action: "snooze", emailId: e.id, snoozeUntil: ev.target.value }).catch(() => {});
-                        ev.target.value = "";
-                      }
+                      const val = ev.target.value;
+                      ev.target.value = "";
+                      if (!val) return;
+                      if (val === "nw") { setNwPickEmailId(e.id); return; }
+                      onSnooze(e.id, val);
+                      post("/emails/action", { action: "snooze", emailId: e.id, snoozeUntil: val }).catch(() => {});
                     }} defaultValue="" style={{ ...btn2, padding: "5px 8px", fontSize: 11 }}>
                       <option value="">Snooze...</option>
                       <option value="1h">1 hour</option>
                       <option value="2h">2 hours</option>
                       <option value="tom">Tomorrow</option>
-                      <option value="nw">Next week</option>
+                      <option value="nw">Next week →</option>
                     </select>
                   </SmartTip>
 
@@ -159,6 +175,44 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
                     }}>👎</button>
                 </div>
               </div>
+
+              {/* Next-week day picker */}
+              {nwPickEmailId === e.id && (
+                <div style={{ margin: "8px 0 2px", padding: "12px 14px", background: C.bluBg, borderRadius: 12, border: `1.5px solid ${C.blu}33` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                    Pick a day next week
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {NW_DAYS.map((label, i) => {
+                      const d = getNextWeekDay(i);
+                      const dateStr = toDateStr(d);
+                      return (
+                        <button
+                          key={label}
+                          onClick={() => {
+                            onSnooze(e.id, dateStr);
+                            post("/emails/action", { action: "snooze", emailId: e.id, snoozeUntil: dateStr }).catch(() => {});
+                            setNwPickEmailId(null);
+                          }}
+                          style={{
+                            flex: 1, minWidth: 52, padding: "8px 4px", borderRadius: 10,
+                            border: `1.5px solid ${C.blu}55`, background: C.card,
+                            color: C.blu, fontFamily: F, fontSize: 11, fontWeight: 700,
+                            cursor: "pointer", textAlign: "center", lineHeight: 1.4,
+                          }}
+                        >
+                          <div>{label}</div>
+                          <div style={{ fontSize: 10, fontWeight: 500, color: C.mut }}>{d.getMonth() + 1}/{d.getDate()}</div>
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => setNwPickEmailId(null)}
+                      style={{ padding: "8px 10px", borderRadius: 10, border: `1px solid ${C.brd}`, background: "none", color: C.mut, fontFamily: F, fontSize: 11, cursor: "pointer" }}
+                    >✕</button>
+                  </div>
+                </div>
+              )}
 
               {/* Inline training reason capture */}
               {training && training.emailId === e.id && !training.saved && (

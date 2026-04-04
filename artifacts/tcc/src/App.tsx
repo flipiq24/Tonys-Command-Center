@@ -13,7 +13,6 @@ import { ConnectedCallModal } from "@/components/tcc/ConnectedCallModal";
 import { EmailsView } from "@/components/tcc/EmailsView";
 import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
-import { SalesMorning } from "@/components/tcc/SalesMorning";
 import { TasksView } from "@/components/tcc/TasksView";
 import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
@@ -517,22 +516,25 @@ export default function App() {
     </div>
   );
 
-  // ═══ SALES VIEW (SalesMorning replaces SalesView as the main morning view) ═══
+  // ═══ SALES VIEW ═══
   if (view === "sales") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
       {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
-      <SalesMorning
+      <SalesView
+        contacts={contacts}
         calls={calls}
         demos={demos}
+        calSide={calSide}
         onAttempt={c => setAttempt(c)}
-        onConnectedCall={c => setConnectedCall(c)}
-        onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
-        onOpenChat={openChatWithContext}
+        onConnected={name => handleLogCall(name, "connected")}
+        onDemoChange={handleDemoChange}
         onSwitchToTasks={() => persistView("tasks")}
         onBackToSchedule={() => persistView("schedule")}
+        onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
+        onConnectedCall={c => setConnectedCall(c)}
       />
     </div>
   );

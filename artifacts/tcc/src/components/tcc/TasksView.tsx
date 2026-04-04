@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { post, get, patch } from "@/lib/api";
-import { C, F, FS, card, inp, btn1, btn2 } from "./constants";
+import { C, F, FS, inp, btn1, btn2 } from "./constants";
 import { VoiceField } from "./VoiceField";
 import { TimeRoutingBanner } from "./TimeRoutingBanner";
 import { CreateTaskModal } from "./CreateTaskModal";
@@ -35,122 +35,75 @@ interface Props {
   onPrint?: () => void;
 }
 
-const PCT_PRESETS = [10, 25, 50, 75, 90, 100];
-
-function pctColor(p: number) {
-  if (p >= 75) return C.grn;
-  if (p >= 40) return C.amb;
-  return C.red;
-}
-function pctBg(p: number) {
-  if (p >= 75) return C.grnBg;
-  if (p >= 40) return C.ambBg;
-  return C.redBg;
+function nextWeekdayLabel(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() + 1); // Sunday → Monday
+  if (day === 6) d.setDate(d.getDate() + 2); // Saturday → Monday
+  return d.toLocaleDateString("en-US", { weekday: "long" });
 }
 
-const CAT_STYLE: Record<string, { bg: string; color: string }> = {
-  SALES: { bg: "#D1FAE5", color: "#059669" },
-  OPS:   { bg: "#FEF3C7", color: "#D97706" },
-  TECH:  { bg: "#EDE9FE", color: "#7C3AED" },
-  ADMIN: { bg: "#DBEAFE", color: "#2563EB" },
+const ROW: React.CSSProperties = {
+  display: "flex", alignItems: "flex-start", gap: 12,
+  padding: "14px 0",
+  borderBottom: `1px solid ${C.brd}`,
 };
-function catStyle(cat: string) {
-  return CAT_STYLE[cat] ?? { bg: "#E0F2FE", color: "#0284C7" };
-}
 
-function ProgressBar({ pct, size = "md" }: { pct: number; size?: "sm" | "md" }) {
-  const h = size === "sm" ? 5 : 7;
-  return (
-    <div style={{ background: "#E8E6E1", borderRadius: 99, overflow: "hidden", height: h }}>
-      <div style={{
-        height: "100%", width: `${Math.min(100, Math.max(0, pct))}%`,
-        background: pct >= 75 ? C.grn : pct >= 40 ? C.amb : C.red,
-        borderRadius: 99, transition: "width 0.5s ease",
-      }} />
-    </div>
-  );
-}
+const CIRCLE_BTN: React.CSSProperties = {
+  width: 20, height: 20, borderRadius: "50%",
+  border: `1.5px solid #999`,
+  background: "transparent", flexShrink: 0, marginTop: 2,
+  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+  fontSize: 11, color: "#fff", padding: 0,
+};
 
 export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, onBackToSchedule, onPrint }: Props) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
-  const [localRefreshing, setLocalRefreshing] = useState(false);
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
-  const [workNotePct, setWorkNotePct] = useState<number>(25);
-  const [customPct, setCustomPct] = useState("");
+  const [workNotePct, setWorkNotePct] = useState<string>("25");
   const [savingNote, setSavingNote] = useState(false);
-  const [noteHistory, setNoteHistory] = useState<Record<string, WorkNote[]>>({});
   const [noteError, setNoteError] = useState("");
+  // taskId → latest work note from today
+  const [todayNotes, setTodayNotes] = useState<Record<string, WorkNote>>({});
 
-  const fetchLocalTasks = async () => {
-    try {
-      const rows = await get<LocalTask[]>("/tasks/local");
-      setLocalTasks(rows);
-    } catch { /* ok */ }
-  };
-
-  useEffect(() => { fetchLocalTasks(); }, []);
-
-  const refreshLocalTasks = async () => {
-    setLocalRefreshing(true);
-    await fetchLocalTasks();
-    setLocalRefreshing(false);
-  };
+  useEffect(() => {
+    get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
+    get<WorkNote[]>("/tasks/work-notes-today").then(notes => {
+      const map: Record<string, WorkNote> = {};
+      for (const n of notes) map[n.taskId] = n; // last one wins
+      setTodayNotes(map);
+    }).catch(() => {});
+  }, []);
 
   const completeLocalTask = async (id: string) => {
     setLocalDone(prev => new Set([...prev, id]));
-    try {
-      await patch(`/tasks/local/${id}`, { status: "done" });
-    } catch { /* optimistic, ignore */ }
+    await patch(`/tasks/local/${id}`, { status: "done" }).catch(() => {});
   };
 
-  const doneCount = Object.values(tDone).filter(Boolean).length;
-  const activeTasks = tasks.filter(t => !tDone[t.id]);
-  const doneTasks = tasks.filter(t => tDone[t.id]);
-  const focusTasks = activeTasks.slice(0, 3);
-  const queueTasks = activeTasks.slice(3);
-
-  const latestPct = (taskId: string) => {
-    const notes = noteHistory[taskId];
-    if (!notes || notes.length === 0) return 0;
-    return notes[notes.length - 1].progress ?? 0;
-  };
-
-  const openWork = async (task: TaskItem) => {
+  const openWork = (task: TaskItem) => {
     setWorkNoteTask(task);
     setWorkNoteText("");
     setNoteError("");
-    const cur = latestPct(task.id);
-    setWorkNotePct(cur || 25);
-    setCustomPct("");
-    if (!noteHistory[task.id]) {
-      try {
-        const notes = await get<WorkNote[]>(`/tasks/work-notes/${encodeURIComponent(task.id)}`);
-        setNoteHistory(prev => ({ ...prev, [task.id]: notes }));
-        const latest = notes.length ? (notes[notes.length - 1].progress ?? 0) : 25;
-        setWorkNotePct(latest || 25);
-      } catch { /* ok */ }
-    }
+    const prev = todayNotes[task.id];
+    setWorkNotePct(String(prev?.progress ?? 25));
   };
 
   const saveWorkNote = async () => {
     if (!workNoteTask || !workNoteText.trim()) return;
     setSavingNote(true);
     setNoteError("");
-    const finalPct = customPct !== "" ? Math.min(100, Math.max(0, parseInt(customPct) || 0)) : workNotePct;
+    const pct = Math.min(100, Math.max(0, parseInt(workNotePct) || 0));
     try {
       const note = await post<WorkNote>("/tasks/work-note", {
         taskId: workNoteTask.id,
         note: workNoteText.trim(),
-        progress: finalPct,
+        progress: pct,
       });
-      setNoteHistory(prev => ({
-        ...prev,
-        [workNoteTask.id]: [...(prev[workNoteTask.id] || []), note],
-      }));
-      setWorkNoteText("");
+      setTodayNotes(prev => ({ ...prev, [workNoteTask.id]: note }));
       setWorkNoteTask(null);
     } catch {
       setNoteError("Failed to save — try again.");
@@ -158,250 +111,197 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
     setSavingNote(false);
   };
 
-  const activeLocalTasks = localTasks.filter(t => !localDone.has(t.id));
+  const activeTasks = tasks.filter(t => !tDone[t.id]);
+  const doneTasks   = tasks.filter(t => tDone[t.id]);
+  const activeLocalTasks = localTasks.filter(t => t.status !== "done" && !localDone.has(t.id));
+  const doneCount = Object.values(tDone).filter(Boolean).length;
   const totalTasks = tasks.length + activeLocalTasks.length;
-  const totalDone = doneCount + (localTasks.length - activeLocalTasks.length);
-  const overallPct = totalTasks > 0 ? Math.round((totalDone / totalTasks) * 100) : 0;
+  const totalDone  = doneCount + (localTasks.length - activeLocalTasks.length);
 
   return (
     <>
-      <div style={{ maxWidth: 580, margin: "24px auto", padding: "0 20px", marginRight: calSide ? 320 : undefined, transition: "margin 0.2s" }}>
+      <div style={{
+        maxWidth: 560, margin: "0 auto", padding: "0 20px 60px",
+        marginRight: calSide ? 320 : undefined, transition: "margin 0.2s",
+        fontFamily: F,
+      }}>
         <TimeRoutingBanner />
 
-        {/* ── Overall header card ─────────────────────────── */}
+        {/* ── Header ── */}
         <div style={{
-          ...card, marginBottom: 18,
-          background: "linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)",
-          border: "none", color: "#fff",
+          display: "flex", justifyContent: "space-between", alignItems: "baseline",
+          padding: "20px 0 16px",
+          borderBottom: `2px solid ${C.tx}`,
+          marginBottom: 0,
         }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.5)", marginBottom: 2 }}>Today's Tasks</div>
-              <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 800, color: "#fff" }}>
-                {totalDone} of {totalTasks} done
-              </div>
-            </div>
-            <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-              <div style={{ fontSize: 32, fontWeight: 900, color: overallPct >= 75 ? "#34D399" : overallPct >= 40 ? "#FBBF24" : "#F87171" }}>
-                {overallPct}%
-              </div>
-              <button
-                onClick={() => setShowCreateTask(true)}
-                style={{ padding: "5px 12px", borderRadius: 8, border: "2px solid rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, fontFamily: F }}
-              >
-                + New Task
-              </button>
-            </div>
+          <div>
+            <span style={{ fontSize: 20, fontWeight: 800, fontFamily: FS, color: C.tx }}>Tasks</span>
+            <span style={{ fontSize: 14, color: "#999", marginLeft: 10 }}>
+              {totalDone} of {totalTasks} done
+            </span>
           </div>
-          <ProgressBar pct={overallPct} />
+          <button
+            onClick={() => setShowCreateTask(true)}
+            style={{
+              background: "none", border: `1px solid ${C.brd}`, color: C.tx,
+              borderRadius: 6, padding: "5px 12px", fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: F,
+            }}
+          >+ New</button>
         </div>
 
-        {/* ── My Live Tasks (created via + New Task) ─────── */}
-        {(activeLocalTasks.length > 0 || localRefreshing) && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, paddingLeft: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.blu }}>
-                ⚡ My Tasks — {activeLocalTasks.length} active
-              </div>
-              <button
-                onClick={refreshLocalTasks}
-                disabled={localRefreshing}
-                style={{ background: "none", border: "none", cursor: localRefreshing ? "default" : "pointer", fontSize: 15, color: C.blu, padding: "0 2px", opacity: localRefreshing ? 0.5 : 1, animation: localRefreshing ? "spin 1s linear infinite" : "none" }}
-              >↻</button>
+        {/* ── My Tasks (local) ── */}
+        {activeLocalTasks.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "16px 0 4px" }}>
+              My Tasks
             </div>
-            {activeLocalTasks.map(t => {
-              const done = localDone.has(t.id);
-              return (
-                <div key={t.id} style={{
-                  display: "flex", alignItems: "flex-start", gap: 12,
-                  padding: "14px 16px", marginBottom: 8, borderRadius: 14,
-                  background: done ? C.grnBg : "#F0F7FF",
-                  border: `1.5px solid ${done ? C.grn : C.blu}33`,
-                  borderLeft: `4px solid ${done ? C.grn : C.blu}`,
-                  opacity: done ? 0.6 : 1,
-                }}>
-                  <button
-                    onClick={() => !done && completeLocalTask(t.id)}
-                    style={{
-                      width: 22, height: 22, borderRadius: "50%", border: `2px solid ${done ? C.grn : C.blu}`,
-                      background: done ? C.grn : "transparent", color: done ? "#fff" : C.blu,
-                      cursor: done ? "default" : "pointer", flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 12, fontWeight: 900, padding: 0,
-                    }}
-                  >{done ? "✓" : ""}</button>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: done ? C.grn : C.tx, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>{t.text}</div>
-                    {t.dueDate && (
-                      <div style={{ fontSize: 11, color: C.mut, marginTop: 3 }}>
-                        Due: {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </div>
-                    )}
-                    {t.overrideWarning && <div style={{ fontSize: 11, color: C.amb, marginTop: 2 }}>⚠️ {t.overrideWarning}</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Focus Zone ─────────────────────────────────── */}
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.sub, marginBottom: 10, paddingLeft: 4 }}>
-            🎯 Focus Zone — top {Math.min(3, focusTasks.length)}
-          </div>
-
-          {focusTasks.length === 0 && (
-            <div style={{ ...card, textAlign: "center", padding: "32px 20px", background: C.grnBg, border: `2px solid ${C.grn}33` }}>
-              <div style={{ fontSize: 36, marginBottom: 8 }}>🎉</div>
-              <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: C.grn }}>All clear!</div>
-              <div style={{ fontSize: 13, color: C.sub, marginTop: 4 }}>Every task is done for today.</div>
-            </div>
-          )}
-
-          {focusTasks.map((t, idx) => {
-            const pct = latestPct(t.id);
-            const cs = catStyle(t.cat);
-            return (
-              <div key={t.id} style={{
-                ...card,
-                marginBottom: 12,
-                border: `1.5px solid ${cs.color}22`,
-                padding: "16px 18px",
-              }}>
-                {/* Top row: category pill + priority number */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <span style={{
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    padding: "3px 10px", borderRadius: 99,
-                    background: cs.bg, color: cs.color,
-                    fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1,
-                  }}>
-                    {t.cat}
-                  </span>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: 99,
-                    background: cs.color, color: "#fff",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 13, fontWeight: 900, flexShrink: 0,
-                  }}>
-                    {idx + 1}
-                  </div>
-                </div>
-
-                {/* Task text */}
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.tx, lineHeight: 1.4, marginBottom: 12 }}>{t.text}</div>
-
-                {/* Progress bar */}
-                <div style={{ marginBottom: 6 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                    <span style={{ fontSize: 11, color: C.mut, fontWeight: 600 }}>Progress</span>
-                    {pct > 0 && (
-                      <span style={{
-                        fontSize: 12, fontWeight: 800,
-                        color: pctColor(pct),
-                        background: pctBg(pct),
-                        padding: "1px 8px", borderRadius: 99,
-                      }}>
-                        {pct}%
-                      </span>
-                    )}
-                    {pct === 0 && <span style={{ fontSize: 11, color: C.mut }}>Not started</span>}
-                  </div>
-                  <ProgressBar pct={pct} />
-                </div>
-
-                {/* Action buttons */}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button
-                    onClick={() => t.sales ? onSwitchToSales() : onComplete(t)}
-                    style={{
-                      flex: 1, padding: "10px 0", borderRadius: 12,
-                      border: "none", background: C.grn, color: "#fff",
-                      fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: F,
-                      boxShadow: `0 4px 12px ${C.grn}44`,
-                    }}>
-                    {t.sales ? "→ Sales" : "✅ Done"}
-                  </button>
-                  {!t.sales && (
-                    <button
-                      onClick={() => openWork(t)}
-                      style={{
-                        flex: 1, padding: "10px 0", borderRadius: 12,
-                        border: `2px solid ${cs.color}`,
-                        background: cs.bg, color: cs.color,
-                        fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: F,
-                      }}>
-                      ⚡ Work on it
-                    </button>
+            {activeLocalTasks.map(t => (
+              <div key={t.id} style={ROW}>
+                <button
+                  onClick={() => completeLocalTask(t.id)}
+                  style={CIRCLE_BTN}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: C.tx, lineHeight: 1.45 }}>{t.text}</div>
+                  {t.dueDate && (
+                    <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
+                      Due {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </div>
+                  )}
+                  {t.overrideWarning && (
+                    <div style={{ fontSize: 11, color: C.red, marginTop: 2 }}>{t.overrideWarning}</div>
                   )}
                 </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── Queue ──────────────────────────────────────── */}
-        {queueTasks.length > 0 && (
-          <div style={{ ...card, marginBottom: 16, padding: "14px 18px" }}>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.sub, marginBottom: 10 }}>
-              ⏳ Up Next ({queueTasks.length})
-            </div>
-            {queueTasks.map(t => {
-              const cs = catStyle(t.cat);
-              const pct = latestPct(t.id);
-              return (
-                <div key={t.id} style={{
-                  display: "flex", gap: 10, alignItems: "center",
-                  padding: "10px 12px", marginBottom: 6,
-                  background: "#FAFAF8", borderRadius: 12,
-                  border: `1px solid ${C.brd}`,
-                }}>
-                  <span style={{
-                    padding: "2px 8px", borderRadius: 99,
-                    background: cs.bg, color: cs.color,
-                    fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8,
-                    flexShrink: 0,
-                  }}>{t.cat}</span>
-                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.sub, lineHeight: 1.3 }}>{t.text}</div>
-                  {pct > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 800, color: pctColor(pct), flexShrink: 0 }}>{pct}%</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Done ──────────────────────────────────────── */}
-        {doneTasks.length > 0 && (
-          <div style={{ ...card, marginBottom: 16, padding: "14px 18px", opacity: 0.75 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.grn, marginBottom: 10 }}>
-              ✅ Done Today ({doneTasks.length})
-            </div>
-            {doneTasks.map(t => (
-              <div key={t.id} style={{
-                display: "flex", gap: 10, alignItems: "center",
-                padding: "9px 12px", marginBottom: 5,
-                background: C.grnBg, borderRadius: 10,
-              }}>
-                <span style={{ color: C.grn, fontSize: 15, flexShrink: 0 }}>✓</span>
-                <div style={{ fontSize: 13, color: C.sub, textDecoration: "line-through", flex: 1 }}>{t.text}</div>
-                <button onClick={() => onComplete(t)} style={{ fontSize: 11, color: C.mut, background: "none", border: "none", cursor: "pointer", fontFamily: F, flexShrink: 0 }}>undo</button>
               </div>
             ))}
           </div>
         )}
 
+        {/* ── Active Tasks ── */}
+        {activeTasks.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "16px 0 4px" }}>
+              Today
+            </div>
+            {activeTasks.map(t => {
+              const workedOnToday = todayNotes[t.id];
+              const pct = workedOnToday?.progress ?? 0;
+              const isUrgent = t.cat === "SALES" || (t as any).urgent;
 
-        <button onClick={onSwitchToSales} style={{ ...btn2, width: "100%", marginBottom: 10, borderRadius: 12, padding: "12px 0", fontWeight: 700 }}>📞 Sales Mode</button>
-        <div style={{ display: "flex", gap: 8, marginBottom: 40 }}>
-          <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1, borderRadius: 12, color: C.mut }}>← Schedule</button>
-          {onPrint && <button onClick={onPrint} style={{ ...btn2, flex: 1, borderRadius: 12 }}>🖨 Print Sheet</button>}
+              return (
+                <div key={t.id} style={{ ...ROW, opacity: 1 }}>
+                  <button
+                    onClick={() => t.sales ? onSwitchToSales() : onComplete(t)}
+                    style={{
+                      ...CIRCLE_BTN,
+                      borderColor: isUrgent ? C.red : "#999",
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 14, fontWeight: 600, lineHeight: 1.45,
+                      color: isUrgent ? C.red : C.tx,
+                    }}>
+                      {t.text}
+                    </div>
+
+                    {/* Worked on today indicator */}
+                    {workedOnToday && (
+                      <div style={{ marginTop: 5 }}>
+                        <div style={{ fontSize: 11, color: "#999" }}>
+                          In progress ({pct}%) — continuing {nextWeekdayLabel()}
+                        </div>
+                        {workedOnToday.note && (
+                          <div style={{
+                            fontSize: 12, color: "#555", marginTop: 3,
+                            padding: "5px 8px",
+                            background: "#F5F5F5",
+                            borderRadius: 6,
+                            borderLeft: `2px solid #CCC`,
+                          }}>
+                            {workedOnToday.note.length > 80
+                              ? workedOnToday.note.slice(0, 80) + "…"
+                              : workedOnToday.note}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Progress bar — only if has progress */}
+                    {pct > 0 && (
+                      <div style={{
+                        height: 2, background: "#E5E5E5", borderRadius: 99,
+                        marginTop: 8, overflow: "hidden",
+                      }}>
+                        <div style={{
+                          height: "100%", width: `${pct}%`,
+                          background: pct === 100 ? "#2E7D32" : "#111",
+                          borderRadius: 99,
+                        }} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Single action: Log progress */}
+                  {!t.sales && (
+                    <button
+                      onClick={() => openWork(t)}
+                      style={{
+                        background: "none", border: "none",
+                        color: "#999", fontSize: 12, fontWeight: 600,
+                        cursor: "pointer", fontFamily: F,
+                        padding: "0 4px", whiteSpace: "nowrap", flexShrink: 0,
+                      }}
+                    >Log</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {activeTasks.length === 0 && activeLocalTasks.length === 0 && (
+          <div style={{
+            padding: "48px 0", textAlign: "center", color: "#999", fontSize: 14,
+          }}>
+            All done for today.
+          </div>
+        )}
+
+        {/* ── Done ── */}
+        {doneTasks.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "20px 0 4px" }}>
+              Done
+            </div>
+            {doneTasks.map(t => (
+              <div key={t.id} style={{ ...ROW, opacity: 0.45 }}>
+                <button
+                  style={{ ...CIRCLE_BTN, borderColor: "#999", background: "#111" }}
+                  onClick={() => onComplete(t)}
+                >✓</button>
+                <div style={{ fontSize: 14, color: "#999", textDecoration: "line-through", flex: 1, lineHeight: 1.45 }}>
+                  {t.text}
+                </div>
+                <button
+                  onClick={() => onComplete(t)}
+                  style={{ background: "none", border: "none", color: "#BBB", fontSize: 11, cursor: "pointer", fontFamily: F, flexShrink: 0 }}
+                >undo</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Footer nav ── */}
+        <div style={{ display: "flex", gap: 12, paddingTop: 32, borderTop: `1px solid ${C.brd}`, marginTop: 24 }}>
+          <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1 }}>← Schedule</button>
+          <button onClick={onSwitchToSales} style={{ ...btn2, flex: 1 }}>Sales</button>
+          {onPrint && <button onClick={onPrint} style={{ ...btn2, flex: 1 }}>Print</button>}
         </div>
       </div>
 
-      {/* ── Create Task Modal ─────────────────────────────── */}
+      {/* ── Create Task Modal ── */}
       <CreateTaskModal
         open={showCreateTask}
         onClose={() => setShowCreateTask(false)}
@@ -411,118 +311,80 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
         }}
       />
 
-      {/* ── Work on it Modal ──────────────────────────── */}
+      {/* ── Log Progress Modal ── */}
       {workNoteTask && (
         <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 10000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", zIndex: 10000,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+          }}
           onClick={() => setWorkNoteTask(null)}
         >
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              background: C.card, borderRadius: "24px 24px 0 0",
-              padding: "28px 24px 36px", width: "100%", maxWidth: 540,
-              maxHeight: "90vh", overflowY: "auto",
+              background: "#fff", borderRadius: 14, padding: "28px 24px",
+              width: "100%", maxWidth: 480,
+              boxShadow: "0 8px 40px rgba(0,0,0,0.15)",
             }}
           >
-            {/* Handle bar */}
-            <div style={{ width: 40, height: 4, borderRadius: 99, background: "#D0CEC8", margin: "0 auto 20px" }} />
-
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.5, color: C.sub, marginBottom: 4 }}>⚡ Log Progress</div>
-            <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 700, color: C.tx, lineHeight: 1.4, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              Log Progress
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.tx, lineHeight: 1.4, marginBottom: 20 }}>
               {workNoteTask.text}
             </div>
 
-            {/* Current progress preview */}
-            {(() => {
-              const cur = latestPct(workNoteTask.id);
-              const finalPct = customPct !== "" ? Math.min(100, Math.max(0, parseInt(customPct) || 0)) : workNotePct;
-              return (
-                <div style={{ marginBottom: 20, padding: "14px 16px", borderRadius: 14, background: pctBg(finalPct), border: `1.5px solid ${pctColor(finalPct)}33` }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: pctColor(finalPct) }}>
-                      {cur > 0 ? `Was ${cur}% → now` : "Setting progress to"}
-                    </span>
-                    <span style={{ fontSize: 28, fontWeight: 900, color: pctColor(finalPct) }}>{finalPct}%</span>
-                  </div>
-                  <ProgressBar pct={finalPct} />
-                </div>
-              );
-            })()}
-
-            {/* Preset % pills */}
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 10 }}>How far along?</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
-              {PCT_PRESETS.map(p => {
-                const selected = customPct === "" && workNotePct === p;
-                const cs = catStyle(workNoteTask.cat);
-                return (
-                  <button
-                    key={p}
-                    onClick={() => { setWorkNotePct(p); setCustomPct(""); }}
-                    style={{
-                      padding: "12px 0", borderRadius: 12, fontFamily: F,
-                      fontSize: 16, fontWeight: 900,
-                      border: selected ? `2.5px solid ${cs.color}` : `2px solid ${C.brd}`,
-                      background: selected ? cs.bg : "#FAFAF8",
-                      color: selected ? cs.color : C.sub,
-                      cursor: "pointer", transition: "all 0.12s",
-                    }}>
-                    {p}%
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Custom % input */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>
-              <span style={{ fontSize: 12, color: C.mut, flexShrink: 0 }}>Custom:</span>
+            {/* Progress % */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: "#666", flexShrink: 0 }}>How far along?</label>
               <input
                 type="number"
                 min={0}
                 max={100}
-                value={customPct}
-                onChange={e => setCustomPct(e.target.value)}
-                placeholder="0–100"
-                style={{ ...inp, width: 80, textAlign: "center", fontWeight: 700, fontSize: 15 }}
+                value={workNotePct}
+                onChange={e => setWorkNotePct(e.target.value)}
+                style={{
+                  ...inp, width: 70, textAlign: "center", fontSize: 16, fontWeight: 700,
+                }}
               />
-              <span style={{ fontSize: 13, color: C.sub }}>%</span>
+              <span style={{ fontSize: 13, color: "#666" }}>%</span>
             </div>
 
             {/* Notes */}
-            <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 8 }}>What did you work on?</div>
             <VoiceField
               as="textarea"
               value={workNoteText}
               onChange={setWorkNoteText}
-              placeholder="e.g. Called Fernando, he's reviewing the contract…"
+              placeholder="What did you work on?"
               autoFocus
-              style={{ ...inp, minHeight: 80, resize: "vertical", marginBottom: 12, fontSize: 14 }}
+              style={{ ...inp, minHeight: 90, resize: "vertical", marginBottom: 14, fontSize: 14 }}
             />
 
-            {noteError && (
-              <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 12, fontWeight: 600 }}>
-                {noteError}
+            {/* Continuing tomorrow note */}
+            {workNotePct !== "100" && (
+              <div style={{
+                fontSize: 12, color: "#888", background: "#F5F5F5",
+                borderRadius: 8, padding: "8px 12px", marginBottom: 14,
+              }}>
+                This task will stay on your list — continuing {nextWeekdayLabel()}
               </div>
             )}
 
+            {noteError && (
+              <div style={{ color: C.red, fontSize: 12, marginBottom: 12 }}>{noteError}</div>
+            )}
+
             <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setWorkNoteTask(null)}
-                style={{ ...btn2, flex: 1, borderRadius: 14, padding: "13px 0", fontWeight: 700 }}>
+              <button onClick={() => setWorkNoteTask(null)} style={{ ...btn2, flex: 1 }}>
                 Cancel
               </button>
               <button
                 onClick={saveWorkNote}
                 disabled={savingNote || !workNoteText.trim()}
-                style={{
-                  ...btn1, flex: 2, borderRadius: 14, padding: "13px 0",
-                  fontWeight: 800, fontSize: 15,
-                  opacity: savingNote || !workNoteText.trim() ? 0.5 : 1,
-                  cursor: savingNote || !workNoteText.trim() ? "not-allowed" : "pointer",
-                  boxShadow: workNoteText.trim() ? `0 4px 16px ${C.tx}33` : "none",
-                }}>
-                {savingNote ? "Saving…" : "Log Progress →"}
+                style={{ ...btn1, flex: 2, opacity: savingNote || !workNoteText.trim() ? 0.5 : 1 }}
+              >
+                {savingNote ? "Saving…" : "Save"}
               </button>
             </div>
           </div>

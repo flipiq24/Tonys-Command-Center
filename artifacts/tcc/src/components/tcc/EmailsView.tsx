@@ -87,7 +87,7 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
 
   return (
     <>
-      <EmailReplyModal email={replyEmail} onClose={() => setReplyEmail(null)} />
+      <EmailReplyModal email={replyEmail} onClose={() => setReplyEmail(null)} onSnooze={onSnooze} />
       <div style={{ maxWidth: 680, margin: "24px auto", padding: "0 20px" }}>
         <div style={{ ...card, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>

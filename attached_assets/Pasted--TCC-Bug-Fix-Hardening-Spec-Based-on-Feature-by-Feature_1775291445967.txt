@@ -1,0 +1,448 @@
+# TCC — Bug Fix & Hardening Spec
+## Based on Feature-by-Feature Code Audit
+## April 4, 2026 · Priority Order
+
+---
+
+# CRITICAL (Fix Before Tony Uses It)
+
+## Fix 1: UTC Date → Pacific Timezone (Breaks check-in after 5 PM)
+
+**Problem:** `new Date().toISOString().split("T")[0]` returns UTC. At 11 PM Pacific = tomorrow in UTC. Tony's check-in shows "not done" even though he completed it.
+
+**Files:** Every route that does date comparison — `checkin.ts`, `journal.ts`, `brief.ts`, `eod.ts`, `tasks.ts`, `demos.ts`, `emails.ts`
+
+**Fix:** Create a shared helper and use it everywhere:
+
+```typescript
+// artifacts/api-server/src/lib/dates.ts (NEW FILE)
+export function todayPacific(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  // Returns "2026-04-04" format, always Pacific time
+}
+```
+
+Replace every instance of:
+```typescript
+const today = new Date().toISOString().split("T")[0];
+```
+With:
+```typescript
+import { todayPacific } from "../../lib/dates";
+const today = todayPacific();
+```
+
+**Effort:** 20 min
+
+---
+
+## Fix 2: Race Conditions — 6 Upsert Patterns (Data corruption on double-click)
+
+**Problem:** Select-then-insert pattern. Two concurrent requests both see "no record" and both INSERT, violating unique constraints and crashing.
+
+**Files + fixes:**
+
+### checkin.ts (lines ~23-68)
+Replace select-then-insert with:
+```typescript
+import { sql } from "drizzle-orm";
+
+await db.insert(checkinsTable).values({
+  date: today,
+  bedtime: body.bedtime,
+  waketime: body.waketime,
+  sleepHours: body.sleepHours,
+  bible: body.bible,
+  workout: body.workout,
+  journal: body.journal,
+  nutrition: body.nutrition,
+  unplug: body.unplug,
+}).onConflictDoUpdate({
+  target: checkinsTable.date,
+  set: {
+    bedtime: body.bedtime,
+    waketime: body.waketime,
+    sleepHours: body.sleepHours,
+    bible: body.bible,
+    workout: body.workout,
+    journal: body.journal,
+    nutrition: body.nutrition,
+    unplug: body.unplug,
+  },
+});
+```
+
+### journal.ts (same pattern)
+Replace select-then-insert with `.onConflictDoUpdate()` on `journalsTable.date`.
+
+### emails.ts — regenerateBrain / saveBrain()
+Replace select-then-insert with `.onConflictDoUpdate()` on `systemInstructionsTable.section`.
+
+### eod.ts (lines ~80-94)
+Replace select-then-insert with `.onConflictDoUpdate()` on `eodReportsTable.date`.
+
+### system-instructions.ts
+Replace select-then-insert with `.onConflictDoUpdate()` on `systemInstructionsTable.section`.
+
+### emails.ts — snooze insert
+Add unique constraint to DB:
+```sql
+ALTER TABLE email_snoozes ADD CONSTRAINT email_snoozes_date_email_unique UNIQUE (date, email_id);
+```
+Then use `.onConflictDoUpdate()`.
+
+**Effort:** 45 min total
+
+---
+
+## Fix 3: SharedModals/SharedHeader Inside Render (Flicker + State Loss)
+
+**Problem:** `App.tsx` lines 233-255 define `SharedModals` and `SharedHeader` as arrow functions INSIDE the render body. React sees new component types every render → unmounts and remounts them → destroys internal state, causes flicker.
+
+**Fix:** Move them outside `App()` as standalone components:
+
+```typescript
+// BEFORE (inside App render — BAD):
+const SharedModals = () => ( <> ... </> );
+const SharedHeader = () => ( <Header ... /> );
+
+// AFTER (outside App — GOOD):
+function SharedModals({ open, onClose, onSave, count, chatOpen, onChatClose }: SharedModalsProps) {
+  return (
+    <>
+      <IdeasModal open={open} onClose={onClose} onSave={onSave} count={count} />
+      <ClaudeModal open={chatOpen} onClose={onChatClose} />
+    </>
+  );
+}
+
+function SharedHeader(props: SharedHeaderProps) {
+  return <Header {...props} />;
+}
+
+// Then in App's JSX, use them with explicit props
+```
+
+**Effort:** 10 min
+
+---
+
+## Fix 4: Phone-Log Security (Open webhook when secret unset)
+
+**Problem:** `checkSecret()` in `phone-log.ts` returns `true` when `MACRODROID_SECRET` env var is not set. Anyone can POST to the webhook.
+
+**Fix:**
+```typescript
+// phone-log.ts — replace checkSecret function
+function checkSecret(req: Request): boolean {
+  const secret = process.env.MACRODROID_SECRET;
+  if (!secret) return false; // CLOSED by default when unset
+  return req.query.key === secret || req.headers.authorization === `Bearer ${secret}`;
+}
+```
+
+Also move secret from query parameter to Authorization header:
+```typescript
+// MacroDroid should send: Authorization: Bearer YOUR_SECRET
+// Instead of: ?key=YOUR_SECRET
+```
+
+**Effort:** 5 min
+
+---
+
+## Fix 5: Calls.ts — Claude Draft Is Discarded (Wasted API call)
+
+**Problem:** `calls.ts` lines 41-58 — when type is "attempt" with instructions, Claude drafts a follow-up email. But the response is completely thrown away. The draft is never saved, returned, or sent.
+
+**Fix:**
+```typescript
+// calls.ts — after Claude generates the draft, save it:
+const claudeText = /* extracted from response */;
+
+// Save to call log
+await db.update(callLogTable)
+  .set({ followUpText: claudeText, followUpSent: false })
+  .where(eq(callLogTable.id, newCall.id));
+
+// Also create a Gmail draft if connected
+try {
+  await draftReply({
+    to: contact?.email || "",
+    subject: `Following up — ${contactName}`,
+    body: claudeText,
+  });
+} catch { /* Gmail not connected — that's fine, draft is saved in DB */ }
+
+// Return the draft text in the response
+res.json({ ...newCall, followUpText: claudeText });
+```
+
+**Effort:** 15 min
+
+---
+
+# HIGH PRIORITY (Fix This Week)
+
+## Fix 6: Add Auth Middleware (All 16 endpoints are open)
+
+**Problem:** No authentication on any endpoint. Anyone with the URL can read Tony's emails, calendar, contacts, and post to his Slack.
+
+**Fix:**
+```typescript
+// artifacts/api-server/src/middleware/auth.ts (NEW FILE)
+import type { Request, Response, NextFunction } from "express";
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token || token !== process.env.TCC_API_TOKEN) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+```
+
+Apply to all routes in `app.ts`:
+```typescript
+import { requireAuth } from "./middleware/auth";
+app.use("/api", requireAuth);
+```
+
+Set `TCC_API_TOKEN` in Replit secrets. Frontend sends it in `lib/api.ts`:
+```typescript
+headers: { 
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${import.meta.env.VITE_TCC_TOKEN}`
+}
+```
+
+**Effort:** 30 min
+
+---
+
+## Fix 7: Add Error Boundary (White-screen crash prevention)
+
+**Problem:** Any uncaught error in any component crashes the entire app to a white screen.
+
+**Fix in `artifacts/tcc/src/main.tsx`:**
+```typescript
+import { Component, type ReactNode } from "react";
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error?: Error }> {
+  state = { hasError: false, error: undefined as Error | undefined };
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: "center", fontFamily: "sans-serif" }}>
+          <h2>Something went wrong</h2>
+          <p style={{ color: "#666" }}>{this.state.error?.message}</p>
+          <button onClick={() => window.location.reload()}>Reload</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Wrap <App /> with it:
+<ErrorBoundary><App /></ErrorBoundary>
+```
+
+**Effort:** 10 min
+
+---
+
+## Fix 8: Parallelize Gmail N+1 Fetches (5-8x faster brief)
+
+**Problem:** `brief.ts` lines 111-126 — sequential `for` loop fetches each email one at a time. 10 emails = 10 serial HTTP calls.
+
+**Fix:**
+```typescript
+// Replace the for loop with:
+const rawEmails = await Promise.all(
+  messages.slice(0, 10).map(async (msg) => {
+    const detail = await gmail.users.messages.get({
+      userId: "me",
+      id: msg.id!,
+      format: "metadata",
+      metadataHeaders: ["From", "Subject", "Date"],
+    });
+    const headers = detail.data.payload?.headers || [];
+    const get = (name: string) => headers.find(h => h.name === name)?.value || "";
+    return {
+      from: get("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim(),
+      subject: get("Subject"),
+      snippet: detail.data.snippet || "",
+      date: get("Date"),
+    };
+  })
+);
+```
+
+**Effort:** 10 min
+
+---
+
+## Fix 9: Phone-Log Full Table Scan (O(n) per webhook)
+
+**Problem:** `phone-log.ts` line 45-46 loads ALL contacts into memory to match a phone number. With 5,284 contacts, every webhook scans the full table.
+
+**Fix:**
+```typescript
+// Replace allContacts full table scan with a WHERE query:
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "").slice(-10); // Last 10 digits
+}
+
+const normalized = normalizePhone(phoneNumber);
+const [matched] = await db.select().from(contactsTable)
+  .where(sql`regexp_replace(phone, '[^0-9]', '', 'g') LIKE ${'%' + normalized}`)
+  .limit(1);
+```
+
+Or better — add a `phone_normalized` column to contacts and index it:
+```sql
+ALTER TABLE contacts ADD COLUMN phone_normalized TEXT
+  GENERATED ALWAYS AS (regexp_replace(phone, '[^0-9]', '', 'g')) STORED;
+CREATE INDEX idx_contacts_phone_normalized ON contacts(phone_normalized);
+```
+
+**Effort:** 15 min
+
+---
+
+## Fix 10: Add Task Uncomplete Endpoint
+
+**Problem:** No way to undo an accidental task completion. Frontend toggles local state but DB record persists.
+
+**Fix:**
+```typescript
+// tasks.ts — add DELETE endpoint:
+router.delete("/tasks/completed/:taskId", async (req, res) => {
+  const { taskId } = req.params;
+  const today = todayPacific();
+  await db.delete(taskCompletionsTable)
+    .where(and(
+      eq(taskCompletionsTable.taskId, taskId),
+      sql`completed_at::date = ${today}`
+    ));
+  res.json({ ok: true });
+});
+```
+
+Update `App.tsx` `handleTaskToggle` to call DELETE when unchecking:
+```typescript
+if (!newVal) {
+  fetch(`/api/tasks/completed/${task.id}`, { method: "DELETE" }).catch(() => {});
+}
+```
+
+**Effort:** 10 min
+
+---
+
+# MEDIUM PRIORITY (Fix Before Scale)
+
+## Fix 11: EmailReplyModal Race Condition
+**Problem:** `EmailReplyModal.tsx` fires async `post()` on email change with no AbortController. Opening two emails quickly causes race condition.
+**Fix:** Add AbortController in the useEffect, abort previous request on cleanup.
+**Effort:** 10 min
+
+## Fix 12: SalesView Search Cleanup
+**Problem:** Debounced search timeout fires on unmounted component.
+**Fix:** Clear timeout in useEffect cleanup return.
+**Effort:** 5 min
+
+## Fix 13: Slack @mention Detection
+**Problem:** `brief.ts` searches for `@tony` as text string, not Slack's `<@USERID>` format.
+**Fix:** Use Tony's Slack user ID: `m.text?.includes("<@U0991BAS0TC>")` (from Slack MCP connection).
+**Effort:** 5 min
+
+## Fix 14: Silent Error Swallowing
+**Problem:** Multiple `.catch(() => {})` patterns silently eat errors.
+**Files:** `emails.ts` (brain regen), `ideas.ts` (Slack post), `phone-log.ts` (contact update)
+**Fix:** Replace with `.catch(err => console.error("[feature] Error:", err))`.
+**Effort:** 10 min
+
+## Fix 15: Add Missing DB Indexes
+```sql
+CREATE INDEX idx_checkins_date ON checkins(date);
+CREATE INDEX idx_journals_date ON journals(date);
+CREATE INDEX idx_call_log_created ON call_log(created_at);
+CREATE INDEX idx_task_completions_completed ON task_completions(completed_at);
+CREATE INDEX idx_contacts_status ON contacts(status);
+CREATE INDEX idx_contacts_source ON contacts(source);
+CREATE INDEX idx_email_snoozes_date ON email_snoozes(date);
+```
+**Effort:** 5 min
+
+## Fix 16: Add Zod Validation to Remaining Endpoints
+**Files:** `send-sms.ts`, `phone-log.ts`, `ideas.ts` (classify endpoint)
+**Fix:** Add Zod schemas matching the expected body shapes.
+**Effort:** 20 min
+
+## Fix 17: CORS Restriction
+```typescript
+// app.ts — replace open CORS with:
+app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:5173" }));
+```
+**Effort:** 5 min
+
+## Fix 18: Add .env to .gitignore
+```bash
+echo ".env" >> .gitignore
+echo ".env.local" >> .gitignore
+```
+**Effort:** 1 min (DO THIS FIRST if not already done)
+
+---
+
+# SUMMARY TABLE
+
+| # | Fix | Impact | Effort | Priority |
+|---|-----|--------|--------|----------|
+| 1 | UTC → Pacific dates | Check-in breaks after 5 PM | 20 min | CRITICAL |
+| 2 | 6 race conditions (ON CONFLICT) | Data corruption on double-click | 45 min | CRITICAL |
+| 3 | SharedModals/Header outside render | Flicker + state loss | 10 min | CRITICAL |
+| 4 | Phone-log security | Open webhook | 5 min | CRITICAL |
+| 5 | Save Claude draft from calls | Wasted API call | 15 min | CRITICAL |
+| 6 | Auth middleware | All endpoints open | 30 min | HIGH |
+| 7 | Error boundary | White-screen crashes | 10 min | HIGH |
+| 8 | Gmail N+1 → parallel | 5-8x faster brief | 10 min | HIGH |
+| 9 | Phone-log table scan → WHERE | O(n) per webhook | 15 min | HIGH |
+| 10 | Task uncomplete endpoint | Can't undo tasks | 10 min | HIGH |
+| 11 | EmailReplyModal abort | Race condition | 10 min | MEDIUM |
+| 12 | SalesView search cleanup | Unmount error | 5 min | MEDIUM |
+| 13 | Slack @mention format | Mentions don't match | 5 min | MEDIUM |
+| 14 | Log swallowed errors | Silent failures | 10 min | MEDIUM |
+| 15 | DB indexes | Query performance | 5 min | MEDIUM |
+| 16 | Zod validation gaps | Input validation | 20 min | MEDIUM |
+| 17 | CORS restriction | Cross-origin abuse | 5 min | MEDIUM |
+| 18 | .gitignore .env | Secrets in repo | 1 min | DO NOW |
+| **Total** | | | **~4.5 hours** | |
+
+---
+
+# EXECUTION ORDER
+
+**Session 1 (2 hours — do today):**
+- Fix 18: .gitignore (.env)
+- Fix 1: UTC → Pacific dates
+- Fix 2: All 6 race conditions
+- Fix 3: SharedModals/Header
+- Fix 4: Phone-log security
+- Fix 5: Save Claude draft
+
+**Session 2 (1.5 hours — do tomorrow):**
+- Fix 6: Auth middleware
+- Fix 7: Error boundary
+- Fix 8: Parallelize Gmail
+- Fix 9: Phone-log WHERE query
+- Fix 10: Task uncomplete
+
+**Session 3 (1 hour — do this week):**
+- Fixes 11-17: Medium priority cleanup
+
+**After all fixes:** Run the Phase 2 Integration Testing checklist (98 items). Every item should pass.

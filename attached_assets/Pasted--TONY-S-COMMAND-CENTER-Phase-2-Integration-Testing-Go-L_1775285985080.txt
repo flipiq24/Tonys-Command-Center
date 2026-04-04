@@ -1,0 +1,474 @@
+# TONY'S COMMAND CENTER — Phase 2: Integration Testing & Go-Live
+## Instructions for Replit After Frontend Build + API Connection
+## Version 1.0 · April 4, 2026
+
+---
+
+# WHERE YOU ARE NOW
+
+Frontend is built. APIs are connected. This document tells you what to do NEXT to make sure everything actually works before Tony uses it.
+
+**Do these in order. Do NOT skip steps. Each phase must pass before moving to the next.**
+
+---
+
+# PHASE 1: SMOKE TEST — Does anything work at all?
+
+Run these 5 tests first. If ANY fail, stop and fix before continuing.
+
+### Test 1: Does the app load?
+```
+Open the production URL in a browser.
+EXPECTED: Check-in gate appears. No errors in console.
+FAIL IF: White screen, error message, or any view other than check-in.
+```
+
+### Test 2: Does Supabase connect?
+```
+Submit a check-in with: bed "10:30 PM", wake "6:00 AM", Bible=yes.
+EXPECTED: Data appears in Supabase checkins table within 5 seconds.
+FAIL IF: No row in Supabase, or row has wrong data.
+```
+
+### Test 3: Does the Anthropic API respond?
+```
+Complete check-in + journal. Get to the emails step.
+Click "Suggest Reply" on any email.
+EXPECTED: Claude returns a drafted reply within 10 seconds.
+FAIL IF: Timeout, error message, or no response.
+```
+
+### Test 4: Does MCP actually connect to Gmail?
+```
+From the app (or via /api/claude), send this message:
+"Show me Tony's 3 most recent unread emails"
+EXPECTED: Real email data from tony@flipiq.com returns.
+FAIL IF: Error about Gmail MCP, authentication, or empty results when emails exist.
+```
+
+### Test 5: Does the state persist?
+```
+Complete check-in. Close the browser tab completely.
+Reopen the URL.
+EXPECTED: App skips check-in, shows journal (or wherever you left off).
+FAIL IF: Check-in gate appears again, or state is lost.
+```
+
+**All 5 pass? → Move to Phase 2.**
+**Any fail? → Fix the issue. Re-run all 5. Do not proceed.**
+
+---
+
+# PHASE 2: API CONNECTION TESTS — Every MCP Service
+
+Test each service individually. For each one, verify:
+- Can we READ data?
+- Can we WRITE/CREATE data?
+- Does the response return to the frontend correctly?
+
+### Gmail Tests
+
+| # | Action | Send to Claude | Expected Result | Pass? |
+|---|--------|---------------|----------------|-------|
+| G1 | Read unread emails | "Show Tony's unread emails" | Real emails from tony@flipiq.com with subject, sender, date | ☐ |
+| G2 | Search emails by sender | "Find emails from ethan@flipiq.com" | Returns real Ethan emails | ☐ |
+| G3 | Search emails by keyword | "Find emails about 'contract' in the last week" | Returns matching emails | ☐ |
+| G4 | Create draft | "Draft an email to tony@flipiq.com: subject 'TCC Test', body 'This is a test from the Command Center'" | Draft appears in Gmail drafts folder | ☐ |
+| G5 | Suggest Reply flows to draft | Click "Suggest Reply" on a real email in the app → approve → send to drafts | Draft reply appears in Gmail with correct To/Subject/Re: threading | ☐ |
+
+### Google Calendar Tests
+
+| # | Action | Send to Claude | Expected Result | Pass? |
+|---|--------|---------------|----------------|-------|
+| C1 | Read today's events | "What's on Tony's calendar today?" | All real calendar items return (meetings + task-notes) | ☐ |
+| C2 | Read tomorrow's events | "What's on the calendar tomorrow?" | Tomorrow's events return | ☐ |
+| C3 | Find free time | "When is Tony free tomorrow afternoon?" | Available time slots return | ☐ |
+| C4 | Create event | "Create a test event: 'TCC Test Meeting' tomorrow at 3pm for 30 minutes" | Event appears in Google Calendar | ☐ |
+| C5 | Create event with attendee | "Schedule a 15-min call with ethan@flipiq.com tomorrow at 2pm about 'TCC Test'" | Event created with Ethan as attendee, invite sent | ☐ |
+| C6 | Delete test events | Delete the test events created in C4 and C5 | Events removed from calendar | ☐ |
+
+### Slack Tests
+
+| # | Action | Send to Claude | Expected Result | Pass? |
+|---|--------|---------------|----------------|-------|
+| S1 | Read channel messages | "Show recent messages in #leadership" | Real Slack messages return | ☐ |
+| S2 | Search for messages | "Search Slack for messages from Faisal about deployments" | Matching messages return | ☐ |
+| S3 | Post a message | "Post 'TCC integration test — please ignore' in #test or #general" | Message appears in Slack channel | ☐ |
+| S4 | Tech idea → Slack | Park a Tech Bug idea in the app | Message auto-posts to correct Slack channel | ☐ |
+
+### Linear Tests
+
+| # | Action | Send to Claude | Expected Result | Pass? |
+|---|--------|---------------|----------------|-------|
+| L1 | Read assigned issues | "Show Tony's assigned Linear issues" | Real Linear issues return | ☐ |
+| L2 | Read overdue issues | "Show overdue issues in the Command team" | Overdue items return | ☐ |
+| L3 | Create test issue | "Create a test issue in Command: 'TCC Integration Test — delete me'" | Issue appears in Linear | ☐ |
+| L4 | Delete test issue | Delete the test issue from L3 | Issue removed | ☐ |
+
+### AgentMail Tests
+
+| # | Action | Expected Result | Pass? |
+|---|--------|----------------|-------|
+| A1 | Send from system inbox | Send email from flipiq@agentmail.to to tony@flipiq.com | Email arrives in Tony's Gmail | ☐ |
+| A2 | Send from Tony's inbox | Send email from tony-diaz@agentmail.to to tony@flipiq.com | Email arrives, shows "Tony Diaz \| FlipIQ" as sender | ☐ |
+| A3 | EOD report sends | Trigger EOD report → emails sent to tony@flipiq.com AND ethan@flipiq.com | Both emails arrive | ☐ |
+
+**All API tests pass? → Move to Phase 3.**
+
+---
+
+# PHASE 3: AUTO-REFRESH — Does the app stay current?
+
+The app must pull fresh data every 15 minutes WITHOUT Tony doing anything.
+
+### Setup
+1. Open the app in a browser. Complete the gates. Get to the Schedule view.
+2. Open a second browser tab with the browser console visible (F12 → Console).
+3. Watch for 15 minutes (or set the interval to 60 seconds temporarily for testing).
+
+### Tests
+
+| # | Test | Steps | Expected | Pass? |
+|---|------|-------|----------|-------|
+| R1 | Timer fires | Watch console for refresh log entry | Log shows "Refreshing data..." every 15 min (or test interval) | ☐ |
+| R2 | Calendar updates | Add a new event to Google Calendar from your phone. Wait for refresh. | New event appears in app schedule without page reload. | ☐ |
+| R3 | Email count updates | Send an important email to Tony from another account. Wait for refresh. | Gmail badge count increases. | ☐ |
+| R4 | Slack notification appears | @mention Tony in Slack. Wait for refresh. | Slack dot appears in header. | ☐ |
+| R5 | Linear notification appears | Assign Tony a new issue in Linear. Wait for refresh. | Linear dot appears in header (or existing data updates). | ☐ |
+| R6 | No view disruption | Be in Sales Mode mid-call-log. Let refresh fire. | Sales Mode stays. Modal stays open. No flicker. No redirect. | ☐ |
+| R7 | Last updated timestamp | Check for "Last updated: [time]" somewhere visible. | Timestamp updates after each refresh cycle. | ☐ |
+| R8 | Manual refresh works | Click a "refresh" button or pull-to-refresh. | Data refreshes immediately, not just on timer. | ☐ |
+| R9 | Set back to 15 minutes | Change interval back from test value to 900000ms (15 min). | Confirm in code: `setInterval(refresh, 900000)` | ☐ |
+
+### Refresh Architecture Questions (Developer must answer YES to all)
+
+| # | Question | Answer Must Be YES |
+|---|----------|--------------------|
+| R10 | Does the refresh read from Supabase daily_briefs table first? | ☐ |
+| R11 | If no brief exists in Supabase, does it fall back to live Claude API call? | ☐ |
+| R12 | Does the refresh update state without full page reload? | ☐ |
+| R13 | Is the refresh interval set to exactly 900000ms (15 min)? | ☐ |
+| R14 | Does the refresh run even if the browser tab is in background? | ☐ |
+| R15 | If the app loses internet, does it retry on next cycle instead of crashing? | ☐ |
+
+**All refresh tests pass? → Move to Phase 4.**
+
+---
+
+# PHASE 4: DATA FLOW — End to End
+
+Each test follows data from Tony's action → through the API → to the external service → back to the app → saved in Supabase.
+
+### Flow 1: Check-in → Google Sheet
+```
+STEPS:
+1. Open app fresh (clear today's state in Supabase)
+2. Fill in check-in: bed 10:30 PM, wake 6 AM, Bible yes, workout yes
+3. Submit
+
+VERIFY:
+☐ Row appears in Supabase checkins table with correct values
+☐ AgentMail sends email to flipiq@agentmail.to with subject "CHECKIN: [date]"
+   OR Supabase row is readable by Cowork
+☐ (After Cowork runs) Google Sheet has today's column with correct values
+```
+
+### Flow 2: Journal → Google Doc
+```
+STEPS:
+1. On journal step, type: "Testing the journal flow. Had a productive morning."
+2. Submit
+
+VERIFY:
+☐ Row in Supabase journals table with raw_text
+☐ Claude formatted version exists in formatted_text column
+   (Mood, Key Events, Reflection, Original Entry)
+☐ AgentMail sends email with subject "JOURNAL: [date]"
+   OR Supabase row readable by Cowork
+☐ (After Cowork runs) Google Doc has new entry at bottom matching format
+```
+
+### Flow 3: Email Suggest Reply → Gmail Draft
+```
+STEPS:
+1. On emails view, click "Suggest Reply" on any real email
+2. Wait for Claude to draft
+3. Approve the draft
+
+VERIFY:
+☐ Draft appears in Tony's Gmail drafts folder
+☐ Draft has correct To: address (original sender)
+☐ Draft has correct Subject: (Re: original subject)
+☐ Draft body is relevant to the original email content
+```
+
+### Flow 4: Thumbs Down → Training Log
+```
+STEPS:
+1. On emails view, click 👎 on an email
+2. Type reason: "This sender is never important — newsletter"
+3. Submit
+
+VERIFY:
+☐ Row in Supabase email_training table
+☐ action = "thumbs_down"
+☐ sender = correct sender
+☐ reason = "This sender is never important — newsletter"
+```
+
+### Flow 5: Call Attempt → Contact Record + Gmail Follow-up
+```
+STEPS:
+1. In Sales Mode, click "📞 Attempt" on a contact
+2. Type: "No answer. Send email: Hey Mike, tried to reach you about FlipIQ."
+3. Click "Log & Follow-up"
+
+VERIFY:
+☐ Row in Supabase call_log with type="attempt", notes match
+☐ Contact's last_contact_date updated in contacts table
+☐ Claude drafted a follow-up email
+☐ Draft appears in Gmail drafts
+☐ Call count in Sales Mode increments
+```
+
+### Flow 6: Connected Call → Contact Record
+```
+STEPS:
+1. In Sales Mode, click "✓ Connected" on a contact
+
+VERIFY:
+☐ Row in Supabase call_log with type="connected"
+☐ Contact's last_contact_date updated
+☐ Call count increments
+```
+
+### Flow 7: Idea (Tech) → Supabase + Slack
+```
+STEPS:
+1. Click 💡 Ideas
+2. Type: "MLS accuracy widget needs a confidence score indicator"
+3. Category: Tech, Urgency: This Week, Type: Feature
+4. Click "Park It"
+
+VERIFY:
+☐ Row in Supabase ideas table with all fields correct
+☐ Message posted to correct Slack channel (e.g., #engineering or #product)
+☐ Ideas counter in header updates
+```
+
+### Flow 8: Idea Override → Email to Ethan
+```
+STEPS:
+1. Park an idea
+2. System says it's priority #7
+3. Tony overrides to make it #1
+4. System warns about going out of sequence
+5. Tony confirms override
+
+VERIFY:
+☐ ideas table row has override=true
+☐ Email sent to ethan@flipiq.com via AgentMail
+☐ Email contains: what Tony moved, from what position, to what position
+```
+
+### Flow 9: EOD Report → Two Emails + Supabase
+```
+STEPS:
+1. Complete several actions during the day (calls, tasks, ideas)
+2. Click 📊 EOD button
+
+VERIFY:
+☐ Tony's report email arrives at tony@flipiq.com
+  Contains: calls made, emails handled, demos, tasks done, ideas parked, check-in stats
+☐ Ethan's report email arrives at ethan@flipiq.com
+  Contains: Tony's activity + overrides + missed items + accountability score
+☐ Both reports saved to Supabase eod_reports table
+☐ EOD button turns green ✓
+```
+
+### Flow 10: Tooltip Edit → Supabase
+```
+STEPS:
+1. Hover over any element (e.g., the Snooze button)
+2. Tooltip appears with description
+3. Click ✏️ Edit
+4. Change the text
+5. Click Save
+
+VERIFY:
+☐ system_instructions table updated for that element
+☐ Reload page → hover over same element → new text appears
+```
+
+### Flow 11: Gear Instructions → Supabase
+```
+STEPS:
+1. Click ⚙️ on any section (e.g., "Email Importance Rules")
+2. Type: "Also flag emails from mom@example.com as important"
+3. Click Apply
+
+VERIFY:
+☐ Claude evaluates and returns "✓ Updated"
+☐ system_instructions table updated
+☐ Future email sorting includes the new rule
+```
+
+### Flow 12: Schedule Meeting via Chat
+```
+STEPS:
+1. Click 💬 Chat
+2. Type: "Schedule a 30-minute meeting with Chris Wesser (chris.wesser@gmail.com)
+   about capital raise docs, find an afternoon slot this week"
+
+VERIFY:
+☐ Claude checks Tony's calendar for availability
+☐ Claude creates event with Chris as attendee
+☐ Event appears in Google Calendar
+☐ Claude confirms: "Meeting created: [day] [time] with Chris Wesser"
+```
+
+**All 12 flows pass? → Move to Phase 5.**
+
+---
+
+# PHASE 5: COWORK CONNECTION
+
+Test that Cowork and the Replit app share data correctly.
+
+### Cowork → App (Cowork writes, app reads)
+
+| # | Test | Steps | Expected | Pass? |
+|---|------|-------|----------|-------|
+| CW1 | Morning brief | Run Cowork's 5 AM task manually. Check Supabase daily_briefs. Open app. | App loads calendar, emails, slack, linear from the brief — not from live API. Fast load. | ☐ |
+| CW2 | Brief has all fields | Check daily_briefs row | calendar_data, emails_important, emails_fyi, slack_items, linear_items all populated as JSONB | ☐ |
+| CW3 | Brief is today's date | Check daily_briefs.date | Matches today's date. Old briefs don't overwrite. | ☐ |
+
+### App → Cowork (App writes, Cowork reads)
+
+| # | Test | Steps | Expected | Pass? |
+|---|------|-------|----------|-------|
+| CW4 | Check-in data available | Submit check-in in app. Check Supabase. | Cowork can read checkins row and write to Google Sheet. | ☐ |
+| CW5 | Journal data available | Submit journal in app. Check Supabase. | Cowork can read journals row and append to Google Doc. | ☐ |
+| CW6 | EOD data available | Complete a day's activities. Check Supabase. | Cowork can read call_log, task_completions, ideas, checkins and compile EOD report. | ☐ |
+
+### AgentMail Bridge
+
+| # | Test | Steps | Expected | Pass? |
+|---|------|-------|----------|-------|
+| CW7 | App → AgentMail → Cowork | App sends CHECKIN email to flipiq@agentmail.to. | Cowork's scheduled task picks it up and writes to Google Sheet. | ☐ |
+| CW8 | Cowork → AgentMail → Tony | Cowork sends morning brief summary. | Tony receives email at tony@flipiq.com. | ☐ |
+
+**All Cowork tests pass? → Move to Phase 6.**
+
+---
+
+# PHASE 6: FULL DAY SIMULATION
+
+Run through Tony's complete day from wake-up to EOD. Every step must work in sequence with REAL data.
+
+| Time | Action | What to Do | Verify | Pass? |
+|------|--------|-----------|--------|-------|
+| 6:30 AM | Open app | Go to production URL | Check-in gate appears. Nothing else. | ☐ |
+| 6:31 AM | Check in | Bed: 10:30 PM, Wake: 6:00 AM, Bible: Y, Workout: Y | Submits. Disappears. Journal appears. | ☐ |
+| 6:33 AM | Journal | Type a real entry or skip | Moves to full-screen emails. | ☐ |
+| 6:34 AM | Review emails | Read 5 important + 3 FYI. Snooze 1. Suggest reply 1. 👎 1. | Actions work. Badge updates. Click "Done." | ☐ |
+| 6:36 AM | See schedule | FULL SCREEN with ALL calendar items | All items visible. Real meeting highlighted. | ☐ |
+| 6:37 AM | Enter Sales Mode | Click button | Calendar collapses to sidebar. Contacts load. | ☐ |
+| 6:40 AM | Make 3 calls | Attempt 2, Connect 1. Give follow-up instructions on 1 attempt. | Call log shows 3. Follow-up email drafted. Contacts update. | ☐ |
+| 6:50 AM | Park an idea | Click 💡. Type idea. Category: Tech. | Idea saved. Posts to Slack. Counter shows. | ☐ |
+| 6:52 AM | Check Slack | Slack dot visible? Click it. | Shows real Slack items. Can dismiss. | ☐ |
+| 6:53 AM | Switch to Tasks | Click button | Task Mode loads. Calendar sidebar stays. | ☐ |
+| 6:55 AM | Complete a task | Check off "Reply Ethan re: equity" | Task goes green. Saves to Supabase. | ☐ |
+| 7:00 AM | Schedule a meeting | Click 💬 Chat. "Schedule meeting with Ethan tomorrow at 2pm" | Claude creates event. Confirms. | ☐ |
+| 7:02 AM | Back to Schedule | Click title or back button | Full schedule shows. New meeting visible? | ☐ |
+| 7:05 AM | Close browser | Close tab completely | — | ☐ |
+| 7:30 AM | Reopen | Open URL again | App remembers state. Skips gates. Shows schedule or last view. | ☐ |
+| ---- | Wait 15 min | Let auto-refresh fire | Data updates. No disruption. | ☐ |
+| 5:00 PM | EOD Report | Click 📊 | Reports sent to Tony + Ethan. Button goes ✓. | ☐ |
+
+**Full simulation passes? → Move to Phase 7.**
+
+---
+
+# PHASE 7: PERFORMANCE & EDGE CASES
+
+| # | Test | Expected | Pass? |
+|---|------|----------|-------|
+| P1 | App loads in under 3 seconds | From URL to check-in gate: < 3 seconds | ☐ |
+| P2 | Schedule loads in under 2 seconds (from Supabase brief) | After gates, schedule appears in < 2 seconds | ☐ |
+| P3 | Claude API responds in under 10 seconds | Any Claude call (suggest reply, draft email, schedule meeting) | ☐ |
+| P4 | No console errors in normal use | Complete full flow with console open: zero errors | ☐ |
+| P5 | Works on mobile (phone browser) | Open URL on iPhone/Android. Full flow works. Touch targets large enough. | ☐ |
+| P6 | Works on tablet | iPad/tablet. Layout adjusts. | ☐ |
+| P7 | No internet → graceful error | Turn off wifi. Try to use app. | Shows "Connection lost" — doesn't crash | ☐ |
+| P8 | API rate limit → queues request | Fire 10 Claude calls rapidly. | Handles gracefully. No crashes. Queues or throttles. | ☐ |
+| P9 | 4,363 contacts load without lag | Sales Mode with full contact list. | List renders smoothly. Scroll is fast. Pagination if needed. | ☐ |
+| P10 | Two devices same account | Open on laptop AND phone. | State syncs via Supabase. Both show consistent data. | ☐ |
+
+---
+
+# PHASE 8: GO-LIVE CHECKLIST
+
+Before telling Tony "it's ready":
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | All Phase 1-7 tests pass | ☐ |
+| 2 | Production URL is stable (no crashes in 24 hours) | ☐ |
+| 3 | Auto-refresh running at 15-minute intervals | ☐ |
+| 4 | Cowork morning brief task scheduled for 5:00 AM PT | ☐ |
+| 5 | Cowork email sorting task running every 30 minutes | ☐ |
+| 6 | Cowork EOD tasks scheduled for 5:00 PM and 5:15 PM PT | ☐ |
+| 7 | All 4,363+ contacts imported to Supabase | ☐ |
+| 8 | System Brain MD embedded in Claude system prompt | ☐ |
+| 9 | Tooltip content loaded in system_instructions table | ☐ |
+| 10 | Test events/issues/drafts cleaned up (remove all TCC Test items) | ☐ |
+| 11 | .env.local uses PRODUCTION keys (not test/dev) | ☐ |
+| 12 | Supabase RLS configured (or service key secured) | ☐ |
+| 13 | Send Tony the URL + brief "how to use" message | ☐ |
+
+---
+
+# WHAT TO SEND TONY WHEN IT'S READY
+
+```
+Tony —
+
+Your Command Center is live: [URL]
+
+Open it tomorrow morning. The first thing you'll see is the check-in.
+Fill it in, do your journal, review emails, see your day, and enter Sales Mode.
+
+Everything auto-refreshes every 15 minutes.
+Calendar, emails, Slack, Linear — all live.
+
+Hover over anything for a tooltip explaining what it does.
+Click ⚙️ on anything to give custom instructions.
+Click 📊 at end of day to send your report and Ethan's.
+
+Your contacts are loaded. Your schedule is loaded.
+Go make calls.
+
+— The System
+```
+
+---
+
+# IF SOMETHING BREAKS AFTER GO-LIVE
+
+| Problem | First Check | Fix |
+|---------|------------|-----|
+| App won't load | Replit deployment status | Redeploy |
+| "API error" on any action | Anthropic API key valid? Rate limited? | Check dashboard.anthropic.com |
+| Gmail/Calendar not returning data | MCP connection active? Tony's account connected? | Re-authenticate MCP in Claude.ai settings |
+| Slack/Linear not working | Same as above | Re-authenticate in Claude.ai |
+| Supabase errors | Supabase dashboard → check status | Check connection string, RLS policies |
+| Auto-refresh stopped | Check browser console for timer errors | Clear cache, reload |
+| Cowork tasks not running | Cowork app → check scheduled tasks | Re-enable tasks, check schedule |
+| Data not syncing between app and Cowork | Check Supabase → both reading same DB? | Verify both use same SUPABASE_URL |
+
+---
+
+**Total verification steps in this document: 98**
+**Combined with QA Checklist: 175 + 98 = 273 total checkpoints**
+**Every one must pass before Tony uses this in production.**

@@ -1,4 +1,5 @@
 import { pgTable, text, boolean, numeric, integer, jsonb, date, timestamp, uuid, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -48,7 +49,7 @@ export const contactsTable = pgTable("contacts", {
   company: text("company"),
   status: text("status").default("New"),
   phone: text("phone"),
-  phoneNormalized: text("phone_normalized"),
+  phoneNormalized: text("phone_normalized").generatedAlwaysAs(sql`regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g')`),
   email: text("email"),
   type: text("type"),
   title: text("title"),

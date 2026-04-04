@@ -4,6 +4,7 @@ import { ClaudePromptBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, meetingHistoryTable } from "@workspace/db";
 import { createLinearIssue } from "../../lib/linear";
+import { sendAutoEod } from "./eod";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendViaAgentMail } from "../../lib/agentmail";
 import { listRecentEmails, draftReply } from "../../lib/gmail";
@@ -176,6 +177,15 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
         context: { type: "string", description: "Optional: who was on the call, what the call was about" },
       },
       required: ["transcript"],
+    },
+  },
+  {
+    name: "send_eod_report",
+    description: "Generate and send today's End of Day (EOD) report. Sends Tony's performance summary to tony@flipiq.com and Ethan's accountability brief to ethan@flipiq.com. Will not double-send if already sent today.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
     },
   },
 ];
@@ -380,6 +390,13 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
         .map(b => b.text)
         .join("");
       return `📋 TRANSCRIPT ANALYSIS\n\n${analysisText}`;
+    }
+
+    case "send_eod_report": {
+      const result = await sendAutoEod();
+      if (result.alreadySent) return `✓ EOD report already sent today — no duplicate sent.`;
+      if (!result.ok) return `✗ EOD report failed to generate.`;
+      return `✓ EOD report sent!\n- Calls: ${result.callsMade ?? 0}\n- Demos: ${result.demosBooked ?? 0}\n- Tasks completed: ${result.tasksCompleted ?? 0}\n\nTony's summary → tony@flipiq.com\nEthan's accountability brief → ethan@flipiq.com`;
     }
 
     default:

@@ -84,7 +84,7 @@ export default function App() {
   // UI state
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
-  const [meetingWarning, setMeetingWarning] = useState<{ title: string; time: string; location?: string } | null>(null);
+  const [meetingWarning, setMeetingWarning] = useState<{ title: string; time: string; location?: string; attendeeBrief?: string } | null>(null);
   const [scopeWarn, setScopeWarn] = useState<{
     message: string;
     type: "morning" | "scope";
@@ -197,11 +197,18 @@ export default function App() {
       if (!start) continue;
       const msUntilWarning = start.getTime() - now.getTime() - 5 * 60 * 1000;
       if (msUntilWarning > 0 && msUntilWarning < 8 * 60 * 60 * 1000) {
-        timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc }), msUntilWarning));
+        timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc, attendeeBrief: item.note || undefined }), msUntilWarning));
       }
     }
     return () => timers.forEach(clearTimeout);
   }, [brief?.calendarData]);
+
+  // Auto-dismiss meeting warning after 15 seconds
+  useEffect(() => {
+    if (!meetingWarning) return;
+    const t = setTimeout(() => setMeetingWarning(null), 15_000);
+    return () => clearTimeout(t);
+  }, [meetingWarning]);
 
   // Load all state from DB on mount
   useEffect(() => {

@@ -15,7 +15,7 @@ interface Props {
   refreshing?: boolean;
   slackItems?: SlackItem[];
   linearItems?: LinearItem[];
-  meetingWarning?: { title: string; time: string; location?: string } | null;
+  meetingWarning?: { title: string; time: string; location?: string; attendeeBrief?: string } | null;
   onSetView: (v: string) => void;
   onToggleCal: () => void;
   onShowIdea: () => void;
@@ -305,9 +305,6 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips, las
           </div>
 
           <button onClick={onToggleCal} style={{ ...btn2, padding: "5px 10px", fontSize: 11, background: calSide ? C.bluBg : C.card, color: calSide ? C.blu : C.tx }}>📅</button>
-          <SmartTip tipKey="eod" tip={tip("eod")} onSaved={onTipSaved}>
-            <button onClick={onEod} style={{ ...btn2, padding: "5px 10px", fontSize: 11, background: eod ? C.grnBg : C.card }}>{eod ? "✓" : "📊"}</button>
-          </SmartTip>
           <SmartTip tipKey="chat" tip={tip("chat")} onSaved={onTipSaved}>
             <button onClick={onShowChat} style={{ ...btn2, padding: "5px 10px", fontSize: 11, background: C.tx, color: "#fff", border: "none" }}>💬 AI</button>
           </SmartTip>
@@ -328,6 +325,7 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips, las
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>⏰ Meeting in 5 min: {meetingWarning.title} at {meetingWarning.time}</div>
             {meetingWarning.location && <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>📍 {meetingWarning.location}</div>}
+            {meetingWarning.attendeeBrief && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 3, fontStyle: "italic" }}>{meetingWarning.attendeeBrief}</div>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {meetingWarning.location?.startsWith("http") && (

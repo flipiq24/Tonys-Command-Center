@@ -521,7 +521,7 @@ export default function App() {
   if (view === "sales") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
+      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
       <SalesView
@@ -544,7 +544,7 @@ export default function App() {
   if (view === "tasks") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
+      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
       {printMode && (
         <PrintView
@@ -573,7 +573,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
+      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
       <ScheduleView
         items={brief?.calendarData || []}

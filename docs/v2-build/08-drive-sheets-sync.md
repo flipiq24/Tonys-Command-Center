@@ -10,8 +10,9 @@ Tony's Command Center needs to organize files in Google Drive, sync key database
 - `GOOGLE_REFRESH_TOKEN` env var has scopes: `drive.file`, `spreadsheets`, `documents`
 - Supabase tables exist: `contacts`, `task_completions`, `communication_log`, `contact_intelligence`, `business_context`, `checkins`, `journal_entries`
 - Hardcoded Google Sheet/Doc IDs (with env var override):
-  - Check-in Sheet: `1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI`
-  - Journal Doc: `1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4`
+  - Check-in Sheet (Tony ONLY): `1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw`
+  - Business Master Sheet (Tony + Ethan): `1WGuJwCoWbwyFamXXP79yxnPmYhdFPgOGhOR8_V-EQyw`
+  - Journal Doc (Tony ONLY): `1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE`
   - 90-Day Plan: `1b1Ejf6Tim1gevq0BoMeV7XZ2KuXrgP2E`
 
 ## WHAT TO BUILD
@@ -551,7 +552,7 @@ After saving the check-in to Supabase, also append to the check-in Google Sheet.
 ```typescript
 import { appendRow } from "../../lib/google-sheets";
 
-const CHECKIN_SHEET_ID = process.env.CHECKIN_SHEET_ID || "1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI";
+const CHECKIN_SHEET_ID = process.env.CHECKIN_SHEET_ID || "1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw";
 ```
 
 After the `db.insert(checkinsTable)...` call in the POST handler, add:
@@ -580,7 +581,7 @@ After saving the journal entry to Supabase, also append to the journal Google Do
 ```typescript
 import { appendToDoc } from "../../lib/google-docs";
 
-const JOURNAL_DOC_ID = process.env.JOURNAL_DOC_ID || "1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4";
+const JOURNAL_DOC_ID = process.env.JOURNAL_DOC_ID || "1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE";
 ```
 
 After the `db.insert(journalEntriesTable)...` call in the POST handler, add:
@@ -807,10 +808,10 @@ MASTER_TASK_SHEET_ID=
 COMM_LOG_SHEET_ID=
 
 # Check-in Sheet (hardcoded default, env var override)
-CHECKIN_SHEET_ID=1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI
+CHECKIN_SHEET_ID=1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw
 
 # Journal Google Doc (hardcoded default, env var override)
-JOURNAL_DOC_ID=1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4
+JOURNAL_DOC_ID=1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE
 
 # Business Context Docs (hardcoded default for 90-day plan)
 NINETY_DAY_PLAN_DOC_ID=1b1Ejf6Tim1gevq0BoMeV7XZ2KuXrgP2E
@@ -824,8 +825,8 @@ BUSINESS_PLAN_DOC_ID=
 3. Create Google Sheets for contacts, tasks, and communication log. Copy their IDs into env vars.
 4. Start the server — console shows `[sheets-sync] Sync loop started (every 5 minutes)` and `[business-context] Ingestion loop started (daily at 4 AM Pacific)`.
 5. After ~30 seconds, console shows sync completing. Check the Contacts sheet — it should have all contacts with headers.
-6. **Check-in -> Sheet:** Complete a check-in in the app. Verify data appears in the check-in sheet (`1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI`).
-7. **Journal -> Doc:** Submit a journal entry. Verify the entry is appended to the journal doc (`1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4`) with date header.
+6. **Check-in -> Sheet:** Complete a check-in in the app. Verify data appears in the check-in sheet (`1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw`).
+7. **Journal -> Doc:** Submit a journal entry. Verify the entry is appended to the journal doc (`1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE`) with date header.
 8. **Business context ingestion:** Call `POST /api/business-context/ingest`. Verify the `business_context` table has rows for `90_day_plan` (and `business_plan` if configured) with content from the Google Docs.
 9. **Communication log sync:** Verify the comm log sheet shows the last 30 days of communication data.
 10. **One-way flow confirmed:** Edit a cell in the Google Sheet. Wait for sync. The edit is NOT reflected in Supabase (one-way only).

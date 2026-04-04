@@ -11,9 +11,11 @@ Tony's Command Center v1 uses Replit Connectors for Google auth (fragile, dual p
 
 **Database:** Supabase (PostgreSQL). If not already configured, set up a Supabase project and add the connection string as `DATABASE_URL`. All tables are created via Drizzle ORM + `drizzle-kit push`.
 
-**Google Sheet / Doc IDs:** Hardcoded as defaults with env var override:
-- Checkin sheet: `1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI`
-- Journal doc: `1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4`
+**Google Sheet / Doc IDs (LOCKED):**
+- Personal Check-in Sheet (Tony ONLY): `1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw`
+- Business Master Sheet (Tony + Ethan): `1WGuJwCoWbwyFamXXP79yxnPmYhdFPgOGhOR8_V-EQyw`
+- Daily Journal Doc (Tony ONLY): `1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE`
+- **DO NOT write to old IDs** `1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI` or `1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4` — those are archived.
 
 ## PREREQUISITES
 
@@ -34,9 +36,10 @@ GOOGLE_CLIENT_ID=<your-client-id>
 GOOGLE_CLIENT_SECRET=<your-client-secret>
 GOOGLE_REFRESH_TOKEN=<your-refresh-token>
 
-# Google Sheet / Doc IDs — hardcoded defaults, override if needed
-CHECKIN_SHEET_ID=1DVys4rDcntlb3NmuKk4O2TRLV1YgkbtXLvuz4Xx2QBI
-JOURNAL_DOC_ID=1Rm2FGbA5m02QuSxhsZUE0TyOuHSVa7AFW02zp4Wj2Y4
+# Google Sheet / Doc IDs — CORRECT URLs locked in
+CHECKIN_SHEET_ID=1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw
+BUSINESS_MASTER_SHEET_ID=1WGuJwCoWbwyFamXXP79yxnPmYhdFPgOGhOR8_V-EQyw
+JOURNAL_DOC_ID=1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE
 ```
 
 ### Step 2: Create the shared Google OAuth helper

@@ -4,6 +4,7 @@ import { getGmail } from "../../lib/google-auth";
 import { db } from "@workspace/db";
 import { communicationLogTable, contactsTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
+import { updateContactComms } from "../../lib/contact-comms";
 
 const router: IRouter = Router();
 
@@ -73,6 +74,10 @@ router.post("/email/send", async (req, res): Promise<void> => {
       gmailMessageId: result.data.id || undefined,
       gmailThreadId: result.data.threadId || undefined,
     });
+
+    if (contactId) {
+      updateContactComms(contactId, "email_sent", subject).catch(() => {});
+    }
 
     res.json({
       ok: true,

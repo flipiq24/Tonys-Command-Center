@@ -67,7 +67,7 @@ export function DeepLink(props: Props) {
         flexShrink: 0,
         transition: "color 0.15s",
       }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = C.acc; }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = C.blu; }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = C.mut; }}
     >
       <span>{icons[props.type]}</span>

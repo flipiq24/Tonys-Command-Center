@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
+import { communicationLogTable } from "../../lib/schema-v2";
+import { updateContactComms } from "../../lib/contact-comms";
 
 const router: IRouter = Router();
 
@@ -66,6 +68,18 @@ router.post("/send-sms", async (req, res): Promise<void> => {
       loggedAt: new Date(),
     })
     .returning();
+
+  await db.insert(communicationLogTable).values({
+    contactId: contact_id ?? undefined,
+    contactName: contactName ?? phone_number,
+    channel: "text_sent",
+    direction: "outbound",
+    summary: message.substring(0, 300),
+  }).catch(err => console.warn("[send-sms] comm_log insert failed:", err));
+
+  if (contact_id) {
+    updateContactComms(contact_id, "text_sent", message).catch(() => {});
+  }
 
   res.status(201).json({
     sent: true,

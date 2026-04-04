@@ -1,13 +1,20 @@
 import { Router, type IRouter } from "express";
 import { db, ideasTable } from "@workspace/db";
 import { ParkIdeaBody } from "@workspace/api-zod";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { createLinearIssue } from "../../lib/linear";
 import { postTechIdeaToSlack } from "../../lib/slack";
 import { z } from "zod/v4";
+import { businessContextTable } from "../../lib/schema-v2";
 
 const router: IRouter = Router();
+
+async function getBusinessContext(): Promise<string> {
+  const rows = await db.select().from(businessContextTable).limit(5);
+  if (!rows.length) return "";
+  return rows.map(r => `[${r.documentType}] ${r.summary || r.content?.substring(0, 300) || ""}`.trim()).join("\n");
+}
 
 const BUSINESS_PLAN = `FlipIQ is a real estate wholesale platform.
 - NORTH STAR: Every Acquisition Associate closes 2 deals/month
@@ -30,6 +37,8 @@ async function classifyIdea(text: string, recentIdeas: typeof ideasTable.$inferS
     `#${idx + 1}: [${i.category}] ${i.text}`
   ).join("\n") || "None yet.";
 
+  const liveContext = await getBusinessContext().catch(() => "");
+
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 512,
@@ -38,7 +47,7 @@ async function classifyIdea(text: string, recentIdeas: typeof ideasTable.$inferS
       content: `You are Tony Diaz's AI classifier for FlipIQ ideas. Analyze this idea and return ONLY valid JSON.
 
 BUSINESS CONTEXT:
-${BUSINESS_PLAN}
+${BUSINESS_PLAN}${liveContext ? `\n\nLIVE BUSINESS DOCUMENTS:\n${liveContext}` : ""}
 
 RECENT IDEAS (for context):
 ${recentList}

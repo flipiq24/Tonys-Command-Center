@@ -13,11 +13,13 @@ import { ConnectedCallModal } from "@/components/tcc/ConnectedCallModal";
 import { EmailsView } from "@/components/tcc/EmailsView";
 import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
+import { SalesMorning } from "@/components/tcc/SalesMorning";
 import { TasksView } from "@/components/tcc/TasksView";
+import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks";
+type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks" | "chat";
 
 const DEFAULT_CONTACTS: Contact[] = [
   { id: "1", name: "Mike Oyoque", company: "MR EXCELLENCE", status: "Warm", phone: "(555) 123-4567", nextStep: "Follow up demo", lastContactDate: "Mar 25" },
@@ -30,6 +32,7 @@ const DEFAULT_CONTACTS: Contact[] = [
 
 export default function App() {
   const [view, setView] = useState<View>("checkin");
+  const [prevView, setPrevView] = useState<View>("emails");
   const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
   const [loading, setLoading] = useState(true);
 
@@ -69,6 +72,11 @@ export default function App() {
     contactId: string; contactName: string; contactEmail?: string;
   } | null>(null);
 
+  // Chat context state (Prompt 03)
+  const [chatContext, setChatContext] = useState<{
+    contextType: string; contextId: string; contextLabel: string;
+  } | null>(null);
+
   // UI state
   const [showChat, setShowChat] = useState(false);
   const [eod, setEod] = useState(false);
@@ -92,51 +100,73 @@ export default function App() {
       const qs = sources?.length ? `?refresh=${sources.join(",")}` : "";
       const data = await get<DailyBrief>(`/brief/today${qs}`);
       if (!data || (data as { error?: string }).error) return;
-      // ONLY update data arrays — NEVER reset view/gates/modals
       setBrief(data);
       setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
       console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString(), "sources:", sources ?? "all");
     } catch (err) {
       console.warn("[TCC] Auto-refresh failed (skipping):", err);
-      // Silent fail — do NOT show error, do NOT crash
     } finally {
       setRefreshing(false);
     }
   }, [refreshing]);
 
   useEffect(() => {
-    const interval = setInterval(refreshBrief, 15 * 60 * 1000); // every 15 min
+    const interval = setInterval(refreshBrief, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, [refreshBrief]);
 
   // Email polling — check for new received emails every 5 minutes
   useEffect(() => {
     const pollEmails = async () => {
-      try {
-        await get("/emails/poll");
-      } catch {
-        // silent fail — non-critical background task
-      }
+      try { await get("/emails/poll"); } catch { /* silent fail */ }
     };
     pollEmails();
     const interval = setInterval(pollEmails, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-EOD at 4:30 PM Pacific (Prompt 09)
+  useEffect(() => {
+    const scheduleAutoEod = () => {
+      const now = new Date();
+      const pacificNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      const target = new Date(pacificNow);
+      target.setHours(16, 30, 0, 0);
+
+      if (pacificNow >= target) {
+        target.setDate(target.getDate() + 1);
+      }
+
+      const msUntil = target.getTime() - pacificNow.getTime();
+      if (msUntil > 0 && msUntil < 24 * 60 * 60 * 1000) {
+        return setTimeout(() => {
+          post("/eod-report/auto", {}).then((r: any) => {
+            if (!r?.alreadySent) setEod(true);
+          }).catch(() => {});
+        }, msUntil);
+      }
+      return null;
+    };
+
+    const timer = scheduleAutoEod();
+    return () => { if (timer) clearTimeout(timer); };
+  }, []);
+
   // Persist active view so Tony resumes exactly where he left off on reload
   const persistView = useCallback((v: View) => {
+    if (view !== "chat") setPrevView(view);
     setView(v);
-    if (v !== "checkin" && v !== "journal") {
+    if (v !== "checkin" && v !== "journal" && v !== "chat") {
       post("/system-instructions", { key: "active_view", text: v }).catch(() => {});
     }
-  }, []);
+  }, [view]);
 
   useEffect(() => {
     const i = setInterval(() => setClock(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })), 30000);
     return () => clearInterval(i);
   }, []);
 
-  // 5-min meeting warnings: fire a setTimeout for each upcoming real meeting
+  // 5-min meeting warnings
   useEffect(() => {
     if (!brief?.calendarData) return;
     const now = new Date();
@@ -194,7 +224,6 @@ export default function App() {
           setCk(loaded);
 
           if (journal?.formattedText || journal?.rawText) {
-            // Restore the exact view Tony was on before refreshing
             const VALID_VIEWS: View[] = ["emails", "schedule", "sales", "tasks"];
             const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
             const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "emails";
@@ -215,12 +244,12 @@ export default function App() {
           setTDone(done);
         }
         if (instructionsData && Object.keys(instructionsData).length > 0) {
-          // Filter out non-tip keys before setting as custom tips
           const tipKeys = Object.fromEntries(
             Object.entries(instructionsData).filter(([k]) => k !== "active_view" && k !== "email_brain")
           );
           setCustomTips(tipKeys);
         }
+        setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
       } catch {
         /* start fresh */
       }
@@ -228,7 +257,7 @@ export default function App() {
     })();
   }, []);
 
-  // Load contacts lazily when entering sales (first 50, Hot→Warm→New order)
+  // Load contacts lazily when entering sales
   useEffect(() => {
     if (view === "sales" && !contactsLoaded) {
       get<{ contacts: Contact[]; total: number } | Contact[]>("/contacts?limit=50").then(r => {
@@ -285,6 +314,12 @@ export default function App() {
     post("/eod-report", {}).catch(() => {});
   }, []);
 
+  // Prompt 03: open chat with context from another view
+  const openChatWithContext = useCallback((contextType: string, contextId: string, contextLabel: string) => {
+    setChatContext({ contextType, contextId, contextLabel });
+    persistView("chat");
+  }, [persistView]);
+
   const unresolved = (brief?.emailsImportant || []).filter(e => !snoozed[e.id]).length;
 
   if (loading) {
@@ -309,8 +344,22 @@ export default function App() {
     return <JournalGate onComplete={() => setView("emails")} />;
   }
 
+  // ═══ CHAT VIEW (full screen) ═══
+  if (view === "chat") {
+    return (
+      <>
+        <FontLink />
+        <ClaudeChatView
+          onBack={() => { setChatContext(null); setView(prevView || "emails"); }}
+          initialContextType={chatContext?.contextType}
+          initialContextId={chatContext?.contextId}
+          initialContextLabel={chatContext?.contextLabel}
+        />
+      </>
+    );
+  }
+
   // ═══ SHARED UI ELEMENTS ═══
-  // Note: these are JSX elements, NOT inner components — avoids unmount/remount on every render
   const sharedHeader = (
     <Header
       clock={clock}
@@ -327,7 +376,7 @@ export default function App() {
       onSetView={v => persistView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
-      onShowChat={() => setShowChat(true)}
+      onShowChat={() => { setChatContext(null); persistView("chat"); }}
       onEod={handleEod}
       onTipSaved={handleTipSaved}
       onRefresh={refreshBrief}
@@ -378,34 +427,22 @@ export default function App() {
     </div>
   );
 
-  // ═══ SALES VIEW ═══
+  // ═══ SALES VIEW (SalesMorning replaces SalesView as the main morning view) ═══
   if (view === "sales") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
       {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} />}
       {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
-      <SalesView
-        contacts={contacts}
+      <SalesMorning
         calls={calls}
         demos={demos}
-        calSide={calSide}
-        apiBase={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`}
         onAttempt={c => setAttempt(c)}
-        onConnected={name => handleLogCall(name, "connected")}
-        onDemoChange={handleDemoChange}
+        onConnectedCall={c => setConnectedCall(c)}
+        onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
+        onOpenChat={openChatWithContext}
         onSwitchToTasks={() => persistView("tasks")}
         onBackToSchedule={() => persistView("schedule")}
-        onCompose={c => setEmailCompose({
-          to: c.email || "",
-          contactId: String(c.id),
-          contactName: c.name,
-        })}
-        onConnectedCall={c => setConnectedCall({
-          contactId: String(c.id),
-          contactName: c.name,
-          contactEmail: c.email || undefined,
-        })}
       />
     </div>
   );

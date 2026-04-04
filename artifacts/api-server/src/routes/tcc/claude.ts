@@ -238,6 +238,33 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
       required: ["query"],
     },
   },
+  {
+    name: "schedule_meeting",
+    description: "Schedule a sales meeting or call on Tony's Google Calendar. SCOPE GATEKEEPER: Only for sales calls, prospect meetings, or Ramy support. Morning Protection: no external meetings before noon PT.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        contactName: { type: "string", description: "Name of the contact to meet with" },
+        contactEmail: { type: "string", description: "Email address of the contact (for calendar invite)" },
+        purpose: { type: "string", description: "Purpose: 'sales', 'ramy_support', or 'other'" },
+        duration: { type: "number", description: "Duration in minutes (default 30)" },
+        preferredDate: { type: "string", description: "ISO 8601 datetime string, e.g. 2026-04-04T14:00:00-07:00" },
+      },
+      required: ["contactName", "preferredDate"],
+    },
+  },
+  {
+    name: "research_contact",
+    description: "Deep-research a contact: AI score, stage, personality notes, last 5 interactions from communication log. Use before a sales call to prepare.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        contactName: { type: "string", description: "Name of the contact to research" },
+        contactId: { type: "string", description: "UUID of the contact (optional, more precise)" },
+      },
+      required: [],
+    },
+  },
 ];
 
 // ─── Tool executor ────────────────────────────────────────────────────────────
@@ -540,6 +567,94 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
         ).join("\n\n");
       } catch (err) {
         return `Contact search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "schedule_meeting": {
+      const contactName = String(input.contactName || "");
+      const purpose = String(input.purpose || "sales").toLowerCase();
+      const preferredDate = String(input.preferredDate);
+      const duration = typeof input.duration === "number" ? input.duration : 30;
+      const contactEmail = input.contactEmail ? String(input.contactEmail) : undefined;
+
+      // Scope gatekeeper
+      const isSalesRelated = purpose === "sales" || purpose === "ramy_support"
+        || contactName.toLowerCase().includes("ramy");
+      if (!isSalesRelated) {
+        return `⚠️ SCOPE GATEKEEPER: This meeting doesn't appear to be sales-related or Ramy support. Tony's priority: (1) Sales calls, (2) Ramy support, (3) everything else pushed to off-hours. Confirm this is a sales conversation or Ramy coordination.`;
+      }
+
+      // Morning protection
+      const startDate = new Date(preferredDate);
+      const pacificStart = new Date(startDate.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+      const startHour = pacificStart.getHours();
+      if (startHour < 12 && contactEmail) {
+        return `⛔ Morning Protection: Tony's morning (before noon PT) is reserved for outbound calls only. No external meetings before noon. Please schedule this for 12 PM or later.`;
+      }
+
+      // Calculate end time
+      const endDate = new Date(startDate.getTime() + duration * 60 * 1000);
+      const result = await createEvent({
+        summary: `Sales Call — ${contactName}`,
+        description: `Purpose: ${purpose}. Scheduled via TCC AI.`,
+        start: preferredDate,
+        end: endDate.toISOString(),
+        attendees: contactEmail ? [contactEmail] : undefined,
+      });
+      if (result.ok) return `✓ Meeting scheduled with ${contactName} for ${new Date(preferredDate).toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit", weekday: "short", month: "short", day: "numeric" })} (${duration} min). Event ID: ${result.eventId}`;
+      if (result.error?.includes("not connected")) return `⚠️ Google Calendar not yet authorized`;
+      return `✗ Failed to schedule meeting: ${result.error}`;
+    }
+
+    case "research_contact": {
+      try {
+        const { communicationLogTable: commLog } = await import("../../lib/schema-v2.js");
+        let contact;
+        if (input.contactId) {
+          [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, String(input.contactId))).limit(1);
+        } else if (input.contactName) {
+          [contact] = await db.select().from(contactsTable)
+            .where(ilike(contactsTable.name, `%${String(input.contactName)}%`)).limit(1);
+        }
+        if (!contact) return `No contact found for "${input.contactName || input.contactId}".`;
+
+        const [intel] = await db.select().from(contactIntelligenceTable)
+          .where(eq(contactIntelligenceTable.contactId, contact.id)).limit(1);
+
+        // Last 5 interactions from communication_log
+        const recentComms = await db.select().from(commLog)
+          .where(eq(commLog.contactId, contact.id))
+          .orderBy(desc(commLog.loggedAt))
+          .limit(5);
+
+        const totalComms = await db.select({ count: sql<number>`count(*)` }).from(commLog)
+          .where(eq(commLog.contactId, contact.id));
+        const total = Number(totalComms[0]?.count ?? 0);
+
+        let result = `🔍 CONTACT RESEARCH: ${contact.name}\n`;
+        result += `Company: ${contact.company || "N/A"} | Type: ${contact.type || "N/A"}\n`;
+        result += `Status: ${contact.status} | Phone: ${contact.phone || "N/A"} | Email: ${contact.email || "N/A"}\n`;
+        result += `Next Step: ${contact.nextStep || "None"}\n`;
+
+        if (intel) {
+          result += `\n📊 INTELLIGENCE\n`;
+          result += `AI Score: ${intel.aiScore || "Not scored"} | Stage: ${intel.stage}\n`;
+          result += `Total Interactions: ${total} | Last Comm: ${intel.lastCommunicationDate || "Never"} via ${intel.lastCommunicationType || "N/A"}\n`;
+          if (intel.personalityNotes) result += `Personality: ${intel.personalityNotes}\n`;
+          if (intel.nextAction) result += `Next Action: ${intel.nextAction}${intel.nextActionDate ? ` by ${intel.nextActionDate}` : ""}\n`;
+        }
+
+        if (recentComms.length > 0) {
+          result += `\n📝 LAST ${recentComms.length} INTERACTIONS\n`;
+          recentComms.forEach((c, i) => {
+            const date = c.loggedAt ? new Date(c.loggedAt).toLocaleDateString("en-US") : "unknown date";
+            result += `${i + 1}. [${date}] ${c.channel}: ${c.summary || c.subject || "(no summary)"}\n`;
+          });
+        }
+
+        return result;
+      } catch (err) {
+        return `Research failed: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
 

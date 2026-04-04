@@ -46,7 +46,7 @@ export async function syncTasksTab(): Promise<void> {
       t.taskText,
       t.completedAt ? new Date(t.completedAt).toISOString() : null,
     ]);
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Tasks", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
     console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows`);
   } catch (err) {
     console.warn("[sheets-sync] syncTasksTab failed:", (err as Error).message);
@@ -71,7 +71,7 @@ export async function syncContactsTab(): Promise<void> {
       c.lastContactDate || null,
       c.createdAt ? new Date(c.createdAt).toISOString() : null,
     ]);
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contacts", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contact Master", [header, ...rows]);
     console.log(`[sheets-sync] Contacts tab synced: ${rows.length} rows`);
   } catch (err) {
     console.warn("[sheets-sync] syncContactsTab failed:", (err as Error).message);
@@ -92,7 +92,7 @@ export async function syncCommsTab(): Promise<void> {
       c.summary || null,
       c.loggedAt ? new Date(c.loggedAt).toISOString() : null,
     ]);
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Comms", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Communication Log", [header, ...rows]);
     console.log(`[sheets-sync] Comms tab synced: ${rows.length} rows`);
   } catch (err) {
     console.warn("[sheets-sync] syncCommsTab failed:", (err as Error).message);

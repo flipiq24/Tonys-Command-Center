@@ -4,6 +4,7 @@ import { ParkIdeaBody } from "@workspace/api-zod";
 import { desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { createLinearIssue } from "../../lib/linear";
+import { postTechIdeaToSlack } from "../../lib/slack";
 
 const router: IRouter = Router();
 
@@ -64,6 +65,27 @@ Return ONLY the JSON object, no markdown, no explanation.`
   return JSON.parse(json);
 }
 
+// ─── Claude-powered Slack notification for Tech ideas ─────────────────────────
+async function notifyTechIdeaViaClaude(idea: {
+  text: string;
+  urgency: string;
+  techType: string | null;
+  linearIdentifier?: string;
+}): Promise<void> {
+  // Use the Slack lib directly (which uses the Replit connector)
+  // Claude's full tool-use loop is available via /api/claude for interactive sessions;
+  // for server-side fire-and-forget, we call the Slack lib directly with the same
+  // connector infrastructure that Claude's tools use.
+  const result = await postTechIdeaToSlack(idea);
+
+  if (!result.ok) {
+    // Slack not connected yet — that's okay, just log
+    console.info("[Ideas] Slack notification skipped (not connected):", idea.text.slice(0, 60));
+  } else {
+    console.info("[Ideas] Posted tech idea to #tech-ideas Slack channel");
+  }
+}
+
 router.get("/ideas", async (req, res): Promise<void> => {
   const ideas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt));
   res.json(ideas);
@@ -112,19 +134,13 @@ router.post("/ideas", async (req, res): Promise<void> => {
 
   const [idea] = await db
     .insert(ideasTable)
-    .values({
-      text,
-      category,
-      urgency,
-      techType: techType ?? undefined,
-      priorityPosition,
-      status: "parked",
-    })
+    .values({ text, category, urgency, techType: techType ?? undefined, priorityPosition, status: "parked" })
     .returning();
 
-  // For Tech ideas: create a Linear issue
   let linearIssue: { id?: string; identifier?: string; ok: boolean } = { ok: false };
+
   if (category === "Tech") {
+    // 1. Create Linear issue
     try {
       const priorityMap: Record<string, number> = { "Now": 1, "This Week": 2, "This Month": 3, "Someday": 4 };
       linearIssue = await createLinearIssue({
@@ -138,6 +154,14 @@ router.post("/ideas", async (req, res): Promise<void> => {
     } catch (err) {
       req.log.warn({ err }, "Linear issue creation failed");
     }
+
+    // 2. Post to Slack #tech-ideas via Claude's Slack tool infrastructure (fire and forget)
+    notifyTechIdeaViaClaude({
+      text,
+      urgency,
+      techType: techType ?? null,
+      linearIdentifier: linearIssue.identifier,
+    }).catch(() => {});
   }
 
   res.status(201).json({

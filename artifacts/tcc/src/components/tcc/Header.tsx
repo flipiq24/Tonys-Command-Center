@@ -209,7 +209,6 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
 
               {/* Nav */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
-              {menuItem("📅", "Schedule", null, () => onSetView("schedule"))}
               {menuItem("✉️", "Emails", unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
               {menuItem("📞", "Sales", null, () => onSetView("sales"))}
               {menuItem("✅", "Tasks", null, () => onSetView("tasks"))}
@@ -219,7 +218,7 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
 
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
-              {menuItem("💡", "Ideas", ideas.length || null, () => onShowIdea())}
+              {menuItem("💡", "Ideas", null, () => onShowIdea())}
               {menuItem("📅", `Calendar sidebar`, null, () => { onToggleCal(); }, calSide ? C.blu : undefined)}
               {slackItems.length > 0 && menuItem(
                 "💬",

@@ -138,9 +138,11 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
 
         {/* ── Center: Quote ── */}
         <p style={{
-          fontFamily: FS, fontSize: 22, color: C.sub, fontStyle: "italic",
+          fontFamily: F, fontSize: 20, color: C.tx, fontStyle: "italic",
           margin: 0, position: "absolute", left: "50%", transform: "translateX(-50%)",
-          whiteSpace: "nowrap", pointerEvents: "none", fontWeight: 600,
+          whiteSpace: "nowrap", pointerEvents: "none", fontWeight: 700,
+          WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale",
+          letterSpacing: "-0.3px",
         }}>
           "Follow the plan I gave you!" — God
         </p>

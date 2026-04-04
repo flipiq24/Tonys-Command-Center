@@ -5,6 +5,7 @@ export interface ContactNote {
   id: string;
   contactId: string;
   text: string;
+  kind?: string;
   createdAt?: string;
 }
 

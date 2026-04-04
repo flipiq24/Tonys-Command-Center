@@ -388,9 +388,12 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                         );
                       } else {
                         const n = item.data;
+                        const isSystemEvent = n.kind === "status_change" || n.kind === "stage_change";
+                        const accentColor = n.kind === "status_change" ? C.blu : n.kind === "stage_change" ? C.grn : C.brd;
+                        const label = n.kind === "status_change" ? "Status Change" : n.kind === "stage_change" ? "Stage Move" : "Note";
                         return (
-                          <div key={`note-${n.id}`} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${C.brd}` }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>Note</div>
+                          <div key={`note-${n.id}`} style={{ padding: "10px 12px", background: isSystemEvent ? "#F8F8FF" : "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${accentColor}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: accentColor, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>{label}</div>
                             <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{n.text}</div>
                             <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
                           </div>

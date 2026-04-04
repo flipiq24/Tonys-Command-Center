@@ -48,6 +48,7 @@ export const contactsTable = pgTable("contacts", {
   company: text("company"),
   status: text("status").default("New"),
   phone: text("phone"),
+  phoneNormalized: text("phone_normalized"),
   email: text("email"),
   type: text("type"),
   title: text("title"),
@@ -72,6 +73,7 @@ export const contactsTable = pgTable("contacts", {
   index("contacts_email_idx").on(t.email),
   index("contacts_pipeline_stage_idx").on(t.pipelineStage),
   index("contacts_follow_up_idx").on(t.followUpDate),
+  index("contacts_phone_normalized_idx").on(t.phoneNormalized),
 ]);
 
 export const callLogTable = pgTable("call_log", {
@@ -92,6 +94,7 @@ export const contactNotesTable = pgTable("contact_notes", {
   id: uuid("id").defaultRandom().primaryKey(),
   contactId: uuid("contact_id").notNull().references(() => contactsTable.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
+  kind: text("kind").default("note"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("contact_notes_contact_id_idx").on(t.contactId),

@@ -72,6 +72,33 @@ export default function App() {
     setCustomTips(prev => ({ ...prev, [key]: text }));
   }, []);
 
+  // Auto-refresh: fetch fresh brief data every 15 minutes
+  const [lastRefresh, setLastRefresh] = useState<string>("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshBrief = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const data = await get<DailyBrief>("/brief/today");
+      if (!data || (data as { error?: string }).error) return;
+      // ONLY update data arrays — NEVER reset view/gates/modals
+      setBrief(data);
+      setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+      console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString());
+    } catch (err) {
+      console.warn("[TCC] Auto-refresh failed (skipping):", err);
+      // Silent fail — do NOT show error, do NOT crash
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing]);
+
+  useEffect(() => {
+    const interval = setInterval(refreshBrief, 15 * 60 * 1000); // every 15 min
+    return () => clearInterval(interval);
+  }, [refreshBrief]);
+
   // Persist active view so Tony resumes exactly where he left off on reload
   const persistView = useCallback((v: View) => {
     setView(v);
@@ -245,12 +272,15 @@ export default function App() {
       calSide={calSide}
       eod={eod}
       customTips={customTips}
+      lastRefresh={lastRefresh}
+      refreshing={refreshing}
       onSetView={v => persistView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
       onShowChat={() => setShowChat(true)}
       onEod={handleEod}
       onTipSaved={handleTipSaved}
+      onRefresh={refreshBrief}
     />
   );
 

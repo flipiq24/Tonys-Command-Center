@@ -130,9 +130,6 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
                 ⟳ Refreshing…
               </span>
             )}
-            {!refreshing && lastRefresh && (
-              <span style={{ marginLeft: 8 }}>· Updated {lastRefresh}</span>
-            )}
           </div>
         </div>
 

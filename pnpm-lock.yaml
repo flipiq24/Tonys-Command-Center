@@ -178,6 +178,9 @@ importers:
       '@workspace/integrations-anthropic-ai':
         specifier: workspace:*
         version: link:../../lib/integrations-anthropic-ai
+      '@workspace/integrations-linear':
+        specifier: workspace:*
+        version: link:../../lib/integrations-linear
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -658,6 +661,12 @@ importers:
         specifier: ^7.1.1
         version: 7.1.1
 
+  lib/integrations-linear:
+    dependencies:
+      '@linear/sdk':
+        specifier: ^38.0.0
+        version: 38.0.0
+
   scripts:
     devDependencies:
       '@types/node':
@@ -800,6 +809,11 @@ packages:
   '@gerrit0/mini-shiki@3.23.0':
     resolution: {integrity: sha512-bEMORlG0cqdjVyCEuU0cDQbORWX+kYCeo0kV1lbxF5bt4r7SID2l9bqsxJEM0zndaxpOUT7riCyIVEuqq/Ynxg==}
 
+  '@graphql-typed-document-node/core@3.2.0':
+    resolution: {integrity: sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==}
+    peerDependencies:
+      graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
+
   '@hookform/resolvers@3.10.0':
     resolution: {integrity: sha512-79Dv+3mDF7i+2ajj7SkypSKHhl1cbln1OGavqrsF7p6mbUv11xpqpacPsGDCTRvCSjEEIez2ef1NveSVL3b0Ag==}
     peerDependencies:
@@ -820,6 +834,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@linear/sdk@38.0.0':
+    resolution: {integrity: sha512-1Z1F/rGjQqXlvk9Y0optAw3mq0OAvY+R5ahPCE3zRnZmALRnQFsmlX7A/oVqIq2bAH/GHKDg447+3CyirqURrA==}
+    engines: {node: '>=12.x', yarn: 1.x}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -2356,6 +2374,10 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
+  graphql@15.10.2:
+    resolution: {integrity: sha512-1PRqdDPAmViWr4h1GVBT8RoPZfWSGZa7kDzleTilOfVIslsgf+cia3Nl95v1KDmR4iERPaT7WzQ+tN4MJmbg3w==}
+    engines: {node: '>= 10.x'}
+
   gtoken@7.1.0:
     resolution: {integrity: sha512-pCcEwRi+TKpMlxAQObHDQ56KawURgyAf6jtIY046fJ5tIv3zDe/LEIubckAO8fj6JnAxLdmWkUfNyulQ2iKdEw==}
     engines: {node: '>=14.0.0'}
@@ -2449,6 +2471,9 @@ packages:
 
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
+
+  isomorphic-unfetch@3.1.0:
+    resolution: {integrity: sha512-geDJjpoZ8N0kWexiwkX8F9NkTsXhetLPVbZFQ+JTW239QNOwvB0gniuR1Wc6f0AMTn7/mFGyXvHTifrCp/GH8Q==}
 
   jiti@2.6.1:
     resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
@@ -3159,6 +3184,9 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
+  unfetch@4.2.0:
+    resolution: {integrity: sha512-F9p7yYCn6cIW9El1zi0HI6vqpeIvBsr3dSuRO6Xuppb1u5rXpCPmMvLSyECLhybr9isec8Ohl0hPekMVrEinDA==}
+
   unicorn-magic@0.3.0:
     resolution: {integrity: sha512-+QBBXBCvifc56fsbuxZQ6Sic3wqqc3WWaqxs58gvJrcOuN83HGTCwz3oS5phzU9LthRNE9VrJCFCLUgHeeFnfA==}
     engines: {node: '>=18'}
@@ -3472,6 +3500,10 @@ snapshots:
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
 
+  '@graphql-typed-document-node/core@3.2.0(graphql@15.10.2)':
+    dependencies:
+      graphql: 15.10.2
+
   '@hookform/resolvers@3.10.0(react-hook-form@7.71.2(react@19.1.0))':
     dependencies:
       react-hook-form: 7.71.2(react@19.1.0)
@@ -3494,6 +3526,14 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@linear/sdk@38.0.0':
+    dependencies:
+      '@graphql-typed-document-node/core': 3.2.0(graphql@15.10.2)
+      graphql: 15.10.2
+      isomorphic-unfetch: 3.1.0
+    transitivePeerDependencies:
+      - encoding
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -5107,6 +5147,8 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
+  graphql@15.10.2: {}
+
   gtoken@7.1.0:
     dependencies:
       gaxios: 6.7.1
@@ -5180,6 +5222,13 @@ snapshots:
   is-unicode-supported@2.1.0: {}
 
   isexe@2.0.0: {}
+
+  isomorphic-unfetch@3.1.0:
+    dependencies:
+      node-fetch: 2.7.0
+      unfetch: 4.2.0
+    transitivePeerDependencies:
+      - encoding
 
   jiti@2.6.1: {}
 
@@ -5872,6 +5921,8 @@ snapshots:
   uc.micro@2.1.0: {}
 
   undici-types@7.18.2: {}
+
+  unfetch@4.2.0: {}
 
   unicorn-magic@0.3.0: {}
 

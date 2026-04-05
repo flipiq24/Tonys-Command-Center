@@ -60,13 +60,13 @@ export function HoverCard({ rows, children }: Props) {
             top: pos.top,
             left: pos.left,
             zIndex: 99999,
-            background: "#1A1A1A",
-            color: "#F0F0EE",
-            borderRadius: 10,
-            padding: "10px 14px",
-            minWidth: 260,
-            maxWidth: 320,
-            boxShadow: "0 6px 28px rgba(0,0,0,0.35)",
+            background: C.card,
+            border: `1px solid ${C.brd}`,
+            borderRadius: 8,
+            padding: "8px 12px",
+            minWidth: 220,
+            maxWidth: 300,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
             pointerEvents: hasLinks ? "auto" : "none",
             fontFamily: F,
           }}>
@@ -74,9 +74,9 @@ export function HoverCard({ rows, children }: Props) {
             <div key={i} style={{
               display: "flex", gap: 8, alignItems: "flex-start",
               padding: "3px 0",
-              borderBottom: i < rows.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none",
+              borderBottom: i < rows.length - 1 ? `1px solid ${C.brd}` : "none",
             }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: 0.6, flexShrink: 0, paddingTop: 2, minWidth: 64 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.6, flexShrink: 0, paddingTop: 2, minWidth: 56 }}>
                 {r.label}
               </span>
               {r.href ? (
@@ -84,12 +84,12 @@ export function HoverCard({ rows, children }: Props) {
                   href={r.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ fontSize: 12, color: r.color || "#60A5FA", lineHeight: 1.45, wordBreak: "break-word", textDecoration: "underline", cursor: "pointer" }}
+                  style={{ fontSize: 12, color: r.color || C.blu, lineHeight: 1.5, wordBreak: "break-word", textDecoration: "underline", cursor: "pointer" }}
                 >
                   {r.value}
                 </a>
               ) : (
-                <span style={{ fontSize: 12, color: r.color || "rgba(255,255,255,0.88)", lineHeight: 1.45, wordBreak: "break-word" }}>
+                <span style={{ fontSize: 12, color: r.color || C.tx, lineHeight: 1.5, wordBreak: "break-word" }}>
                   {r.value}
                 </span>
               )}

@@ -1066,63 +1066,62 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             left: Math.min(tooltipPos.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 360),
             top: Math.max(tooltipPos.y - 20, 8),
             zIndex: 9999,
-            background: "#1C1C1E",
-            color: "#F5F5F5",
+            background: C.card,
+            border: `1px solid ${C.brd}`,
             borderRadius: 8,
-            padding: "14px 16px",
-            width: 340,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+            padding: "10px 14px",
+            width: 300,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
             fontSize: 11,
             lineHeight: 1.55,
             pointerEvents: "none",
             fontFamily: F,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             {hoveredLin.url
-              ? <a href={hoveredLin.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 800, color: "#93C5FD", letterSpacing: 0.6, textDecoration: "none" }}>{hoveredLin.identifier || hoveredLin.id}</a>
-              : <span style={{ fontSize: 10, fontWeight: 800, color: "#93C5FD", letterSpacing: 0.6 }}>{hoveredLin.identifier || hoveredLin.id}</span>
+              ? <a href={hoveredLin.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 800, color: C.blu, letterSpacing: 0.6, textDecoration: "none" }}>{hoveredLin.identifier || hoveredLin.id}</a>
+              : <span style={{ fontSize: 10, fontWeight: 800, color: C.blu, letterSpacing: 0.6 }}>{hoveredLin.identifier || hoveredLin.id}</span>
             }
             {hoveredLin.state && (
               <span style={{
                 fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 20,
-                background: hoveredLin.state === "In Progress" ? "#1E3A5F44" : hoveredLin.state === "In QA" ? "#14532D44" : "#33333366",
-                color: hoveredLin.state === "In Progress" ? "#93C5FD" : hoveredLin.state === "In QA" ? "#86EFAC" : "#AAA",
-                border: "1px solid",
-                borderColor: hoveredLin.state === "In Progress" ? "#93C5FD44" : hoveredLin.state === "In QA" ? "#86EFAC44" : "#55555544",
+                background: hoveredLin.state === "In Progress" ? "#EFF6FF" : hoveredLin.state === "In QA" ? "#F0FDF4" : "#F5F5F5",
+                color: hoveredLin.state === "In Progress" ? "#1D4ED8" : hoveredLin.state === "In QA" ? "#15803D" : C.mut,
+                border: `1px solid ${hoveredLin.state === "In Progress" ? "#BFDBFE" : hoveredLin.state === "In QA" ? "#BBF7D0" : C.brd}`,
               }}>{hoveredLin.state}</span>
             )}
           </div>
-          <div style={{ fontWeight: 700, fontSize: 13, color: "#FFFFFF", marginBottom: 8, lineHeight: 1.4 }}>{hoveredLin.task}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: C.tx, marginBottom: 6, lineHeight: 1.4 }}>{hoveredLin.task}</div>
           {hoveredLin.description && (() => {
             const cleanDesc = hoveredLin.description.replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim();
             return cleanDesc ? (
-              <div style={{ fontSize: 10.5, color: "#C0C0C0", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #333", lineHeight: 1.5 }}>
-                {cleanDesc.length > 240 ? cleanDesc.slice(0, 240) + "…" : cleanDesc}
+              <div style={{ fontSize: 10.5, color: C.sub, marginBottom: 8, paddingBottom: 8, borderBottom: `1px solid ${C.brd}`, lineHeight: 1.5 }}>
+                {cleanDesc.length > 200 ? cleanDesc.slice(0, 200) + "…" : cleanDesc}
               </div>
             ) : null;
           })()}
-          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "4px 8px", fontSize: 10.5 }}>
-            <span style={{ color: "#777" }}>Owner</span>
-            <span style={{ color: "#F5F5F5" }}>{hoveredLin.who || "—"}</span>
-            <span style={{ color: "#777" }}>Priority</span>
-            <span style={{ color: hoveredLin.level === "high" ? "#FCA5A5" : hoveredLin.level === "mid" ? "#FCD34D" : "#AAA", fontWeight: 600 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: "3px 8px", fontSize: 10.5 }}>
+            <span style={{ color: C.mut }}>Owner</span>
+            <span style={{ color: C.tx }}>{hoveredLin.who || "—"}</span>
+            <span style={{ color: C.mut }}>Priority</span>
+            <span style={{ color: hoveredLin.level === "high" ? C.red : hoveredLin.level === "mid" ? C.amb : C.mut, fontWeight: 600 }}>
               {hoveredLin.level === "high" ? "High" : hoveredLin.level === "mid" ? "Medium" : "Low"}
             </span>
-            <span style={{ color: "#777" }}>Due</span>
-            <span style={{ color: "#F5F5F5" }}>{fmtDue(hoveredLin.dueDate)}</span>
-            <span style={{ color: "#777" }}>Size</span>
-            <span style={{ color: "#F5F5F5", fontWeight: 700 }}>{hoveredLin.size || "—"}</span>
+            <span style={{ color: C.mut }}>Due</span>
+            <span style={{ color: C.tx }}>{fmtDue(hoveredLin.dueDate)}</span>
+            <span style={{ color: C.mut }}>Size</span>
+            <span style={{ color: C.tx, fontWeight: 700 }}>{hoveredLin.size || "—"}</span>
             {hoveredLin.labels && hoveredLin.labels.length > 0 && (
               <>
-                <span style={{ color: "#777" }}>Labels</span>
-                <span style={{ color: "#F5F5F5" }}>{hoveredLin.labels.join(", ")}</span>
+                <span style={{ color: C.mut }}>Labels</span>
+                <span style={{ color: C.tx }}>{hoveredLin.labels.join(", ")}</span>
               </>
             )}
           </div>
           {hoveredLin.url && (
-            <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333" }}>
-              <a href={hoveredLin.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#93C5FD", textDecoration: "none", fontWeight: 600 }}>
+            <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${C.brd}` }}>
+              <a href={hoveredLin.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: C.blu, textDecoration: "none", fontWeight: 600 }}>
                 Open in Linear ↗
               </a>
             </div>

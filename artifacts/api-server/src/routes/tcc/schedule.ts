@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { gte } from "drizzle-orm";
 import { db, callLogTable, ideasTable } from "@workspace/db";
 import { createEvent } from "../../lib/gcal.js";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 import z from "zod";
 
 const router: IRouter = Router();
@@ -132,6 +133,74 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
   }
 
   res.json({ ok: true, eventId: gcalResult.eventId, htmlLink: gcalResult.htmlLink });
+});
+
+// ── AI Day Plan ────────────────────────────────────────────────────────────────
+interface AiPlanBlock { start: string; end: string; label: string; items: string[]; tip?: string; }
+const AI_PLAN_CACHE = new Map<string, AiPlanBlock[]>();
+
+const AiPlanBody = z.object({
+  meetings: z.array(z.object({ time: z.string(), name: z.string(), tEnd: z.string().optional() })).default([]),
+  contacts: z.array(z.object({ name: z.string(), company: z.string().optional(), status: z.string().optional() })).default([]),
+  tasks:    z.array(z.string()).default([]),
+  emails:   z.array(z.object({ from: z.string(), subject: z.string(), action: z.string().optional() })).default([]),
+});
+
+router.post("/schedule/ai-plan", async (req, res): Promise<void> => {
+  const today = new Date().toISOString().slice(0, 10);
+  if (AI_PLAN_CACHE.has(today)) {
+    res.json({ ok: true, blocks: AI_PLAN_CACHE.get(today) });
+    return;
+  }
+
+  const parsed = AiPlanBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { meetings, contacts, tasks, emails } = parsed.data;
+
+  const hotWarm = contacts.filter(c => c.status === "Hot" || c.status === "Warm");
+  const others  = contacts.filter(c => c.status !== "Hot" && c.status !== "Warm");
+  const sortedContacts = [...hotWarm, ...others].slice(0, 10);
+
+  const prompt = `You are Tony Diaz's AI scheduler at FlipIQ. Today is ${today}. Tony's work day: 8:00 AM – 6:00 PM PT. Calls start at 8:00 AM minimum.
+
+MEETINGS TODAY:
+${meetings.length ? meetings.map(m => `  ${m.time}${m.tEnd ? "–" + m.tEnd : ""}: ${m.name}`).join("\n") : "  (none scheduled)"}
+
+SALES CONTACTS (call in priority order — Hot first, then Warm, then others):
+${sortedContacts.map((c, i) => `  ${i + 1}. ${c.name}${c.company ? " (" + c.company + ")" : ""} — ${c.status || "New"}`).join("\n") || "  (none)"}
+
+TASKS:
+${tasks.slice(0, 6).map((t, i) => `  ${i + 1}. ${t}`).join("\n") || "  (none)"}
+
+PRIORITY EMAILS:
+${emails.slice(0, 5).map(e => `  • From ${e.from}: "${e.subject}"${e.action ? " → " + e.action : ""}`).join("\n") || "  (none)"}
+
+SCHEDULING RULES:
+1. Calls window: 8:00 AM to the first meeting start (or 9:30 AM if first meeting is after 9:30). Average 8 minutes per call. Include Hot/Warm contacts first.
+2. Tasks window: 15 minutes after each meeting ends. Pick 2-3 highest-value tasks per window.
+3. Email block: Use the largest free afternoon window (ideally 11 AM–1 PM if free). List top priority emails.
+4. Never schedule work during meetings.
+5. Be realistic — don't overfill blocks. A focused 3-item list beats 10 rushed items.
+6. Include a brief coaching tip per block (1 short sentence).
+
+Return ONLY a valid JSON array, no markdown, no explanation. Format:
+[{"start":"8:00 AM","end":"9:00 AM","label":"Sales Calls","items":["Call Mike Torres (Hot — Coko Acq.)","Call Sarah Chen (Warm)"],"tip":"Open with a question, not a pitch."}]`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 1200,
+      messages: [{ role: "user", content: prompt }],
+    });
+    let raw = (response.content[0] as { type: string; text: string }).text.trim();
+    // Strip markdown fences if present
+    raw = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+    const blocks: AiPlanBlock[] = JSON.parse(raw);
+    AI_PLAN_CACHE.set(today, blocks);
+    res.json({ ok: true, blocks });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err) });
+  }
 });
 
 export default router;

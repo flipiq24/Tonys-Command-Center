@@ -505,7 +505,7 @@ export default function App() {
 
   // ═══ DASHBOARD VIEW ═══
   if (view === "dashboard") return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#1A1A1A", fontFamily: F }}>
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#fff", fontFamily: F }}>
       {sharedHeader}
       {sharedModals}
       <DashboardView

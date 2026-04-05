@@ -7,6 +7,7 @@ import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
 interface Contact { name: string; phone?: string; company?: string; status?: string; }
 interface ScratchNote { id: string; text: string; checked: boolean; position: number; }
+interface AiPlanBlock { start: string; end: string; label: string; items: string[]; tip?: string; }
 
 type NavView = "emails" | "schedule" | "sales" | "tasks";
 
@@ -83,7 +84,7 @@ function fmtMins(mins: number): string {
   return `${dh}:${m.toString().padStart(2, "0")} ${p}`;
 }
 function computeWorkBlocks(meetingList: CalItem[]) {
-  const WORK_START = 7 * 60, WORK_END = 18 * 60, MIN_USEFUL = 30;
+  const WORK_START = 8 * 60, WORK_END = 18 * 60, MIN_USEFUL = 30;
   const busy = meetingList.map(m => {
     const start = parseTimeMins(m.t);
     const end = m.tEnd ? parseTimeMins(m.tEnd) : (start !== null ? start + 30 : null);
@@ -222,6 +223,9 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, contacts, onComplete, onNavigate }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [dayPlan, setDayPlan] = useState<AiPlanBlock[] | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const planFetchedRef = useRef(false);
 
   // ── Scratch Notes state ─────────────────────────────────────────
   const [scratchNotes, setScratchNotes] = useState<ScratchNote[]>([]);
@@ -232,6 +236,28 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
     get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
   }, []);
+
+  // ── Fetch AI day plan once brief data is available ──────────────
+  useEffect(() => {
+    if (planFetchedRef.current) return;
+    const hasData = tasks.length > 0 || calendarData.length > 0 || emailsImportant.length > 0 || contacts.length > 0;
+    if (!hasData) return;
+    planFetchedRef.current = true;
+    setPlanLoading(true);
+    const realMeetings = calendarData.filter(c => c.real);
+    post<{ ok: boolean; blocks: AiPlanBlock[] }>("/schedule/ai-plan", {
+      meetings: realMeetings.map(m => ({ time: m.t, name: m.n, tEnd: m.tEnd })),
+      contacts: contacts.slice(0, 10).map(c => ({ name: c.name, company: c.company, status: c.status })),
+      tasks: [
+        ...tasks.filter(t => !tDone[t.id]).slice(0, 3).map(t => t.text),
+        ...localTasks.map(t => t.text),
+      ],
+      emails: emailsImportant.slice(0, 5).map(e => ({ from: e.from, subject: e.subj, action: e.p })),
+    })
+      .then(r => { if (r.ok) setDayPlan(r.blocks); })
+      .catch(() => {})
+      .finally(() => setPlanLoading(false));
+  }, [tasks.length, calendarData.length, emailsImportant.length, contacts.length]);
 
   const toggle = useCallback((id: string) => {
     setChecked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -289,19 +315,71 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const wb       = computeWorkBlocks(meetings);
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", background: "#1A1A1A", padding: "16px 12px 48px" }}>
+    <div style={{ flex: 1, overflowY: "auto", background: "#fff" }}>
       <style>{`
         .dash-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         @media (max-width: 540px) { .dash-2col { grid-template-columns: 1fr; } }
         .dash-row-hover:hover { background: #F7F7F5 !important; }
       `}</style>
 
-      <div style={{ maxWidth: 820, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ width: "100%" }}>
 
-        {/* ══ PAGE 1 — FRONT ════════════════════════════════════════ */}
-        <Sheet label="Page 1 — Front">
-          <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
-          <div style={{ padding: "12px 18px 18px" }}>
+        {/* ══ FRONT ════════════════════════════════════════════════ */}
+        <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
+
+        {/* ── AI Day Plan Banner ── */}
+        <div style={{ padding: "10px 20px 0", borderBottom: "1px solid #EBEBEB" }}>
+          <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.4, color: "#888", marginBottom: 8 }}>
+            ◈ TODAY'S AI SCHEDULE PLAN
+          </div>
+          {planLoading && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+              {[1, 2, 3].map(i => (
+                <div key={i} style={{
+                  flex: 1, height: 72, borderRadius: 4, background: "#F0F0EE",
+                  animation: "pulse 1.4s ease-in-out infinite",
+                  animationDelay: `${i * 0.15}s`,
+                }} />
+              ))}
+              <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+            </div>
+          )}
+          {!planLoading && dayPlan && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+              {dayPlan.map((block, i) => (
+                <div key={i} style={{
+                  flex: "1 1 200px", minWidth: 180, border: `1px solid ${i === 0 ? "#222" : "#D4D4D4"}`,
+                  borderRadius: 4, padding: "10px 12px",
+                  background: i === 0 ? "#FAFAF8" : "#fff",
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: BLK, marginBottom: 2 }}>
+                    {block.start} – {block.end}
+                  </div>
+                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#777", marginBottom: 6 }}>
+                    {block.label}
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 14, listStyle: "disc" }}>
+                    {block.items.map((item, j) => (
+                      <li key={j} style={{ fontSize: 10, color: BLK, lineHeight: 1.5, marginBottom: 1 }}>{item}</li>
+                    ))}
+                  </ul>
+                  {block.tip && (
+                    <div style={{ fontSize: 9, color: "#888", fontStyle: "italic", marginTop: 6, borderTop: "1px solid #EBEBEB", paddingTop: 5 }}>
+                      {block.tip}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          {!planLoading && !dayPlan && (
+            <div style={{ fontSize: 10, color: "#bbb", fontStyle: "italic", paddingBottom: 12 }}>
+              Loading your schedule... open app fresh each morning to generate today's AI plan.
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: "12px 20px 18px" }}>
 
             {/* ── TOP 3 ── */}
             <SL text="★ Top 3 — Do These First" color="#B7791F" view="tasks" onNavigate={onNavigate} />
@@ -458,12 +536,15 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             </table>
 
           </div>
-        </Sheet>
 
-        {/* ══ PAGE 2 — BACK ═════════════════════════════════════════ */}
-        <Sheet label="Page 2 — Operations & Awareness">
-          <PageHeader title="OPERATIONS & AWARENESS" sub="North Star: 2 deals/month/AA @ $2,500 per acquisition. Everything else is noise." />
-          <div style={{ padding: "12px 18px 18px" }}>
+        {/* ══ DIVIDER + BACK ════════════════════════════════════════ */}
+        <div style={{ borderTop: "3px solid #111", margin: "0 20px", paddingTop: 20 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+            <div style={{ fontFamily: FS, fontSize: 14, fontWeight: 900, letterSpacing: 0.8, color: BLK }}>OPERATIONS & AWARENESS</div>
+            <div style={{ fontSize: 9, color: "#999", fontStyle: "italic" }}>North Star: 2 deals/month/AA @ $2,500 per acquisition. Everything else is noise.</div>
+          </div>
+        </div>
+        <div style={{ padding: "0 20px 18px" }}>
 
             {/* ── LINEAR ── */}
             <SL text="⚡ Linear — Engineering in Progress" color="#2563EB" />
@@ -599,7 +680,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             </div>
 
           </div>
-        </Sheet>
 
       </div>
     </div>

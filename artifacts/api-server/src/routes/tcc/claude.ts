@@ -8,8 +8,8 @@ import { createLinearIssue, getLinearIssues } from "../../lib/linear";
 import { sendAutoEod } from "./eod";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
-import { getTodayEvents, createEvent, createReminder } from "../../lib/gcal";
-import { getDrive, getDocs, getGmail, getCalendar } from "../../lib/google-auth";
+import { getTodayEvents, createEvent } from "../../lib/gcal";
+import { getDrive, getGmail, getCalendar } from "../../lib/google-auth";
 import { getSheetValues } from "../../lib/google-sheets";
 import { getDocText } from "../../lib/google-docs";
 
@@ -1137,15 +1137,16 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
 
     case "create_calendar_reminder": {
       try {
-        const endDate = new Date(String(input.datetime));
+        const startDt = String(input.datetime);
+        const endDate = new Date(startDt);
         endDate.setMinutes(endDate.getMinutes() + 30);
-        const result = await createReminder({
+        const result = await createEvent({
           summary: String(input.title),
           description: input.notes ? String(input.notes) : undefined,
-          start: String(input.datetime),
+          start: startDt,
           end: endDate.toISOString(),
         });
-        if (result.ok) return `✓ Reminder created: "${input.title}" at ${new Date(String(input.datetime)).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} (ID: ${result.eventId})`;
+        if (result.ok) return `✓ Reminder created: "${input.title}" at ${new Date(startDt).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} (ID: ${result.eventId})`;
         return `✗ Failed to create reminder: ${result.error}`;
       } catch (err) {
         return `Reminder creation failed: ${err instanceof Error ? err.message : String(err)}`;

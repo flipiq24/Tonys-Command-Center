@@ -431,7 +431,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   // ── Today's Wins — manual entries, persisted in localStorage per day ─
   const _winsKey = `tcc_wins_${new Date().toISOString().slice(0, 10)}`;
   const [wins, setWins] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(_winsKey) || '["","",""]'); } catch { return ["", "", ""]; }
+    try { return JSON.parse(localStorage.getItem(_winsKey) || '["",""]'); } catch { return ["", ""]; }
   });
   const updateWin = (i: number, val: string) => {
     setWins(prev => { const next = [...prev]; next[i] = val; localStorage.setItem(_winsKey, JSON.stringify(next)); return next; });
@@ -711,18 +711,18 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </tbody>
             </table>
 
-            {/* ── ETHAN — Management Tasks ── */}
+            {/* ── COO — Ethan ── */}
             {ethanItems.length > 0 && (
               <>
-                <SL text="👔 Ethan — Today's Tasks" color="#555" />
+                <SL text="COO — Ethan" color="#444" />
                 <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} />
               </>
             )}
 
-            {/* ── RAMI — Management Tasks ── */}
+            {/* ── CSM — Ramy ── */}
             {ramiItems.length > 0 && (
               <>
-                <SL text="👔 Ramy — Today's Tasks" color="#555" />
+                <SL text="CSM — Ramy" color="#444" />
                 <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} />
               </>
             )}
@@ -731,53 +731,51 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             <SL text="🏆 Today's Wins" color="#B7791F" />
             <div style={{ border: "2px solid #B7791F33", borderRadius: 4, background: "#FFFBF2", overflow: "hidden", marginBottom: 2 }}>
 
-              {/* ── Auto-detected wins ── */}
+              {/* Win 1 — Auto: 10 calls + appointments booked */}
               {(() => {
                 const callsDone = callList.filter((_, i) => ck(`call-${i}`)).length;
                 const callWin = callsDone >= 10;
-                const apptWin = meetings.length >= 3;
-                const autoWins: { label: string; detail: string; done: boolean }[] = [
-                  {
-                    label: "10 Sales Calls",
-                    detail: callWin ? "All 10 done 🔥" : `${callsDone} / 10 calls checked off`,
-                    done: callWin,
-                  },
-                  {
-                    label: "3 Appointments Booked",
-                    detail: apptWin ? `${meetings.length} on the calendar ✓` : `${meetings.length} real event${meetings.length !== 1 ? "s" : ""} on calendar`,
-                    done: apptWin,
-                  },
-                ];
-                return autoWins.map((w, i) => (
-                  <div key={i} style={{
+                const apptCount = meetings.length;
+                return (
+                  <div style={{
                     display: "flex", alignItems: "center", gap: 10,
-                    padding: "10px 14px", borderBottom: "1px solid #EEE4CC",
-                    background: w.done ? "#F0FDF4" : "#FFFBF2",
+                    padding: "11px 14px", borderBottom: "1px solid #EEE4CC",
+                    background: callWin ? "#F0FDF4" : "#FFFBF2",
                   }}>
-                    <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1 }}>{w.done ? "✓" : "○"}</span>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: callWin ? "#16A34A" : "#B7791F", width: 18, flexShrink: 0, textAlign: "center" }}>1.</span>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: w.done ? "#14532D" : "#78350F" }}>{w.label}</div>
-                      <div style={{ fontSize: 10, color: w.done ? "#15803D" : "#A16207", marginTop: 1 }}>{w.detail}</div>
+                      {callWin ? (
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#14532D" }}>
+                          10 Sales Calls ✓ — {apptCount} appointment{apptCount !== 1 ? "s" : ""} booked
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#78350F" }}>10 Sales Calls</div>
+                          <div style={{ fontSize: 10, color: "#A16207", marginTop: 1 }}>
+                            {callsDone} / 10 — {apptCount} appointment{apptCount !== 1 ? "s" : ""} booked so far
+                          </div>
+                        </>
+                      )}
                     </div>
-                    {w.done && <span style={{ fontSize: 10, fontWeight: 800, color: "#16A34A", letterSpacing: 0.4 }}>WIN</span>}
+                    {callWin && <span style={{ fontSize: 10, fontWeight: 800, color: "#16A34A", letterSpacing: 0.4 }}>WIN</span>}
                   </div>
-                ));
+                );
               })()}
 
-              {/* ── Manual win entries ── */}
+              {/* Wins 2 & 3 — manual */}
               {wins.map((val, i) => (
                 <div key={i} style={{
                   display: "flex", alignItems: "center", gap: 10,
-                  padding: "10px 14px",
-                  borderBottom: i < wins.length - 1 ? "1px solid #EEE4CC" : "none",
+                  padding: "11px 14px",
+                  borderBottom: i === 0 ? "1px solid #EEE4CC" : "none",
                 }}>
                   <span style={{ fontSize: 13, fontWeight: 900, color: "#B7791F", width: 18, flexShrink: 0, textAlign: "center" }}>
-                    {i + 3}.
+                    {i + 2}.
                   </span>
                   <input
                     value={val}
                     onChange={e => updateWin(i, e.target.value)}
-                    placeholder={`Add win #${i + 3}…`}
+                    placeholder={`Add win #${i + 2}…`}
                     style={{
                       flex: 1, border: "none", outline: "none",
                       fontSize: 12, fontWeight: val ? 600 : 400,

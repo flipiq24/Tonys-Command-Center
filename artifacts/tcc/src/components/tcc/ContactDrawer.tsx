@@ -4,6 +4,14 @@ import { C, F, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONT
 import { VoiceField } from "./VoiceField";
 import type { Contact, ContactNote, CallEntry } from "./types";
 
+interface FilterState {
+  status: string;
+  stage: string;
+  type: string;
+  category: string;
+  search: string;
+}
+
 interface Props {
   contactId: string | null;
   onClose: () => void;
@@ -13,6 +21,10 @@ interface Props {
   onConnected: (contactName: string) => void;
   onSmsOpen: (contact: Contact) => void;
   onCompose?: (contact: Contact) => void;
+  contacts?: Contact[];
+  onNavigate?: (id: string) => void;
+  filters?: FilterState;
+  onFiltersChange?: (partial: Partial<FilterState>) => void;
 }
 
 const inp: React.CSSProperties = {
@@ -32,7 +44,7 @@ function isOverdue(date?: string | null): boolean {
   return new Date(date) < new Date(new Date().toDateString());
 }
 
-export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAttempt, onConnected, onSmsOpen, onCompose }: Props) {
+export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAttempt, onConnected, onSmsOpen, onCompose, contacts, onNavigate, filters, onFiltersChange }: Props) {
   const [contact, setContact] = useState<Contact | null>(null);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [calls, setCalls] = useState<CallEntry[]>([]);
@@ -48,7 +60,18 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [meetings, setMeetings] = useState<{ id: string; date: string; contactName: string | null; summary: string | null; nextSteps: string | null; outcome: string | null }[]>([]);
   const [meetingsLoaded, setMeetingsLoaded] = useState(false);
   const [interacted, setInteracted] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const currentIndex = contacts && contactId ? contacts.findIndex(c => String(c.id) === contactId) : -1;
+  const total = contacts?.length ?? 0;
+  const prevId = currentIndex > 0 && contacts ? String(contacts[currentIndex - 1].id) : null;
+  const nextId = currentIndex < total - 1 && contacts ? String(contacts[currentIndex + 1].id) : null;
+
+  const hasActiveFilters = filters && (
+    filters.status !== "All" || filters.stage !== "All" ||
+    filters.type !== "All" || filters.category !== "All" || filters.search.trim() !== ""
+  );
 
   useEffect(() => {
     if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); setMeetings([]); setMeetingsLoaded(false); setInteracted(false); return; }
@@ -138,6 +161,12 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
 
   if (!contactId) return null;
 
+  const navBtnStyle = (enabled: boolean): React.CSSProperties => ({
+    background: "none", border: `1px solid ${enabled ? C.brd : "transparent"}`, borderRadius: 6,
+    color: enabled ? C.tx : C.brd, cursor: enabled ? "pointer" : "default",
+    fontSize: 14, fontWeight: 700, padding: "2px 8px", fontFamily: F, lineHeight: 1.4,
+  });
+
   return (
     <>
       <div
@@ -150,6 +179,70 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
         display: "flex", flexDirection: "column", boxShadow: "-4px 0 20px rgba(0,0,0,0.08)",
         overflowY: "auto",
       }}>
+
+        {/* ── Navigation + Filter bar ── */}
+        {onNavigate && contacts && contacts.length > 0 && (
+          <div style={{ borderBottom: `1px solid ${C.brd}`, background: "#F5F3EE", flexShrink: 0 }}>
+            {/* Row 1: prev/next nav */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px" }}>
+              <button onClick={() => prevId && onNavigate(prevId)} style={navBtnStyle(!!prevId)}>‹</button>
+              <span style={{ flex: 1, textAlign: "center", fontSize: 12, color: C.sub, fontWeight: 600, fontFamily: F }}>
+                {currentIndex >= 0 ? `${currentIndex + 1} of ${total}` : `${total} contacts`}
+                {hasActiveFilters && <span style={{ color: C.blu, marginLeft: 4 }}>· filtered</span>}
+              </span>
+              <button onClick={() => nextId && onNavigate(nextId)} style={navBtnStyle(!!nextId)}>›</button>
+              {onFiltersChange && (
+                <button
+                  onClick={() => setShowFilters(f => !f)}
+                  style={{ marginLeft: 4, padding: "3px 10px", borderRadius: 6, border: `1px solid ${hasActiveFilters ? C.blu : C.brd}`, background: hasActiveFilters ? C.bluBg : "none", color: hasActiveFilters ? C.blu : C.sub, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: F }}
+                >
+                  {showFilters ? "Hide Filters" : `Filters${hasActiveFilters ? " ●" : ""}`}
+                </button>
+              )}
+              <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 18, padding: "0 2px", lineHeight: 1, marginLeft: 2 }}>✕</button>
+            </div>
+
+            {/* Row 2: filter dropdowns (collapsible) */}
+            {showFilters && onFiltersChange && filters && (
+              <div style={{ padding: "8px 14px 10px", display: "flex", flexWrap: "wrap", gap: 6, borderTop: `1px solid ${C.brd}` }}>
+                <input
+                  type="text"
+                  value={filters.search}
+                  onChange={e => onFiltersChange({ search: e.target.value })}
+                  placeholder="Search…"
+                  style={{ flex: "1 1 100%", padding: "5px 8px", borderRadius: 7, border: `1px solid ${filters.search ? C.blu : C.brd}`, fontSize: 12, fontFamily: F, outline: "none", background: "#FAFAF8" }}
+                />
+                <select value={filters.status} onChange={e => onFiltersChange({ status: e.target.value })}
+                  style={{ flex: 1, minWidth: 90, padding: "5px 6px", borderRadius: 7, border: `1px solid ${filters.status !== "All" ? C.red : C.brd}`, fontSize: 11, fontFamily: F, background: "#FAFAF8", color: filters.status !== "All" ? C.red : C.sub, fontWeight: filters.status !== "All" ? 700 : 400 }}>
+                  <option value="All">All Statuses</option>
+                  {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
+                </select>
+                <select value={filters.stage} onChange={e => onFiltersChange({ stage: e.target.value })}
+                  style={{ flex: 1, minWidth: 90, padding: "5px 6px", borderRadius: 7, border: `1px solid ${filters.stage !== "All" ? C.blu : C.brd}`, fontSize: 11, fontFamily: F, background: "#FAFAF8", color: filters.stage !== "All" ? C.blu : C.sub, fontWeight: filters.stage !== "All" ? 700 : 400 }}>
+                  <option value="All">All Stages</option>
+                  {PIPELINE_STAGES.map(s => <option key={s}>{s}</option>)}
+                </select>
+                <select value={filters.type} onChange={e => onFiltersChange({ type: e.target.value })}
+                  style={{ flex: 1, minWidth: 90, padding: "5px 6px", borderRadius: 7, border: `1px solid ${filters.type !== "All" ? C.amb : C.brd}`, fontSize: 11, fontFamily: F, background: "#FAFAF8", color: filters.type !== "All" ? C.amb : C.sub, fontWeight: filters.type !== "All" ? 700 : 400 }}>
+                  <option value="All">All Types</option>
+                  {CONTACT_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+                <select value={filters.category} onChange={e => onFiltersChange({ category: e.target.value })}
+                  style={{ flex: 1, minWidth: 90, padding: "5px 6px", borderRadius: 7, border: `1px solid ${filters.category !== "All" ? "#7B1FA2" : C.brd}`, fontSize: 11, fontFamily: F, background: "#FAFAF8", color: filters.category !== "All" ? "#7B1FA2" : C.sub, fontWeight: filters.category !== "All" ? 700 : 400 }}>
+                  <option value="All">All Categories</option>
+                  {CONTACT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+                {hasActiveFilters && (
+                  <button onClick={() => onFiltersChange({ status: "All", stage: "All", type: "All", category: "All", search: "" })}
+                    style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, background: "#FAFAF8", color: C.mut, fontSize: 11, cursor: "pointer", fontFamily: F }}>
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: C.mut, fontSize: 14 }}>
             Loading…

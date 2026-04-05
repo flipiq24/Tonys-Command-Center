@@ -71,6 +71,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   const [open, setOpen] = useState(false);
   const [dismissedHighUrgency, setDismissedHighUrgency] = useState(false);
   const [showSlackPopover, setShowSlackPopover] = useState(false);
+  const [showLinearPopover, setShowLinearPopover] = useState(false);
   const [attendeeBriefExpanded, setAttendeeBriefExpanded] = useState(false);
   const [showEodModal, setShowEodModal] = useState(false);
   const [eodText, setEodText] = useState("");
@@ -115,6 +116,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   }, [eodSending, eodTo, eodText, onEod]);
   const menuRef = useRef<HTMLDivElement>(null);
   const slackPopoverRef = useRef<HTMLDivElement>(null);
+  const linearPopoverRef = useRef<HTMLDivElement>(null);
 
   const handleDismissSlackPopover = useCallback(() => setShowSlackPopover(false), []);
 
@@ -130,6 +132,17 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   }, [showSlackPopover]);
 
   useEffect(() => {
+    if (!showLinearPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (linearPopoverRef.current && !linearPopoverRef.current.contains(e.target as Node)) {
+        setShowLinearPopover(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showLinearPopover]);
+
+  useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
@@ -139,7 +152,8 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   }, [open]);
 
   const slackLevel = topLevel(slackItems);
-  const hasNotif = unresolved > 0 || ideas.length > 0 || !!slackLevel;
+  const linearLevel = topLevel(linearItems);
+  const hasNotif = unresolved > 0 || ideas.length > 0 || !!slackLevel || !!linearLevel;
   const sep = <div style={{ height: 1, background: C.brd, margin: "6px 0" }} />;
 
   const menuItem = (
@@ -261,6 +275,78 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
                         {item.from && <span style={{ fontWeight: 700 }}>{item.from}: </span>}
                         {(item.message || "").substring(0, 140)}
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Linear badge */}
+        {linearItems.length > 0 && (
+          <div ref={linearPopoverRef} style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowLinearPopover(p => !p)}
+              title={`${linearItems.length} Linear task${linearItems.length > 1 ? "s" : ""} — click to view`}
+              style={{
+                width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
+                background: showLinearPopover ? C.bluBg : "none",
+                border: `1.5px solid ${showLinearPopover ? C.blu : C.brd}`,
+                borderRadius: 10, cursor: "pointer", position: "relative", flexShrink: 0,
+              }}
+            >
+              <span style={{ fontSize: 15 }}>📋</span>
+              <span style={{
+                position: "absolute", top: -5, right: -5,
+                minWidth: 17, height: 17, borderRadius: 9,
+                background: linearLevel === "high" ? C.red : linearLevel === "mid" ? C.amb : C.blu,
+                border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px", lineHeight: 1,
+              }}>
+                {linearItems.length}
+              </span>
+            </button>
+            {showLinearPopover && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 8px)", right: 0,
+                background: C.card, border: `1px solid ${C.brd}`,
+                borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.13)",
+                width: 340, zIndex: 300, fontFamily: F, padding: "0 0 6px",
+                animation: "fadeIn 0.12s ease-out",
+              }}>
+                <div style={{ padding: "10px 14px 8px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8, borderBottom: `1px solid ${C.brd}` }}>
+                  Linear Tasks · {linearItems.length}
+                </div>
+                {linearItems.map((item, i) => {
+                  const isOverdue = item.dueDate ? new Date(item.dueDate) < new Date() : false;
+                  return (
+                    <div key={i} style={{ padding: "9px 14px", borderBottom: i < linearItems.length - 1 ? `1px solid ${C.brd}` : "none" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: item.level === "high" ? C.red : item.level === "mid" ? C.amb : C.blu, borderRadius: 3, padding: "1px 5px", textTransform: "uppercase", flexShrink: 0 }}>
+                          {item.level}
+                        </span>
+                        {item.identifier && (
+                          <span style={{ fontSize: 10, color: C.mut, fontFamily: "monospace", flexShrink: 0 }}>{item.identifier}</span>
+                        )}
+                        {isOverdue && (
+                          <span style={{ fontSize: 9, fontWeight: 700, color: C.red, background: C.redBg, borderRadius: 3, padding: "1px 4px", flexShrink: 0 }}>OVERDUE</span>
+                        )}
+                        {item.dueDate && !isOverdue && (
+                          <span style={{ fontSize: 10, color: C.mut, marginLeft: "auto", flexShrink: 0 }}>
+                            due {new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </span>
+                        )}
+                        {item.url && (
+                          <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: "auto", fontSize: 10, color: C.blu, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>
+                            Open ↗
+                          </a>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.tx, lineHeight: 1.45, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.task}
+                      </div>
+                      {item.who && <div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>{item.who}</div>}
                     </div>
                   );
                 })}

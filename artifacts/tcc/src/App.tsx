@@ -203,7 +203,7 @@ export default function App() {
       if (!start) continue;
       const msUntilWarning = start.getTime() - now.getTime() - 5 * 60 * 1000;
       if (msUntilWarning > 0 && msUntilWarning < 8 * 60 * 60 * 1000) {
-        timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc, attendeeBrief: item.note || undefined }), msUntilWarning));
+        timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc, attendeeBrief: (item as any).attendeeBrief || item.note || undefined }), msUntilWarning));
       }
     }
     return () => timers.forEach(clearTimeout);

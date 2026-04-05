@@ -520,6 +520,7 @@ export default function App() {
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#fff", fontFamily: F }}>
       {sharedHeader}
       {sharedModals}
+      <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} onCompose={opts => setEmailCompose({ to: opts.to, contactId: opts.contactId, contactName: opts.contactName, body: opts.body, subject: opts.subject })} />
       <DashboardView
         tasks={brief?.tasks || []}
         tDone={tDone}
@@ -530,6 +531,8 @@ export default function App() {
         onComplete={handleTaskComplete}
         onNavigate={v => persistView(v as View)}
         onOpenEmail={em => setEmailCompose({ threadId: em.gmailMessageId, subject: `Re: ${em.subj}` })}
+        onAttempt={c => setAttempt(c)}
+        onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
       />
     </div>
   );

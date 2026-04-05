@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
 import { get, patch } from "@/lib/api";
 import { ContactDrawer } from "./ContactDrawer";
+import { SmsModal } from "./SmsModal";
 import type { TaskItem, CalItem, EmailItem, LinearItem, SlackItem } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -20,6 +21,8 @@ interface Props {
   onComplete: (task: TaskItem) => void;
   onNavigate: (view: NavView) => void;
   onOpenEmail?: (em: EmailItem) => void;
+  onAttempt?: (contact: { id: string | number; name: string; email?: string }) => void;
+  onCompose?: (contact: Contact) => void;
 }
 
 
@@ -536,7 +539,7 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, onComplete, onNavigate, onOpenEmail }: Props) {
+export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, onComplete, onNavigate, onOpenEmail, onAttempt, onCompose }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -559,6 +562,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   // ── Today's Wins — manual entries, persisted in localStorage per day ─
   const _winsKey = `tcc_wins_${new Date().toISOString().slice(0, 10)}`;
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [smsContact, setSmsContact] = useState<Contact | null>(null);
 
   const [wins, setWins] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(_winsKey) || '["",""]'); } catch { return ["", ""]; }
@@ -1098,10 +1102,16 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         onClose={() => setSelectedContactId(null)}
         onUpdated={() => {}}
         onDeleted={() => setSelectedContactId(null)}
-        onAttempt={() => setSelectedContactId(null)}
+        onAttempt={c => { if (onAttempt) onAttempt(c); setSelectedContactId(null); }}
         onConnected={() => setSelectedContactId(null)}
-        onSmsOpen={() => setSelectedContactId(null)}
+        onSmsOpen={c => { setSmsContact(c); setSelectedContactId(null); }}
+        onCompose={onCompose ? c => { onCompose(c); setSelectedContactId(null); } : undefined}
       />
+
+      {/* ── SMS Modal ── */}
+      {smsContact && (
+        <SmsModal contact={smsContact as any} onClose={() => setSmsContact(null)} />
+      )}
     </div>
   );
 }

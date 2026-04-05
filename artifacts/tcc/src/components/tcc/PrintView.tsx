@@ -324,13 +324,20 @@ export function PrintView({
             margin: 0;
             box-shadow: none !important;
             border-radius: 0 !important;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
           .print-page + .print-page {
             page-break-before: always;
             break-before: page;
           }
         }
-        @page { size: letter portrait; margin: 0.35in; }
+        /* Base page rule — letter portrait, consistent margins for duplex */
+        @page { size: letter portrait; margin: 0.4in 0.45in; }
+        /* Recto (right / odd = front side) */
+        @page :right { margin-left: 0.5in; margin-right: 0.4in; }
+        /* Verso (left / even = back side) */
+        @page :left  { margin-left: 0.4in; margin-right: 0.5in; }
       `}</style>
     </div>
   );

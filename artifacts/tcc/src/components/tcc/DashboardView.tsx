@@ -185,21 +185,40 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
 
   useEffect(() => {
     if (!containerRef.current) return;
-    const nowX = Math.max(0, Math.min((nowMins - TL_START) * PPM, TL_W));
-    const containerW = containerRef.current.clientWidth;
-    containerRef.current.scrollLeft = nowX - containerW / 2;
+    const nx = Math.max(0, Math.min((getCurrentMins() - TL_START) * PPM, TL_W));
+    containerRef.current.scrollLeft = nx - containerRef.current.clientWidth / 2;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const pan = (delta: number) => {
+    if (!containerRef.current) return;
+    containerRef.current.scrollLeft = Math.max(0, Math.min(containerRef.current.scrollLeft + delta, TL_W));
+  };
+
+  const goToNow = () => {
+    if (!containerRef.current) return;
+    const nx = Math.max(0, Math.min((nowMins - TL_START) * PPM, TL_W));
+    containerRef.current.scrollLeft = nx - containerRef.current.clientWidth / 2;
+  };
 
   const nowX  = (nowMins - TL_START) * PPM;
   const inDay = nowMins >= TL_START && nowMins <= TL_END;
   const hours = Array.from({ length: 11 }, (_, i) => i + 8); // 8..18
 
+  const arrowBtn: React.CSSProperties = {
+    flexShrink: 0, width: 30, alignSelf: "stretch",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    background: "#F8F8F8", border: "none", cursor: "pointer",
+    fontSize: 18, fontWeight: 900, color: "#444",
+    padding: 0,
+  };
+
   return (
-    <div style={{ borderBottom: "1px solid #EBEBEB" }}>
+    <div style={{ borderBottom: "1px solid #EBEBEB", display: "flex", alignItems: "stretch", userSelect: "none" }}>
+      <button style={{ ...arrowBtn, borderRight: "1px solid #E8E8E8" }} onClick={() => pan(-240)} title="Earlier">‹</button>
       <div
         ref={containerRef}
-        style={{ overflowX: "auto", overflowY: "hidden", padding: "8px 20px 0", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+        style={{ flex: 1, overflowX: "hidden", overflowY: "hidden", padding: "8px 0 0" } as React.CSSProperties}
       >
         <div style={{ position: "relative", width: TL_W, height: 90, flexShrink: 0 }}>
 
@@ -301,18 +320,19 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
             );
           })}
 
-          {/* Now line */}
+          {/* Now line — green */}
           {inDay && (
             <>
               <div style={{
                 position: "absolute", left: nowX, top: 0, bottom: 22,
-                width: 2, background: "#C62828", borderRadius: 1, zIndex: 10,
+                width: 2, background: "#16A34A", borderRadius: 1, zIndex: 10,
               }} />
               <div style={{
-                position: "absolute", left: nowX + 4, top: 6,
-                fontSize: 8, fontWeight: 900, color: "#C62828",
+                position: "absolute", left: nowX + 4, top: 4,
+                fontSize: 9, fontWeight: 900, color: "#16A34A",
                 letterSpacing: 0.3, whiteSpace: "nowrap",
-                background: "#fff", padding: "0 2px", zIndex: 11,
+                background: "#fff", padding: "1px 3px",
+                border: "1px solid #16A34A", borderRadius: 3, zIndex: 11,
               }}>
                 {fmtMins(nowMins)}
               </div>
@@ -321,6 +341,15 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
 
         </div>
       </div>
+      {/* Center-on-now pill */}
+      <button
+        onClick={goToNow}
+        title="Back to now"
+        style={{ flexShrink: 0, alignSelf: "stretch", width: 28, background: "#F8F8F8", border: "none", borderLeft: "1px solid #E8E8E8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+      >
+        <span style={{ fontSize: 10, color: "#16A34A", fontWeight: 900, lineHeight: 1 }}>●</span>
+      </button>
+      <button style={{ ...arrowBtn, borderLeft: "1px solid #E8E8E8" }} onClick={() => pan(240)} title="Later">›</button>
     </div>
   );
 }
@@ -504,7 +533,6 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, contacts, onComplete, onNavigate }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [callCount, setCallCount] = useState<number>(0);
 
   const [hoveredLin, setHoveredLin] = useState<LinearItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -536,7 +564,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
 
   // Data with sample fallbacks
-  const top3    = tasks.filter(t => !tDone[t.id]).slice(0, 3).length > 0 ? tasks.filter(t => !tDone[t.id]).slice(0, 3) : SAMPLE_TOP3;
+  const _t3pool = tasks.filter(t => !tDone[t.id]).filter(t => !/sales.?call/i.test(t.text));
+  const top3    = _t3pool.length > 0 ? _t3pool.slice(0, 3) : SAMPLE_TOP3;
   const callList = contacts.length > 0 ? contacts.slice(0, 10) : SAMPLE_CALLS;
   const meetings = calendarData.filter(c => c.real).length > 0 ? calendarData.filter(c => c.real) : SAMPLE_MEETINGS;
   const emails   = emailsImportant.length > 0 ? emailsImportant.slice(0, 5) : SAMPLE_EMAILS;

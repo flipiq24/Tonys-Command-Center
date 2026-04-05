@@ -134,6 +134,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
   const [alerts, setAlerts] = useState<TaskAlerts>({ outOfSequence: [], missingDueDates: [] });
   const [focusOnly, setFocusOnly] = useState(false);
+  const [pillarFilter, setPillarFilter] = useState<string | null>(null);
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
   const [workNextSteps, setWorkNextSteps] = useState("");
@@ -299,8 +300,22 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   };
 
   const pct = parseInt(workNotePct) || 0;
-  const activeTasks   = tasks.filter(t => !tDone[t.id]);
-  const doneTasks     = tasks.filter(t => tDone[t.id]);
+  const PILLAR_KEYWORDS: Record<string, string[]> = {
+    "Adaptation": ["adapt"],
+    "Sales": ["sales"],
+    "Foundation": ["found", "infra", "core", "data", "flipiq", "db"],
+    "COO Dashboard": ["coo", "dashboard", "ethan", "ramy", "accountability"],
+  };
+  const matchesPillar = (t: TaskItem): boolean => {
+    if (!pillarFilter) return true;
+    if (pillarFilter === "Sales" && t.sales) return true;
+    const kws = PILLAR_KEYWORDS[pillarFilter] ?? [];
+    const hay = `${t.cat ?? ""} ${t.text}`.toLowerCase();
+    return kws.some(k => hay.includes(k));
+  };
+
+  const activeTasks   = tasks.filter(t => !tDone[t.id] && matchesPillar(t));
+  const doneTasks     = tasks.filter(t => tDone[t.id] && matchesPillar(t));
   const activeLocals  = localTasks.filter(t => t.status !== "done" && !localDone.has(t.id));
   const totalTasks    = tasks.length + activeLocals.length;
   const totalDone     = Object.values(tDone).filter(Boolean).length + (localTasks.length - activeLocals.length);
@@ -386,16 +401,27 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
               { num: "02", label: "Sales", desc: "Pipeline growth & 10-call daily cadence" },
               { num: "03", label: "Foundation", desc: "Data integrity, infra & FlipIQ core" },
               { num: "04", label: "COO Dashboard", desc: "Ethan & Ramy accountability loop" },
-            ].map(({ num, label, desc }) => (
-              <div key={label} style={{
-                border: `1px solid ${C.brd}`, borderRadius: 8, padding: "12px 14px",
-                background: C.card, display: "flex", flexDirection: "column", gap: 4,
-              }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "#bbb", letterSpacing: 1 }}>{num}</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.tx, lineHeight: 1.2 }}>{label}</div>
-                <div style={{ fontSize: 10, color: C.mut, lineHeight: 1.4, marginTop: 2 }}>{desc}</div>
+            ].map(({ num, label, desc }) => {
+              const active = pillarFilter === label;
+              return (
+              <div
+                key={label}
+                onClick={() => setPillarFilter(active ? null : label)}
+                style={{
+                  border: `${active ? 2 : 1}px solid ${active ? C.tx : C.brd}`,
+                  borderRadius: 8, padding: "12px 14px",
+                  background: active ? C.tx : C.card,
+                  display: "flex", flexDirection: "column", gap: 4,
+                  cursor: "pointer", userSelect: "none",
+                  transition: "all 0.12s",
+                }}
+              >
+                <div style={{ fontSize: 10, fontWeight: 800, color: active ? "#fff8" : "#bbb", letterSpacing: 1 }}>{num}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: active ? "#fff" : C.tx, lineHeight: 1.2 }}>{label}</div>
+                <div style={{ fontSize: 10, color: active ? "#ffffff99" : C.mut, lineHeight: 1.4, marginTop: 2 }}>{desc}</div>
               </div>
-            ))}
+            );})}
+
           </div>
         </div>
 
@@ -526,6 +552,16 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
               </div>
               </HoverCard>
             ))}
+          </div>
+        )}
+
+        {/* Pillar filter indicator */}
+        {pillarFilter && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0 4px" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.tx, background: C.tx + "12", border: `1px solid ${C.tx}22`, borderRadius: 6, padding: "2px 8px" }}>
+              Filtered: {pillarFilter}
+            </span>
+            <button onClick={() => setPillarFilter(null)} style={{ fontSize: 11, color: C.mut, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: F }}>× Clear</button>
           </div>
         )}
 

@@ -13,7 +13,7 @@ router.get("/linear/live", async (_req, res) => {
   try {
     const issues = await linear.issues({
       filter: {
-        state: { type: { nin: ["completed", "cancelled"] } },
+        state: { type: { in: ["started"] } },
       },
       first: 100,
     });

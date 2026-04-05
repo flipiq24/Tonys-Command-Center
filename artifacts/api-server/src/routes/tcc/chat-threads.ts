@@ -8,7 +8,7 @@ import { createLinearIssue } from "../../lib/linear";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
 import { getTodayEvents, createEvent } from "../../lib/gcal";
-import { getDrive } from "../../lib/google-auth";
+import { listDriveFiles } from "../../lib/google-drive";
 import { sendAutoEod } from "./eod";
 
 const router: IRouter = Router();
@@ -358,15 +358,11 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     }
     case "search_drive": {
       try {
-        const drive = getDrive();
-        const r = await drive.files.list({
-          q: `fullText contains '${String(input.query).replace(/'/g, "\\'")}'`,
-          pageSize: Math.min(Number(input.max_results) || 5, 10),
-          fields: "files(id,name,mimeType,modifiedTime,webViewLink)",
-        });
-        const files = r.data.files || [];
+        const query = String(input.query).replace(/'/g, "\\'");
+        const maxResults = Math.min(Number(input.max_results) || 5, 10);
+        const files = await listDriveFiles(`fullText contains '${query}'`, maxResults);
         if (!files.length) return `No Drive files found for "${input.query}".`;
-        return files.map((f, i) => `${i + 1}. ${f.name} (${f.mimeType})\n   Modified: ${f.modifiedTime}\n   Link: ${f.webViewLink}`).join("\n\n");
+        return files.map((f, i) => `${i + 1}. ${f.name} (${f.mimeType})\n   Modified: ${f.modifiedTime}`).join("\n\n");
       } catch (err) {
         return `Drive search failed: ${err instanceof Error ? err.message : String(err)}`;
       }

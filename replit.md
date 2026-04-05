@@ -152,14 +152,22 @@ type View = "checkin" | "journal" | "emails" | "schedule" | "sales" | "tasks" | 
 - **AgentMail**: Connected via Replit connector. EOD reports sent to tony@flipiq.com and ethan@flipiq.com.
 - **Google Calendar**: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` secrets. Live calendar events in brief. Create reminders from connected calls.
 - **Gmail**: Same Google OAuth credentials. Send/read emails, poll inbox, contacts autocomplete.
-- **Google Drive/Sheets/Docs**: Same Google OAuth. `lib/google-drive.ts`, `lib/google-sheets.ts`, `lib/google-docs.ts` helpers. Check-in appends to Sheet, 90-Day Plan ingested to business_context.
+- **Google Drive**: Replit connector (`google-drive` connection). `lib/google-drive.ts` uses `@replit/connectors-sdk` token + googleapis. Browse Tony's Drive, create folders, search files.
+- **Google Sheets**: Replit connector (`google-sheet` connection). `lib/google-sheets.ts` uses connector token + googleapis. Business Master Sheet (`BUSINESS_MASTER_SHEET_ID` env var) auto-created, syncs Contacts/Comms/Tasks every 5 min.
+- **Google Docs**: Same legacy Google OAuth (`GOOGLE_REFRESH_TOKEN`). `lib/google-docs.ts` helpers.
 - **Linear**: Replit connector. Tech ideas auto-create Linear issues. Brief fetches open issues.
 
 ## Google OAuth Libraries (`artifacts/api-server/src/lib/`)
-- `google-auth.ts`: `getGoogleAuth()`, `getGmail()`, `getCalendar()`, `getDrive()`, `getSheets()`, `getPeople()`, `getDocs()`
-- `google-sheets.ts`: `appendToSheet()`, `getSheetValues()`, `updateCell()`
+- `google-auth.ts`: `getGoogleAuth()`, `getGmail()`, `getCalendar()`, `getPeople()`, `getDocs()` — legacy OAuth, Gmail/Calendar/Contacts/Docs only
+- `google-sheets.ts`: `getSheetsClient()`, `appendToSheet()`, `getSheetValues()`, `updateCell()` — uses Replit connector token (not google-auth)
 - `google-docs.ts`: `appendToDoc()`, `getDocText()`
-- `google-drive.ts`: `createFolderIfNotExists()`, `searchFiles()`, `readGoogleDoc()`, `listDriveFiles()`
+- `google-drive.ts`: `createFolderIfNotExists()`, `searchFiles()`, `readGoogleDoc()`, `listDriveFiles()` — uses Replit connector token (not google-auth)
+
+## Business Master Sheet (Google Sheets)
+- ID stored in `BUSINESS_MASTER_SHEET_ID` env var
+- URL: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE/edit
+- Tabs: Contacts Master, Communication Log, Tasks, Context
+- Auto-sync every 5 minutes via `sheets-sync.ts`
 
 ## Color Constants (frontend)
 ```typescript

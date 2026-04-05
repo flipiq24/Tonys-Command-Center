@@ -1,42 +1,75 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
+import { google } from "googleapis";
 
-function getConnectors() {
-  return new ReplitConnectors();
-}
+let sheetConnectionSettings: any;
 
-async function sheetsRequest(path: string, options: { method?: string; body?: unknown } = {}) {
-  const connectors = getConnectors();
-  const { method = "GET", body } = options;
-
-  const fetchOpts: RequestInit = { method };
-  if (body) {
-    fetchOpts.body = JSON.stringify(body);
-    (fetchOpts as any).headers = { "Content-Type": "application/json" };
+async function getSheetsAccessToken() {
+  if (
+    sheetConnectionSettings?.settings?.expires_at &&
+    new Date(sheetConnectionSettings.settings.expires_at).getTime() > Date.now()
+  ) {
+    return sheetConnectionSettings.settings.access_token as string;
   }
 
-  const res = await connectors.proxy("google-sheet", path, fetchOpts as any);
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`Sheets API ${method} ${path} → ${res.status}: ${errText}`);
-  }
-  return res.json();
+  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
+  const xReplitToken = process.env.REPL_IDENTITY
+    ? "repl " + process.env.REPL_IDENTITY
+    : process.env.WEB_REPL_RENEWAL
+    ? "depl " + process.env.WEB_REPL_RENEWAL
+    : null;
+
+  if (!xReplitToken) throw new Error("X-Replit-Token not found");
+
+  sheetConnectionSettings = await fetch(
+    `https://${hostname}/api/v2/connection?include_secrets=true&connector_names=google-sheet`,
+    { headers: { Accept: "application/json", "X-Replit-Token": xReplitToken } }
+  )
+    .then((r) => r.json())
+    .then((d) => d.items?.[0]);
+
+  const accessToken =
+    sheetConnectionSettings?.settings?.access_token ||
+    sheetConnectionSettings?.settings?.oauth?.credentials?.access_token;
+
+  if (!accessToken) throw new Error("Google Sheet not connected");
+  return accessToken as string;
 }
 
-export async function appendToSheet(spreadsheetId: string, sheetName: string, values: (string | number | boolean | null)[]) {
-  await sheetsRequest(
-    `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(sheetName + "!A:Z")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: "POST", body: { values: [values] } }
-  );
+async function getSheets() {
+  const accessToken = await getSheetsAccessToken();
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: accessToken });
+  return google.sheets({ version: "v4", auth });
+}
+
+export { getSheets as getSheetsClient };
+
+export async function appendToSheet(
+  spreadsheetId: string,
+  sheetName: string,
+  values: (string | number | boolean | null)[]
+) {
+  const sheets = await getSheets();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId,
+    range: `${sheetName}!A:Z`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [values] },
+  });
 }
 
 export async function getSheetValues(spreadsheetId: string, range: string): Promise<string[][]> {
-  const res = await sheetsRequest(`/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`);
-  return (res.values || []) as string[][];
+  const sheets = await getSheets();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  return (res.data.values || []) as string[][];
 }
 
 export async function updateCell(spreadsheetId: string, range: string, value: string) {
-  await sheetsRequest(
-    `/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
-    { method: "PUT", body: { values: [[value]] } }
-  );
+  const sheets = await getSheets();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[value]] },
+  });
 }

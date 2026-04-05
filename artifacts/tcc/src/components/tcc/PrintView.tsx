@@ -534,7 +534,10 @@ function BackPage({ linActive, ramiItems, ethanItems, emails, slackActive, workB
             }}>
               <CB id={id} done={isDone} onToggle={toggle} />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 8, color: "#2563EB", fontWeight: 700 }}>{l.id}</div>
+                {l.url
+                  ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 8, color: "#2563EB", fontWeight: 700, textDecoration: "none" }}>{l.identifier || l.id}</a>
+                  : <div style={{ fontSize: 8, color: "#2563EB", fontWeight: 700 }}>{l.identifier || l.id}</div>
+                }
                 <div style={{ fontSize: 10, fontWeight: 500, color: isDone ? "#bbb" : BLK, textDecoration: isDone ? "line-through" : "none", lineHeight: 1.3 }}>{l.task}</div>
               </div>
             </div>
@@ -583,7 +586,12 @@ function BackPage({ linActive, ramiItems, ethanItems, emails, slackActive, workB
               return (
                 <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
                   <TD center><CB id={id} done={isDone} onToggle={toggle} /></TD>
-                  <TD small bold><span style={{ color: "#2563EB" }}>{l.id}</span></TD>
+                  <TD small bold>
+                    {l.url
+                      ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "none" }}>{l.identifier || l.id}</a>
+                      : <span style={{ color: "#2563EB" }}>{l.identifier || l.id}</span>
+                    }
+                  </TD>
                   <TD strike={isDone} small>{l.task}</TD>
                   <TD small>{l.who || "—"}</TD>
                   <TD small>

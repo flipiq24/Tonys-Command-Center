@@ -1,12 +1,11 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { contactsTable } from "@workspace/db";
-import { appendToSheet, getSheetValues } from "../../lib/google-sheets";
+import { appendToSheet, getSheetValues, getSheetsClient } from "../../lib/google-sheets";
 import { readGoogleDoc } from "../../lib/google-drive";
 import { businessContextTable, contactIntelligenceTable, communicationLogTable } from "../../lib/schema-v2";
 import { eq, desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { getSheets } from "../../lib/google-auth";
 import { todayPacific } from "../../lib/dates";
 
 const router: IRouter = Router();
@@ -19,7 +18,7 @@ const PLAN_90_DAY_ID = process.env.PLAN_90_DAY_ID || "1b1Ejf6Tim1gevq0BoMeV7XZ2K
 // ─── Business Master Sheet sync helpers ─────────────────────────────────────
 
 async function clearAndWriteTab(spreadsheetId: string, tabName: string, rows: (string | number | null)[][]): Promise<void> {
-  const sheets = getSheets();
+  const sheets = await getSheetsClient();
   // Clear the tab first
   await sheets.spreadsheets.values.clear({
     spreadsheetId,
@@ -78,7 +77,7 @@ export async function syncTasksTab(): Promise<void> {
       ];
     });
 
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Tasks", [header, ...rows]);
     console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (11 columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncTasksTab failed:", (err as Error).message);
@@ -103,7 +102,7 @@ export async function syncContactsTab(): Promise<void> {
       c.lastContactDate || null,
       c.createdAt ? new Date(c.createdAt).toISOString() : null,
     ]);
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contact Master", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contacts Master", [header, ...rows]);
     console.log(`[sheets-sync] Contacts tab synced: ${rows.length} rows`);
   } catch (err) {
     console.warn("[sheets-sync] syncContactsTab failed:", (err as Error).message);

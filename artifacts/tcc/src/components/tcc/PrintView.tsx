@@ -18,6 +18,12 @@ interface Props {
   onRefresh?: () => Promise<void>;
 }
 
+const SAMPLE_SLACK: SlackItem[] = [
+  { from: "Ethan Jolly", message: "Linear sprint blockers need your review", level: "high", channel: "#engineering" },
+  { from: "Faisal", message: "Command deploy blocked on merge conflict", level: "mid", channel: "#dev" },
+  { from: "Dennis", message: "Sales numbers ready for review", level: "low", channel: "#sales" },
+];
+
 const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
 // ─────────────────────────────────────────────────────────────────
@@ -236,7 +242,7 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
   );
 }
 
-export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearItems = [], topCallContacts = [], onClose, onRefresh }: Props) {
+export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackItems = [], linearItems = [], topCallContacts = [], onClose, onRefresh }: Props) {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -284,6 +290,9 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
   const realLinear = linearItems.slice(0, 8);
   const linActive = realLinear.length > 0 ? realLinear : SAMPLE_LINEAR;
   const linHigh = linActive.filter(l => l.level === "high").slice(0, 4);
+
+  const realSlack = slackItems.slice(0, 6);
+  const slackActive = realSlack.length > 0 ? realSlack : SAMPLE_SLACK;
 
   // Compute free-window schedule from meeting times
   const workBlocks = computeWorkBlocks(meetings);
@@ -357,25 +366,6 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
                 );
               })}
             </div>
-
-            {/* My Tasks */}
-            {activeLocals.length > 0 && (
-              <>
-                <SL text="My Tasks" color="#555" time={workBlocks.tasks} />
-                <div style={{ marginBottom: 10 }}>
-                  {activeLocals.map(t => {
-                    const id = `local-${t.id}`;
-                    return (
-                      <div key={id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "5px 8px", borderBottom: "1px solid #E8E8E8" }}>
-                        <CB id={id} done={ck(id)} onToggle={toggle} />
-                        <div style={{ flex: 1, fontSize: 11, color: ck(id) ? "#bbb" : BLK, textDecoration: ck(id) ? "line-through" : "none" }}>{t.text}</div>
-                        {t.dueDate && <div style={{ fontSize: 9, color: "#999", flexShrink: 0 }}>Due {new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
 
             {/* SALES CALLS + APPOINTMENTS side by side */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14 }}>
@@ -457,41 +447,6 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
               </div>
             </div>
 
-            {/* Priority Emails */}
-            <SL text="📧 Priority Emails" color="#E65100" time={workBlocks.emails} />
-            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-              <thead>
-                <tr>
-                  <TH w={22} center>✓</TH>
-                  <TH w={130}>FROM</TH>
-                  <TH>SUBJECT</TH>
-                  <TH w={120}>WHY</TH>
-                  <TH w={90}>ACTION</TH>
-                </tr>
-              </thead>
-              <tbody>
-                {emails.map((e, i) => {
-                  const id = `email-${i}`;
-                  const done2 = ck(id);
-                  return (
-                    <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                      <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
-                      <TD bold strike={done2}>{e.from}</TD>
-                      <TD strike={done2} small>{e.subj}</TD>
-                      <TD small dim>{e.why || ""}</TD>
-                      <TD small bold><span style={{ color: "#1565C0" }}>{e.p || "—"}</span></TD>
-                    </tr>
-                  );
-                })}
-                {Array.from({ length: Math.max(0, 4 - emails.length) }).map((_, i) => (
-                  <tr key={`emailblank-${i}`} style={{ background: (emails.length + i) % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                    <TD center><CB id={`emailblank-${i}`} done={ck(`emailblank-${i}`)} onToggle={toggle} /></TD>
-                    <TD /><TD /><TD /><TD />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
           </div>
         </Page>
 
@@ -569,6 +524,68 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, linearI
                       <div style={{ flex: 1, height: 1, background: "#E8E8E8" }} />
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Priority Emails + Slack side by side ── */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 10 }}>
+
+              {/* Priority Emails */}
+              <div>
+                <SL text="📧 Priority Emails" color="#E65100" time={workBlocks.emails} />
+                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
+                  <thead>
+                    <tr>
+                      <TH w={22} center>✓</TH>
+                      <TH w={110}>FROM</TH>
+                      <TH>SUBJECT</TH>
+                      <TH w={70}>ACTION</TH>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emails.map((e, i) => {
+                      const id = `email-${i}`;
+                      const done2 = ck(id);
+                      return (
+                        <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                          <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
+                          <TD bold strike={done2}>{e.from}</TD>
+                          <TD strike={done2} small>{e.subj}</TD>
+                          <TD small bold><span style={{ color: "#1565C0" }}>{e.p || "—"}</span></TD>
+                        </tr>
+                      );
+                    })}
+                    {Array.from({ length: Math.max(0, 4 - emails.length) }).map((_, i) => (
+                      <tr key={`emailblank-${i}`} style={{ background: (emails.length + i) % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                        <TD center><CB id={`emailblank-${i}`} done={ck(`emailblank-${i}`)} onToggle={toggle} /></TD>
+                        <TD /><TD /><TD />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Slack Items */}
+              <div>
+                <SL text="💬 Slack — Needs Attention" color="#611f69" />
+                <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
+                  {slackActive.map((s, i) => {
+                    const levelC = s.level === "high" ? "#C62828" : s.level === "mid" ? "#E65100" : "#555";
+                    return (
+                      <div key={i} style={{ padding: "7px 10px", borderBottom: i < slackActive.length - 1 ? "1px solid #E8E8E8" : "none", background: s.level === "high" ? "#FFF5F5" : "#fff" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: levelC, textTransform: "uppercase" }}>{s.level}</span>
+                          <span style={{ fontSize: 8, color: "#888" }}>{s.channel}</span>
+                        </div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "#333" }}>{s.from}</div>
+                        <div style={{ fontSize: 9, color: "#666", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.message}</div>
+                      </div>
+                    );
+                  })}
+                  {slackActive.length === 0 && (
+                    <div style={{ padding: "8px 10px", fontSize: 10, color: "#bbb", fontStyle: "italic" }}>No Slack items today 🎉</div>
+                  )}
                 </div>
               </div>
             </div>

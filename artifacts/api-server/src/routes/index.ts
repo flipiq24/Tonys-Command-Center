@@ -31,6 +31,7 @@ import linearRouter from "./tcc/linear";
 import scheduleRouter from "./tcc/schedule";
 import driveRouter from "./tcc/drive";
 import notesScratchRouter from "./tcc/notes-scratch";
+import demoFeedbackRouter from "./tcc/demo-feedback";
 
 const router: IRouter = Router();
 
@@ -66,6 +67,7 @@ router.use(linearRouter);
 router.use(scheduleRouter);
 router.use(driveRouter);
 router.use(notesScratchRouter);
+router.use(demoFeedbackRouter);
 
 // ─── Canonical aliases ────────────────────────────────────────────────────────
 router.post("/email-action", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {

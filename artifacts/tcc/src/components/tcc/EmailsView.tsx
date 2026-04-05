@@ -8,6 +8,7 @@ import type { EmailItem } from "./types";
 interface Props {
   emailsImportant: EmailItem[];
   emailsFyi: EmailItem[];
+  emailsPromotions?: EmailItem[];
   snoozed: Record<number, string>;
   customTips: Record<string, string>;
   onSnooze: (emailId: number, until: string) => void;
@@ -23,11 +24,12 @@ interface TrainingState {
   saved: boolean;
 }
 
-export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh }: Props) {
+export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh }: Props) {
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const [training, setTraining] = useState<TrainingState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [showPromotions, setShowPromotions] = useState(false);
   const [nwPickEmailId, setNwPickEmailId] = useState<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -344,6 +346,40 @@ export function EmailsView({ emailsImportant, emailsFyi, snoozed, customTips, on
             );
           })}
         </div>
+
+        {emailsPromotions.length > 0 && (
+          <div style={{ ...card, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showPromotions ? 10 : 0 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Promotions/Spam</h3>
+                <span style={{ fontSize: 13, color: C.mut, fontFamily: F }}>{emailsPromotions.length} email{emailsPromotions.length !== 1 ? "s" : ""} · low priority</span>
+              </div>
+              <button
+                onClick={() => setShowPromotions(p => !p)}
+                style={{ ...btn2, fontSize: 12, padding: "4px 10px", color: C.mut, borderColor: C.brd }}
+              >
+                {showPromotions ? "Hide ▴" : `Show ${emailsPromotions.length} promotion${emailsPromotions.length !== 1 ? "s" : ""} ▾`}
+              </button>
+            </div>
+            {showPromotions && emailsPromotions.map(e => {
+              const url = gmailUrl(e);
+              const senderName = e.from.replace(/<[^>]+>/, "").trim() || e.from;
+              return (
+                <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: `1px solid ${C.brd}` }}>
+                  <span style={{ width: 8, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.sub, fontFamily: F, flexShrink: 0, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{senderName}</span>
+                      <span style={{ fontSize: 12, color: C.mut, fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>— {e.subj}</span>
+                    </div>
+                  </div>
+                  {e.time && <span style={{ fontSize: 11, color: C.mut, flexShrink: 0, whiteSpace: "nowrap" }}>{e.time}</span>}
+                  <a href={url} target="_blank" rel="noopener noreferrer" title="Open in Gmail" style={{ fontSize: 14, color: C.mut, textDecoration: "none", flexShrink: 0, lineHeight: 1 }}>✉</a>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <button onClick={onDone} style={{ ...btn1, width: "100%", marginBottom: 40 }}>
           Done — Show My Day →

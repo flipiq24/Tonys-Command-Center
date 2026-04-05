@@ -94,7 +94,7 @@ type EmailImportant = { id: number; from: string; subj: string; why: string; tim
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
-type LinearItem = { who: string; task: string; id: string; level: string };
+type LinearItem = { who: string; task: string; id: string; level: string; dueDate?: string | null };
 
 // ─── Live Gmail fetch via Replit google-mail connector ────────────────────────
 
@@ -333,6 +333,7 @@ async function fetchLiveLinear(): Promise<LinearItem[] | null> {
         task: n.title,
         id: n.identifier,
         level: priorityToLevel(n.priority),
+        dueDate: n.dueDate ?? null,
       }));
   } catch (err) {
     console.warn("[brief] Linear live fetch failed:", err instanceof Error ? err.message : err);

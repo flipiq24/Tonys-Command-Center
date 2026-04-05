@@ -529,6 +529,7 @@ export default function App() {
       <EmailsView
         emailsImportant={brief?.emailsImportant || []}
         emailsFyi={brief?.emailsFyi || []}
+        emailsPromotions={brief?.emailsPromotions || []}
         snoozed={snoozed}
         customTips={customTips}
         onSnooze={handleSnooze}

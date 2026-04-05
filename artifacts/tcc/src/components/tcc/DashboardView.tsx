@@ -86,27 +86,72 @@ function fmtMins(mins: number): string {
   const dh = h > 12 ? h - 12 : h === 0 ? 12 : h;
   return `${dh}:${m.toString().padStart(2, "0")} ${p}`;
 }
+interface WorkBlock { start: number; end: number; label: string; kind: "sales" | "email"; }
+
 function computeWorkBlocks(meetingList: CalItem[]) {
   const WORK_START = 8 * 60, WORK_END = 18 * 60, MIN_USEFUL = 30;
+  const SALES_NEED = 120, EMAIL_NEED = 30;
   const busy = meetingList.map(m => {
     const start = parseTimeMins(m.t);
     const end = m.tEnd ? parseTimeMins(m.tEnd) : (start !== null ? start + 30 : null);
     return start !== null && end !== null ? { start, end } : null;
   }).filter(Boolean).sort((a, b) => a!.start - b!.start) as { start: number; end: number }[];
-  const free: { start: number; end: number }[] = [];
-  let cursor = WORK_START;
-  for (const b of busy) {
-    if (b.start > cursor + MIN_USEFUL) free.push({ start: cursor, end: b.start });
-    cursor = Math.max(cursor, b.end);
-  }
-  if (cursor < WORK_END - MIN_USEFUL) free.push({ start: cursor, end: WORK_END });
+
+  const getFreeSlots = (occupiedBusy: { start: number; end: number }[]) => {
+    const free: { start: number; end: number }[] = [];
+    let cursor = WORK_START;
+    for (const b of occupiedBusy) {
+      if (b.start > cursor + MIN_USEFUL) free.push({ start: cursor, end: b.start });
+      cursor = Math.max(cursor, b.end);
+    }
+    if (cursor < WORK_END - MIN_USEFUL) free.push({ start: cursor, end: WORK_END });
+    return free;
+  };
+
   const fmt = (b: { start: number; end: number }) => `${fmtMins(b.start)} – ${fmtMins(b.end)}`;
-  const morning = free.filter(b => b.start < 12 * 60 && (b.end - b.start) >= MIN_USEFUL);
-  const afternoon = free.filter(b => b.start >= 11 * 60 && (b.end - b.start) >= MIN_USEFUL);
+
+  const free0 = getFreeSlots(busy);
+  const morning = free0.filter(b => b.start < 12 * 60 && (b.end - b.start) >= MIN_USEFUL);
+  const afternoon = free0.filter(b => b.start >= 11 * 60 && (b.end - b.start) >= MIN_USEFUL);
+
+  // ── Compute Sales Calls auto-blocks (2 hrs starting 8 AM, split if needed) ──
+  const autoBlocks: WorkBlock[] = [];
+  let salesRemaining = SALES_NEED;
+  const busyForSales = [...busy];
+  for (const slot of getFreeSlots(busyForSales)) {
+    if (salesRemaining <= 0) break;
+    if (slot.start < WORK_START) continue;
+    const avail = slot.end - slot.start;
+    if (avail < MIN_USEFUL) continue;
+    const take = Math.min(avail, salesRemaining);
+    const isFirst = salesRemaining === SALES_NEED;
+    const needsSplit = salesRemaining < SALES_NEED;
+    autoBlocks.push({
+      start: slot.start,
+      end: slot.start + take,
+      label: isFirst ? (take < SALES_NEED ? "Sales Calls (pt. 1)" : "Sales Calls") : needsSplit ? "Sales Calls (pt. 2)" : "Sales Calls",
+      kind: "sales",
+    });
+    busyForSales.push({ start: slot.start, end: slot.start + take });
+    busyForSales.sort((a, b) => a.start - b.start);
+    salesRemaining -= take;
+  }
+
+  // ── Compute Priority Email block (30 min after sales calls) ──
+  const allOccupied = [...busy, ...autoBlocks.map(b => ({ start: b.start, end: b.end }))].sort((a, b) => a.start - b.start);
+  for (const slot of getFreeSlots(allOccupied)) {
+    const avail = slot.end - slot.start;
+    if (avail >= EMAIL_NEED) {
+      autoBlocks.push({ start: slot.start, end: slot.start + EMAIL_NEED, label: "Priority Emails", kind: "email" });
+      break;
+    }
+  }
+
   return {
-    salesCalls: morning[0] ? fmt(morning[0]) : free[0] ? fmt(free[0]) : undefined,
+    salesCalls: morning[0] ? fmt(morning[0]) : free0[0] ? fmt(free0[0]) : undefined,
     tasks: morning[1] ? fmt(morning[1]) : afternoon[0] ? fmt(afternoon[0]) : undefined,
-    emails: afternoon[0] ? fmt(afternoon[0]) : free[2] ? fmt(free[2]) : undefined,
+    emails: afternoon[0] ? fmt(afternoon[0]) : free0[2] ? fmt(free0[2]) : undefined,
+    autoBlocks,
   };
 }
 
@@ -129,7 +174,7 @@ function getCurrentMins() {
   return n.getHours() * 60 + n.getMinutes();
 }
 
-function DayTimeline({ meetings }: { meetings: CalItem[] }) {
+function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks: WorkBlock[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [nowMins, setNowMins] = useState<number>(getCurrentMins);
 
@@ -215,6 +260,41 @@ function DayTimeline({ meetings }: { meetings: CalItem[] }) {
                 {wide && m.loc && (
                   <div style={{ fontSize: 8, color: "#AAA", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {m.loc}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Auto-inserted work blocks (Sales Calls + Priority Emails) */}
+          {autoBlocks.map((blk, i) => {
+            const x = Math.max(0, (blk.start - TL_START) * PPM);
+            const w = Math.max(6, (blk.end - blk.start) * PPM - 2);
+            const isSales = blk.kind === "sales";
+            const borderColor = isSales ? "#C62828" : "#E65100";
+            const bgColor = isSales ? "#FFF0F0" : "#FFF5EC";
+            const textColor = isSales ? "#C62828" : "#E65100";
+            const wide = w > 80;
+            return (
+              <div key={`auto-${i}`} style={{
+                position: "absolute", left: x, top: 6,
+                width: w, height: 58,
+                background: bgColor,
+                border: `1.5px solid ${borderColor}`,
+                borderRadius: 3, padding: "4px 5px",
+                overflow: "hidden", boxSizing: "border-box",
+                cursor: "default",
+              }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 800, fontStyle: "italic", color: textColor,
+                  lineHeight: 1.2, whiteSpace: "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                  {blk.label}
+                </div>
+                {wide && (
+                  <div style={{ fontSize: 8, color: textColor, opacity: 0.7, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {fmtMins(blk.start)} – {fmtMins(blk.end)}
                   </div>
                 )}
               </div>
@@ -424,6 +504,7 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, contacts, onComplete, onNavigate }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [callCount, setCallCount] = useState<number>(0);
 
   const [hoveredLin, setHoveredLin] = useState<LinearItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
@@ -496,9 +577,44 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
 
         {/* ── Day Timeline ── real calendar data only (no sample fallback) */}
-        <DayTimeline meetings={calendarData.filter(c => c.real)} />
+        <DayTimeline meetings={calendarData.filter(c => c.real)} autoBlocks={wb.autoBlocks} />
 
         <div style={{ padding: "12px 20px 18px" }}>
+
+            {/* ── SALES CALLS ── */}
+            <div style={{ marginBottom: 12 }}>
+              <SL text="📞 Sales Calls — 10 Today" color="#C62828" time={wb.salesCalls} view="sales" onNavigate={onNavigate} />
+              <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
+                <thead>
+                  <tr><TH w={22} center>✓</TH><TH w={18} center>#</TH><TH>NAME / CO.</TH><TH w={80}>PHONE</TH><TH w={52}>STATUS</TH></tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 10 }).map((_, i) => {
+                    const c = callList[i];
+                    const id = `call-${i}`;
+                    const done = ck(id);
+                    return (
+                      <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
+                        <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
+                        <TD center small dim>{i + 1}</TD>
+                        {c ? (
+                          <>
+                            <TD strike={done}>
+                              <div style={{ fontWeight: 600, fontSize: 11, color: done ? "#ccc" : BLK }}>{c.name}</div>
+                              {c.company && <div style={{ fontSize: 8, color: "#aaa" }}>{c.company}</div>}
+                            </TD>
+                            <TD small dim>{c.phone || "—"}</TD>
+                            <TD center small bold>
+                              <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : c.status === "Cold" ? "#888" : "#555" }}>{c.status || "—"}</span>
+                            </TD>
+                          </>
+                        ) : <><TD /><TD /><TD /></>}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
 
             {/* ── TOP 3 ── */}
             <SL text="★ Top 3 — Do These First" color="#B7791F" view="tasks" onNavigate={onNavigate} />
@@ -551,41 +667,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </>
             )}
 
-            {/* ── SALES CALLS ── */}
-            <div style={{ marginBottom: 12 }}>
-              <SL text="📞 Sales Calls" color="#C62828" time={wb.salesCalls} view="sales" onNavigate={onNavigate} />
-              <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                <thead>
-                  <tr><TH w={22} center>✓</TH><TH w={18} center>#</TH><TH>NAME / CO.</TH><TH w={80}>PHONE</TH><TH w={52}>STATUS</TH></tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 10 }).map((_, i) => {
-                    const c = callList[i];
-                    const id = `call-${i}`;
-                    const done = ck(id);
-                    return (
-                      <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
-                        <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
-                        <TD center small dim>{i + 1}</TD>
-                        {c ? (
-                          <>
-                            <TD strike={done}>
-                              <div style={{ fontWeight: 600, fontSize: 11, color: done ? "#ccc" : BLK }}>{c.name}</div>
-                              {c.company && <div style={{ fontSize: 8, color: "#aaa" }}>{c.company}</div>}
-                            </TD>
-                            <TD small dim>{c.phone || "—"}</TD>
-                            <TD center small bold>
-                              <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : c.status === "Cold" ? "#888" : "#555" }}>{c.status || "—"}</span>
-                            </TD>
-                          </>
-                        ) : <><TD /><TD /><TD /></>}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
             {/* ── PRIORITY EMAILS ── */}
             <SL text="📧 Priority Emails" color="#E65100" time={wb.emails} view="emails" onNavigate={onNavigate} />
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
@@ -628,7 +709,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         <div style={{ padding: "0 20px 18px" }}>
 
             {/* ── LINEAR — Engineering in Progress (flags + sequence baked in) ── */}
-            <SL text="⚡ Linear — Engineering in Progress" color="#2563EB" />
+            <SL text="⚡ Linear — Engineering in Progress" color="#E65100" />
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 12 }}>
               <thead>
                 <tr>
@@ -684,8 +765,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       <TD center small dim>{isCompleted ? "" : i + 1}</TD>
                       <TD small bold>
                         {l.url
-                          ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "none" }}>{l.id}</a>
-                          : <span style={{ color: "#2563EB" }}>{l.id}</span>
+                          ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#E65100", textDecoration: "none" }}>{l.id}</a>
+                          : <span style={{ color: "#E65100" }}>{l.id}</span>
                         }
                       </TD>
                       <TD strike={isCompleted}>{l.task}</TD>

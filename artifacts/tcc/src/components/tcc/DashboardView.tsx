@@ -117,8 +117,8 @@ const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month
 const TL_START = 8 * 60;              // 8:00 AM in minutes from midnight
 const TL_END   = 18 * 60;            // 6:00 PM
 const TL_TOTAL = TL_END - TL_START;  // 600 minutes
-const PPM      = 2.5;                 // pixels per minute → 1500px total
-const TL_W     = TL_TOTAL * PPM;
+const PPM      = 2;                   // pixels per minute → 1200px total
+const TL_W     = TL_TOTAL * PPM;     // 1200px
 
 function getCurrentMins() {
   const n = new Date();
@@ -185,6 +185,10 @@ function DayTimeline({ meetings }: { meetings: CalItem[] }) {
             const x = Math.max(0, (startMin - TL_START) * PPM);
             const w = Math.max(6, (endMin - startMin) * PPM - 2);
             const wide = w > 100;
+            // Compact time range for narrow blocks (e.g. "9:00" instead of "9:00 AM – 9:30 AM")
+            const timeRange = wide
+              ? `${m.t}${m.tEnd ? ` – ${m.tEnd}` : ""}`
+              : m.t.replace(/ (AM|PM)$/i, "");
             return (
               <div key={i} style={{
                 position: "absolute", left: x, top: 6,
@@ -201,11 +205,9 @@ function DayTimeline({ meetings }: { meetings: CalItem[] }) {
                 }}>
                   {m.n}
                 </div>
-                {wide && (
-                  <div style={{ fontSize: 8, color: "#777", marginTop: 2, whiteSpace: "nowrap" }}>
-                    {m.t}{m.tEnd ? ` – ${m.tEnd}` : ""}
-                  </div>
-                )}
+                <div style={{ fontSize: 8, color: "#777", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {timeRange}
+                </div>
                 {wide && m.loc && (
                   <div style={{ fontSize: 8, color: "#AAA", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {m.loc}

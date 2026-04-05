@@ -27,6 +27,7 @@ export type LinearIssueRaw = {
   identifier: string;
   priority: number;
   dueDate?: string | null;
+  startedAt?: string | null;
   description?: string | null;
   url?: string;
   estimate?: number | null;
@@ -38,7 +39,7 @@ export type LinearIssueRaw = {
 };
 
 const LINEAR_ISSUE_FIELDS = `
-  id title identifier priority dueDate description url estimate completedAt canceledAt
+  id title identifier priority dueDate startedAt description url estimate completedAt canceledAt
   state { name type }
   assignee { name displayName }
   labels { nodes { name } }

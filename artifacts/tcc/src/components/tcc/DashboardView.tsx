@@ -537,6 +537,19 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const [hoveredLin, setHoveredLin] = useState<LinearItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
+  // ── Generic hover tooltip for calls / top3 / emails ──────────────
+  type HoverPayload =
+    | { kind: "call"; c: Contact }
+    | { kind: "task"; t: TaskItem; rank: number }
+    | { kind: "email"; em: EmailItem };
+  const [hovered, setHovered] = useState<HoverPayload | null>(null);
+  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
+  const onHoverEnter = (payload: HoverPayload, e: React.MouseEvent) => {
+    setHovered(payload); setHoverPos({ x: e.clientX, y: e.clientY });
+  };
+  const onHoverMove = (e: React.MouseEvent) => setHoverPos({ x: e.clientX, y: e.clientY });
+  const onHoverLeave = () => setHovered(null);
+
   // ── Today's Wins — manual entries, persisted in localStorage per day ─
   const _winsKey = `tcc_wins_${new Date().toISOString().slice(0, 10)}`;
   const [wins, setWins] = useState<string[]>(() => {
@@ -623,7 +636,11 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     const id = `call-${i}`;
                     const done = ck(id);
                     return (
-                      <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
+                      <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}
+                        onMouseEnter={e => c ? onHoverEnter({ kind: "call", c }, e) : undefined}
+                        onMouseMove={onHoverMove}
+                        onMouseLeave={onHoverLeave}
+                      >
                         <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
                         <TD center small dim>{i + 1}</TD>
                         {c ? (
@@ -657,7 +674,11 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     display: "flex", gap: 10, alignItems: "flex-start",
                     padding: "8px 10px", borderBottom: "1px solid #EBEBEB",
                     background: i === 0 ? "#FFFBF2" : "#fff", transition: "background 0.15s",
-                  }}>
+                  }}
+                    onMouseEnter={e => t ? onHoverEnter({ kind: "task", t, rank: i + 1 }, e) : undefined}
+                    onMouseMove={onHoverMove}
+                    onMouseLeave={onHoverLeave}
+                  >
                     <CB id={id} checked={done} onToggle={t ? () => { toggle(id); onComplete(t); } : toggle} />
                     <div style={{
                       width: 20, height: 20, borderRadius: 4, flexShrink: 0,
@@ -703,17 +724,21 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                 <tr><TH w={22} center>✓</TH><TH w={120}>FROM</TH><TH>SUBJECT</TH><TH w={110}>WHY</TH><TH w={85}>ACTION</TH></tr>
               </thead>
               <tbody>
-                {emails.map((e, i) => {
+                {emails.map((em, i) => {
                   const id = `email-${i}`;
                   const done = ck(id);
                   return (
                     <tr key={id} className="dash-row-hover" style={{ background: "#fff", cursor: "pointer" }}
-                      onClick={() => onNavigate("emails")}>
-                      <TD center><CB id={id} checked={done} onToggle={e => { e; toggle(id); }} /></TD>
-                      <TD bold strike={done}>{e.from}</TD>
-                      <TD small strike={done}>{e.subj}</TD>
-                      <TD small dim>{e.why || ""}</TD>
-                      <TD small bold><span style={{ color: "#1565C0" }}>{e.p || "—"}</span></TD>
+                      onClick={() => onNavigate("emails")}
+                      onMouseEnter={e => onHoverEnter({ kind: "email", em }, e)}
+                      onMouseMove={onHoverMove}
+                      onMouseLeave={onHoverLeave}
+                    >
+                      <TD center><CB id={id} checked={done} onToggle={ev => { ev; toggle(id); }} /></TD>
+                      <TD bold strike={done}>{em.from}</TD>
+                      <TD small strike={done}>{em.subj}</TD>
+                      <TD small dim>{em.why || ""}</TD>
+                      <TD small bold><span style={{ color: "#1565C0" }}>{em.p || "—"}</span></TD>
                     </tr>
                   );
                 })}
@@ -901,6 +926,91 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
           </div>
 
       </div>
+
+      {/* ── GENERIC HOVER TOOLTIP (calls / top3 / emails) ── */}
+      {hovered && (() => {
+        const wx = typeof window !== "undefined" ? window.innerWidth : 1200;
+        const style: React.CSSProperties = {
+          position: "fixed",
+          left: Math.min(hoverPos.x + 18, wx - 320),
+          top: Math.max(hoverPos.y - 20, 8),
+          zIndex: 9999,
+          background: "#1C1C1E",
+          color: "#F5F5F5",
+          borderRadius: 8,
+          padding: "14px 16px",
+          width: 300,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+          fontSize: 11,
+          lineHeight: 1.55,
+          pointerEvents: "none",
+          fontFamily: F,
+        };
+        const Row = ({ label, val, color }: { label: string; val?: string | null; color?: string }) => val ? (
+          <>
+            <span style={{ color: "#666", fontSize: 10 }}>{label}</span>
+            <span style={{ color: color || "#F5F5F5" }}>{val}</span>
+          </>
+        ) : null;
+
+        if (hovered.kind === "call") {
+          const { c } = hovered;
+          const statusColor = c.status === "Hot" ? "#FCA5A5" : c.status === "Warm" ? "#FCD34D" : c.status === "Cold" ? "#93C5FD" : "#AAA";
+          return (
+            <div style={style}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 4 }}>{c.name}</div>
+              {c.company && <div style={{ fontSize: 10, color: "#AAA", marginBottom: 10 }}>{c.company}</div>}
+              <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "5px 8px", fontSize: 10.5 }}>
+                <Row label="Phone" val={c.phone} />
+                <span style={{ color: "#666", fontSize: 10 }}>Status</span>
+                <span style={{ color: statusColor, fontWeight: 700 }}>{c.status === "Hot" ? "🔴 Hot" : c.status === "Warm" ? "🟡 Warm" : c.status === "Cold" ? "🔵 Cold" : c.status || "—"}</span>
+              </div>
+            </div>
+          );
+        }
+
+        if (hovered.kind === "task") {
+          const { t, rank } = hovered;
+          return (
+            <div style={style}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 20, height: 20, borderRadius: 4, background: rank === 1 ? "#fff" : "#555", color: rank === 1 ? "#111" : "#eee", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {rank}
+                </div>
+                {t.cat && <span style={{ fontSize: 9, fontWeight: 700, color: "#AAA", letterSpacing: 0.5, textTransform: "uppercase" }}>{t.cat}</span>}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#fff", lineHeight: 1.4, marginBottom: 8 }}>{t.text}</div>
+              {(t as any).dueDate && (
+                <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "5px 8px", fontSize: 10.5 }}>
+                  <Row label="Due" val={(t as any).dueDate} />
+                </div>
+              )}
+              <div style={{ marginTop: 8, fontSize: 10, color: "#666", fontStyle: "italic" }}>
+                Click checkbox to mark complete →
+              </div>
+            </div>
+          );
+        }
+
+        if (hovered.kind === "email") {
+          const { em } = hovered;
+          return (
+            <div style={style}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#fff", marginBottom: 4 }}>{em.from}</div>
+              <div style={{ fontSize: 11, color: "#D0D0D0", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #333" }}>{em.subj}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "64px 1fr", gap: "5px 8px", fontSize: 10.5 }}>
+                <Row label="Why" val={em.why} />
+                <Row label="Action" val={em.p} color="#93C5FD" />
+              </div>
+              <div style={{ marginTop: 10, fontSize: 10, color: "#666", fontStyle: "italic" }}>
+                Click row to open Emails →
+              </div>
+            </div>
+          );
+        }
+
+        return null;
+      })()}
 
       {/* ── LINEAR HOVER TOOLTIP ── */}
       {hoveredLin && (

@@ -91,6 +91,11 @@ export interface LinearItem {
   dueDate?: string | null;
   size?: string | null;
   inSequence?: boolean | null;
+  state?: string;
+  stateType?: string;
+  description?: string | null;
+  labels?: string[];
+  url?: string;
 }
 
 export interface DailyBrief {

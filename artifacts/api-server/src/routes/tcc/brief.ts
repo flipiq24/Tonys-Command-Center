@@ -6,7 +6,7 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
 import { getSlackChannelHistory } from "../../lib/slack.js";
-import { getLinearIssues } from "../../lib/linear.js";
+import { getLinearIssues, getRecentlyCompletedLinearIssues } from "../../lib/linear.js";
 import { todayPacific } from "../../lib/dates.js";
 
 // ─── Full seed defaults — matches TCC_Seed_Data JSON ─────────────────────────
@@ -94,7 +94,12 @@ type EmailImportant = { id: number; from: string; subj: string; why: string; tim
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
-type LinearItem = { who: string; task: string; id: string; level: string; dueDate?: string | null; size?: string | null; inSequence?: boolean | null };
+type LinearItem = {
+  who: string; task: string; id: string; level: string;
+  dueDate?: string | null; size?: string | null; inSequence?: boolean | null;
+  state?: string; stateType?: string;
+  description?: string | null; labels?: string[]; url?: string;
+};
 
 // ─── Live Gmail fetch via Replit google-mail connector ────────────────────────
 
@@ -322,9 +327,13 @@ async function fetchLiveSlack(): Promise<SlackItem[] | null> {
 
 async function fetchLiveLinear(): Promise<LinearItem[] | null> {
   try {
-    const issues = await getLinearIssues();
-    if (!issues.length) return [];
-    const priorityToLevel = (p: number) => p <= 1 ? "high" : p === 2 ? "mid" : "low";
+    const [activeIssues, completedIssues] = await Promise.all([
+      getLinearIssues(),
+      getRecentlyCompletedLinearIssues(),
+    ]);
+    if (!activeIssues.length && !completedIssues.length) return [];
+
+    const priorityToLevel = (p: number): "high" | "mid" | "low" => p <= 1 ? "high" : p === 2 ? "mid" : "low";
     const estToSize = (e: number | null | undefined): string | null => {
       if (!e) return null;
       if (e <= 1) return "XS";
@@ -333,16 +342,24 @@ async function fetchLiveLinear(): Promise<LinearItem[] | null> {
       if (e <= 5) return "L";
       return "XL";
     };
-    const filtered = issues.filter(i => !["Done", "Cancelled"].includes(i.state.name)).slice(0, 8);
-    return filtered.map((n, idx) => ({
+    const mapIssue = (n: typeof activeIssues[0], idx: number, isCompleted: boolean): LinearItem => ({
       who: n.assignee?.name ?? "—",
       task: n.title,
       id: n.identifier,
       level: priorityToLevel(n.priority),
       dueDate: n.dueDate ?? null,
-      size: estToSize((n as unknown as Record<string, number | null>).estimate),
-      inSequence: idx === 0 ? true : priorityToLevel(n.priority) !== "high",
-    }));
+      size: estToSize(n.estimate),
+      inSequence: isCompleted ? null : (idx === 0 ? true : priorityToLevel(n.priority) !== "high"),
+      state: n.state.name,
+      stateType: n.state.type,
+      description: n.description ?? null,
+      labels: n.labels?.nodes.map(l => l.name) ?? [],
+      url: n.url,
+    });
+
+    const active = activeIssues.slice(0, 8).map((n, i) => mapIssue(n, i, false));
+    const completed = completedIssues.slice(0, 5).map((n, i) => mapIssue(n, i, true));
+    return [...active, ...completed];
   } catch (err) {
     console.warn("[brief] Linear live fetch failed:", err instanceof Error ? err.message : err);
     return null;

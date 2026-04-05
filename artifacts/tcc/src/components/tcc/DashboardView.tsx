@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { C, F, FS } from "./constants";
 import { get, patch, post, del } from "@/lib/api";
 import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
@@ -225,7 +225,10 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [dayPlan, setDayPlan] = useState<AiPlanBlock[] | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
-  const planFetchedRef = useRef(false);
+  // Track the last brief fingerprint that triggered an AI plan fetch so we can
+  // re-fetch automatically whenever the underlying brief data changes (e.g. brief
+  // is refreshed, new meetings load, contacts change) without infinite looping.
+  const lastFetchedBriefKey = useRef<string | null>(null);
 
   // ── Scratch Notes state ─────────────────────────────────────────
   const [scratchNotes, setScratchNotes] = useState<ScratchNote[]>([]);
@@ -237,12 +240,29 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
   }, []);
 
-  // ── Fetch AI day plan once brief data is available ──────────────
-  useEffect(() => {
-    if (planFetchedRef.current) return;
+  // ── Brief fingerprint — stable key that changes when real brief data changes ──
+  // Used to re-fetch AI plan on brief refresh without infinite looping.
+  const briefKey = useMemo(() => {
     const hasData = tasks.length > 0 || calendarData.length > 0 || emailsImportant.length > 0 || contacts.length > 0;
-    if (!hasData) return;
-    planFetchedRef.current = true;
+    if (!hasData) return null;
+    const realMeetings = calendarData.filter(c => c.real);
+    return [
+      realMeetings.slice(0, 3).map(m => m.n).join("+"),
+      contacts.slice(0, 3).map(c => c.name).join("+"),
+      tasks.slice(0, 3).map(t => t.id).join("+"),
+      emailsImportant.slice(0, 3).map(e => String(e.id)).join("+"),
+    ].join("|");
+  }, [
+    tasks.length, tasks.slice(0,3).map(t=>t.id).join(","),
+    calendarData.length, calendarData.filter(c=>c.real).slice(0,3).map(c=>c.n).join(","),
+    emailsImportant.length, emailsImportant.slice(0,3).map(e=>String(e.id)).join(","),
+    contacts.length, contacts.slice(0,3).map(c=>c.name).join(","),
+  ]);
+
+  // ── Fetch AI day plan whenever brief fingerprint changes ──────────
+  useEffect(() => {
+    if (!briefKey || briefKey === lastFetchedBriefKey.current) return;
+    lastFetchedBriefKey.current = briefKey;
     setPlanLoading(true);
     const realMeetings = calendarData.filter(c => c.real);
     post<{ ok: boolean; blocks: AiPlanBlock[] }>("/schedule/ai-plan", {
@@ -257,7 +277,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
       .then(r => { if (r.ok) setDayPlan(r.blocks); })
       .catch(() => {})
       .finally(() => setPlanLoading(false));
-  }, [tasks.length, calendarData.length, emailsImportant.length, contacts.length]);
+  }, [briefKey]);
 
   const toggle = useCallback((id: string) => {
     setChecked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });

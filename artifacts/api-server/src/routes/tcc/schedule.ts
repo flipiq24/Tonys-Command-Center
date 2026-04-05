@@ -137,6 +137,8 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
 
 // ── AI Day Plan ────────────────────────────────────────────────────────────────
 interface AiPlanBlock { start: string; end: string; label: string; items: string[]; tip?: string; }
+// Cache keyed by date + input fingerprint so stale inputs on the same day
+// produce a new plan, and different users (or different data) never share entries.
 const AI_PLAN_CACHE = new Map<string, AiPlanBlock[]>();
 
 const AiPlanBody = z.object({
@@ -148,14 +150,28 @@ const AiPlanBody = z.object({
 
 router.post("/schedule/ai-plan", async (req, res): Promise<void> => {
   const today = new Date().toISOString().slice(0, 10);
-  if (AI_PLAN_CACHE.has(today)) {
-    res.json({ ok: true, blocks: AI_PLAN_CACHE.get(today) });
-    return;
-  }
-
   const parsed = AiPlanBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { meetings, contacts, tasks, emails } = parsed.data;
+
+  // Build a short fingerprint from the actual inputs so that different briefs
+  // (or different users on the same server) never share a cached plan.
+  const fingerprint = [
+    meetings.slice(0, 3).map(m => m.name).join("+"),
+    contacts.slice(0, 3).map(c => c.name).join("+"),
+    tasks.slice(0, 2).join("+"),
+  ].join("|");
+  const cacheKey = `${today}:${fingerprint}`;
+
+  if (AI_PLAN_CACHE.has(cacheKey)) {
+    res.json({ ok: true, blocks: AI_PLAN_CACHE.get(cacheKey) });
+    return;
+  }
+
+  // Evict any stale same-day entries for different inputs to bound memory growth
+  for (const key of AI_PLAN_CACHE.keys()) {
+    if (key.startsWith(`${today}:`)) AI_PLAN_CACHE.delete(key);
+  }
 
   const hotWarm = contacts.filter(c => c.status === "Hot" || c.status === "Warm");
   const others  = contacts.filter(c => c.status !== "Hot" && c.status !== "Warm");
@@ -196,7 +212,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Format:
     // Strip markdown fences if present
     raw = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
     const blocks: AiPlanBlock[] = JSON.parse(raw);
-    AI_PLAN_CACHE.set(today, blocks);
+    AI_PLAN_CACHE.set(cacheKey, blocks);
     res.json({ ok: true, blocks });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });

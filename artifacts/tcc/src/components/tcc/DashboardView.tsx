@@ -644,43 +644,26 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
         <div style={{ padding: "12px 20px 18px" }}>
 
-            {/* ── SALES CALLS ── */}
-            <div style={{ marginBottom: 12 }}>
-              <SL text="📞 Sales Calls — 10 Today" color="#C62828" view="sales" onNavigate={onNavigate} />
-              <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                <thead>
-                  <tr><TH w={22} center>✓</TH><TH w={18} center>#</TH><TH>NAME / CO.</TH><TH w={80}>PHONE</TH><TH w={52}>STATUS</TH></tr>
-                </thead>
-                <tbody>
-                  {Array.from({ length: 10 }).map((_, i) => {
-                    const c = callList[i];
-                    const id = `call-${i}`;
-                    const done = ck(id);
-                    return (
-                      <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}
-                        onMouseEnter={e => c ? onHoverEnter({ kind: "call", c }, e) : undefined}
-                        onMouseMove={onHoverMove}
-                        onMouseLeave={onHoverLeave}
-                      >
-                        <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
-                        <TD center small dim>{i + 1}</TD>
-                        {c ? (
-                          <>
-                            <TD strike={done}>
-                              <div style={{ fontWeight: 600, fontSize: 11, color: done ? "#ccc" : BLK }}>{c.name}</div>
-                              {c.company && <div style={{ fontSize: 8, color: "#aaa" }}>{c.company}</div>}
-                            </TD>
-                            <TD small dim>{c.phone || "—"}</TD>
-                            <TD center small bold>
-                              <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : c.status === "Cold" ? "#888" : "#555" }}>{c.status || "—"}</span>
-                            </TD>
-                          </>
-                        ) : <><TD /><TD /><TD /></>}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            {/* ── 90 DAY FOCUS ── */}
+            <div style={{ marginBottom: 14 }}>
+              <SL text="🎯 90 Day Focus" color="#111" />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginTop: 4 }}>
+                {[
+                  { num: "01", label: "Adaptation", desc: "Systems, processes & team alignment" },
+                  { num: "02", label: "Sales",      desc: "Pipeline growth & 10-call daily cadence" },
+                  { num: "03", label: "Foundation", desc: "Data integrity, infra & FlipIQ core" },
+                  { num: "04", label: "COO Dashboard", desc: "Ethan & Ramy accountability loop" },
+                ].map(({ num, label, desc }) => (
+                  <div key={label} style={{
+                    border: BORDER, borderRadius: 8, padding: "12px 14px",
+                    background: "#FAFAF8", display: "flex", flexDirection: "column", gap: 4,
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: "#bbb", letterSpacing: 1 }}>{num}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: BLK, lineHeight: 1.2 }}>{label}</div>
+                    <div style={{ fontSize: 10, color: "#999", lineHeight: 1.4, marginTop: 2 }}>{desc}</div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* ── TOP 3 ── */}

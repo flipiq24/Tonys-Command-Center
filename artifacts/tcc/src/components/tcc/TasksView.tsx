@@ -308,7 +308,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   return (
     <>
       <div style={{
-        maxWidth: 560, margin: "0 auto", padding: "0 20px 60px",
+        padding: "0 20px 60px",
         marginRight: calSide ? 320 : undefined, transition: "margin 0.2s", fontFamily: F,
       }}>
         <TimeRoutingBanner />

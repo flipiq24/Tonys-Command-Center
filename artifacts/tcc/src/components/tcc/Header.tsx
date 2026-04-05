@@ -139,8 +139,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   }, [open]);
 
   const slackLevel = topLevel(slackItems);
-  const linearLevel = topLevel(linearItems);
-  const hasNotif = unresolved > 0 || ideas.length > 0 || !!slackLevel || !!linearLevel;
+  const hasNotif = unresolved > 0 || ideas.length > 0 || !!slackLevel;
   const sep = <div style={{ height: 1, background: C.brd, margin: "6px 0" }} />;
 
   const menuItem = (
@@ -298,19 +297,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
                 {slackItems.length}
               </span>
             )}
-            {!open && linearItems.length > 0 && (
-              <span style={{
-                position: "absolute", top: -6, right: -6,
-                minWidth: 16, height: 16, borderRadius: 8,
-                background: linearLevel === "high" ? C.red : "#7B1FA2",
-                border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px",
-                lineHeight: 1,
-              }}>
-                {linearItems.length}
-              </span>
-            )}
-            {!open && unresolved > 0 && slackItems.length === 0 && linearItems.length === 0 && (
+            {!open && unresolved > 0 && slackItems.length === 0 && (
               <span style={{
                 position: "absolute", top: -3, right: -3,
                 width: 9, height: 9, borderRadius: "50%",
@@ -363,25 +350,6 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
               {menuItem("💡", "Ideas", null, () => onShowIdea())}
-              {linearItems.length > 0 && (
-                <div>
-                  {menuItem("📋", "Linear", linearItems.length, () => {}, levelColor(linearLevel || undefined))}
-                  <div style={{ paddingLeft: 46, paddingBottom: 4 }}>
-                    {linearItems.map((item, i) => {
-                      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
-                      const isOverdue = item.dueDate && item.dueDate < today;
-                      return (
-                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", fontSize: 12, color: C.sub }}>
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{item.id} {item.task}</span>
-                          {isOverdue && (
-                            <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>overdue</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
               {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
               {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
               {sep}

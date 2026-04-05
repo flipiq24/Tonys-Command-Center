@@ -246,17 +246,19 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     const hasData = tasks.length > 0 || calendarData.length > 0 || emailsImportant.length > 0 || contacts.length > 0;
     if (!hasData) return null;
     const realMeetings = calendarData.filter(c => c.real);
+    // Include scheduling-critical fields so the key changes when times, statuses,
+    // or priorities change — not just when names/IDs change.
     return [
-      realMeetings.slice(0, 3).map(m => m.n).join("+"),
-      contacts.slice(0, 3).map(c => c.name).join("+"),
-      tasks.slice(0, 3).map(t => t.id).join("+"),
-      emailsImportant.slice(0, 3).map(e => String(e.id)).join("+"),
+      realMeetings.slice(0, 3).map(m => `${m.n}@${m.t}-${m.tEnd ?? ""}`).join("+"),
+      contacts.slice(0, 3).map(c => `${c.name}:${c.status ?? ""}`).join("+"),
+      tasks.slice(0, 3).map(t => `${t.id}:${t.text.slice(0, 20)}`).join("+"),
+      emailsImportant.slice(0, 3).map(e => `${e.id}:${e.p ?? ""}`).join("+"),
     ].join("|");
   }, [
-    tasks.length, tasks.slice(0,3).map(t=>t.id).join(","),
-    calendarData.length, calendarData.filter(c=>c.real).slice(0,3).map(c=>c.n).join(","),
-    emailsImportant.length, emailsImportant.slice(0,3).map(e=>String(e.id)).join(","),
-    contacts.length, contacts.slice(0,3).map(c=>c.name).join(","),
+    tasks.length, tasks.slice(0,3).map(t=>`${t.id}:${t.text.slice(0,20)}`).join(","),
+    calendarData.length, calendarData.filter(c=>c.real).slice(0,3).map(c=>`${c.n}@${c.t}-${c.tEnd??""}`).join(","),
+    emailsImportant.length, emailsImportant.slice(0,3).map(e=>`${e.id}:${e.p??""}`).join(","),
+    contacts.length, contacts.slice(0,3).map(c=>`${c.name}:${c.status??""}`).join(","),
   ]);
 
   // ── Fetch AI day plan whenever brief fingerprint changes ──────────

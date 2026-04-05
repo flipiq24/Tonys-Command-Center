@@ -154,12 +154,14 @@ router.post("/schedule/ai-plan", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { meetings, contacts, tasks, emails } = parsed.data;
 
-  // Build a short fingerprint from the actual inputs so that different briefs
-  // (or different users on the same server) never share a cached plan.
+  // Build a fingerprint from scheduling-critical fields (not just names) so that
+  // changed meeting times, contact statuses, or task priorities produce a fresh plan
+  // and different users on the same server never share a cache entry.
   const fingerprint = [
-    meetings.slice(0, 3).map(m => m.name).join("+"),
-    contacts.slice(0, 3).map(c => c.name).join("+"),
-    tasks.slice(0, 2).join("+"),
+    meetings.slice(0, 3).map(m => `${m.name}@${m.time}-${m.tEnd ?? ""}`).join("+"),
+    contacts.slice(0, 3).map(c => `${c.name}:${c.status ?? ""}`).join("+"),
+    tasks.slice(0, 2).map(t => t.slice(0, 20)).join("+"),
+    emails.slice(0, 2).map(e => `${e.from}:${e.action ?? ""}`).join("+"),
   ].join("|");
   const cacheKey = `${today}:${fingerprint}`;
 
@@ -211,7 +213,18 @@ Return ONLY a valid JSON array, no markdown, no explanation. Format:
     let raw = (response.content[0] as { type: string; text: string }).text.trim();
     // Strip markdown fences if present
     raw = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-    const blocks: AiPlanBlock[] = JSON.parse(raw);
+    const parsed2 = JSON.parse(raw);
+    // Validate Claude's response shape before caching/returning
+    if (!Array.isArray(parsed2)) throw new Error("AI response is not an array");
+    const blocks: AiPlanBlock[] = parsed2.filter(
+      (b: unknown): b is AiPlanBlock =>
+        b !== null && typeof b === "object" &&
+        typeof (b as Record<string, unknown>).start === "string" &&
+        typeof (b as Record<string, unknown>).end === "string" &&
+        typeof (b as Record<string, unknown>).label === "string" &&
+        Array.isArray((b as Record<string, unknown>).items)
+    );
+    if (blocks.length === 0) throw new Error("AI response contained no valid blocks");
     AI_PLAN_CACHE.set(cacheKey, blocks);
     res.json({ ok: true, blocks });
   } catch (err) {

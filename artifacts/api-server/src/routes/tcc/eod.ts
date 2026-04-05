@@ -64,8 +64,8 @@ Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and
     reportText = `EOD Report — ${today}\n\nCalls Made: ${callsMade}\nDemos Booked: ${demosBooked}\nTasks Completed: ${tasksCompleted}\n\n${callList}\n\nKeep pushing forward tomorrow.`;
   }
 
-  // Send to both recipients in parallel
-  const recipients = ["tony@flipiq.com", "ethan@flipiq.com"];
+  // Send to Tony only (test / manual trigger)
+  const recipients = ["tony@flipiq.com"];
   const sentResults = await Promise.all(
     recipients.map(async to => {
       const result = await sendEmail({

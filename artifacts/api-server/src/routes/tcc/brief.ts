@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, gte, ilike, desc as descOrder, sql as sqlExpr } from "drizzle-orm";
+import { eq, gte, ilike, desc as descOrder, sql as sqlExpr, inArray } from "drizzle-orm";
 import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable } from "@workspace/db";
-import { communicationLogTable } from "../../lib/schema-v2.js";
+import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2.js";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
@@ -84,6 +84,7 @@ type CalItem = {
   n: string;
   loc?: string;
   note?: string;
+  attendeeBrief?: string;
   real: boolean;
   attendeeCount?: number;
   calendarEventId?: string;
@@ -204,7 +205,8 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
       orderBy: "startTime",
     });
 
-    return (response.data.items || []).map(e => {
+    const calEvents = response.data.items || [];
+    return await Promise.all(calEvents.map(async (e) => {
       const startRaw = e.start?.dateTime || e.start?.date || "";
       const endRaw = e.end?.dateTime || e.end?.date || "";
       const timeLabel = startRaw
@@ -239,10 +241,47 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
       if (e.description) item.note = e.description.slice(0, 120);
       if (e.id) item.calendarEventId = e.id;
       if (e.htmlLink) item.htmlLink = e.htmlLink;
-      if (e.colorId) item.colorId = e.colorId;
-      if (meetLink) item.meetLink = meetLink;
+      if ((e as any).colorId) (item as any).colorId = (e as any).colorId;
+      if (meetLink) (item as any).meetLink = meetLink;
+
+      // Gap 3: Attendee brief — look up contacts by email for real meetings
+      if (item.real && e.attendees && e.attendees.length > 1) {
+        try {
+          const attendeeEmails: string[] = (e.attendees as any[])
+            .filter((a) => a.email && a.responseStatus !== "declined")
+            .map((a) => (a.email as string).toLowerCase())
+            .filter((email) => !email.endsWith("@flipiq.com") && !email.includes("tdiaz"));
+          if (attendeeEmails.length > 0) {
+            const matches = await db
+              .select({
+                name: contactsTable.name,
+                company: contactsTable.company,
+                email: contactsTable.email,
+                stage: contactIntelligenceTable.stage,
+                lastCommunicationDate: contactIntelligenceTable.lastCommunicationDate,
+              })
+              .from(contactsTable)
+              .leftJoin(contactIntelligenceTable, eq(contactIntelligenceTable.contactId, contactsTable.id))
+              .where(inArray(contactsTable.email, attendeeEmails))
+              .limit(8);
+            const knownEmails = new Set(matches.map(m => m.email?.toLowerCase()));
+            const knownLines = matches.map(m => {
+              let line = m.name;
+              if (m.company) line += ` (${m.company})`;
+              const meta: string[] = [];
+              if (m.stage) meta.push(m.stage.replace(/_/g, " "));
+              if (m.lastCommunicationDate) meta.push(`last: ${new Date(m.lastCommunicationDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
+              if (meta.length) line += ` — ${meta.join(", ")}`;
+              return line;
+            });
+            const unknownLines = attendeeEmails.filter(e => !knownEmails.has(e));
+            item.attendeeBrief = [...knownLines, ...unknownLines].join(" · ");
+          }
+        } catch { /* attendee lookup is best-effort */ }
+      }
+
       return item;
-    });
+    }));
   } catch (err) {
     console.warn("[brief] GCal live fetch failed:", err instanceof Error ? err.message : err);
     return null;
@@ -624,6 +663,15 @@ router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
       .where(eq(businessContextTable.documentType, "daily_spiritual"))
       .limit(1);
 
+    // Gap 1: Fetch last 5 check-ins for Bible engagement trend
+    const last5Checkins = await db
+      .select()
+      .from(checkinsTable)
+      .orderBy(descOrder(checkinsTable.date))
+      .limit(5);
+    const missedBible = last5Checkins.filter(c => !c.bible).length;
+    const engagementLevel = missedBible >= 3 ? "low" : missedBible >= 1 ? "moderate" : "strong";
+
     const [yesterdayCk] = await db
       .select()
       .from(checkinsTable)
@@ -661,6 +709,12 @@ router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
       bibleYesterday ? "Bible ✓" : null,
     ].filter(Boolean).join(", ");
 
+    const engagementNote = engagementLevel === "low"
+      ? `Tony's spiritual engagement: LOW (Bible missed ${missedBible} of last ${last5Checkins.length} days). Be direct — not preachy, not soft. Call this out briefly and push him to restart the habit today.`
+      : engagementLevel === "moderate"
+      ? `Tony's spiritual engagement: MODERATE (Bible missed ${missedBible} of last ${last5Checkins.length} days). Acknowledge the inconsistency briefly, encourage getting back on track.`
+      : `Tony's spiritual engagement: STRONG (Bible read consistently). Affirm this briefly.`;
+
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 300,
@@ -672,11 +726,13 @@ Tony's spiritual content / Daily Task doc:
 ${spiritualContent.slice(0, 1200)}
 
 Yesterday's performance: ${perfSummary || "no data yet"}
+${engagementNote}
 
 Rules:
 - Be direct, personal, non-preachy
 - Include ONE scripture or mindset line from the content above (rotate — don't always use the same one)
 - Reference yesterday's actual performance with honesty: celebrate wins, acknowledge misses without shame
+- If engagement is low: weave in a brief, direct call to get back to Bible reading — no shame, just honest accountability
 - End with ONE clear action directive for today (always starts with calls if no calls yesterday)
 - Max 4 sentences. No fluff. Tony's ADHD brain needs impact, not paragraphs.`,
       }],

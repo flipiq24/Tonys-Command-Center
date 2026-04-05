@@ -10,6 +10,7 @@ interface MorningContact extends Contact {
   nextAction?: string | null;
   nextActionDate?: string | null;
   lastComm?: { channel?: string; summary?: string; loggedAt?: string; date?: any; type?: string } | null;
+  briefLine?: string | null;
 }
 
 interface MorningData {
@@ -210,6 +211,12 @@ export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onO
               <span style={{ fontSize: 10, color: stageColors[currentStage] || C.mut, background: (stageColors[currentStage] || C.mut) + "15", borderRadius: 3, padding: "1px 5px" }}>{currentStage}</span>
               {contact.lastComm && <CommTag channel={contact.lastComm.channel} />}
             </div>
+
+            {contact.briefLine && (
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 2, fontStyle: "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {contact.briefLine}
+              </div>
+            )}
 
             {contact.lastComm?.summary && (
               <div style={{ fontSize: 12, color: C.sub, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

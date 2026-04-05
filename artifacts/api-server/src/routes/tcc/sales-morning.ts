@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, contactsTable } from "@workspace/db";
-import { contactIntelligenceTable, communicationLogTable } from "../../lib/schema-v2";
-import { eq, desc, gte, lt, lte, and, sql, isNotNull, or, isNull } from "drizzle-orm";
+import { contactIntelligenceTable, communicationLogTable, contactBriefsTable } from "../../lib/schema-v2";
+import { eq, desc, gte, lt, lte, and, sql, isNotNull, or, isNull, inArray } from "drizzle-orm";
 import { todayPacific } from "../../lib/dates";
 
 const router: IRouter = Router();
@@ -216,10 +216,28 @@ router.get("/sales/morning", async (_req, res): Promise<void> => {
       overdue: Number(overdueRow?.count || 0),
     };
 
+    // ── Batch brief-line lookup for all displayed contacts ────────────────────
+    const allIds = [...seenContactIds];
+    const briefMap: Record<string, string> = {};
+    if (allIds.length > 0) {
+      try {
+        const briefs = await db
+          .select({ contactId: contactBriefsTable.contactId, briefText: contactBriefsTable.briefText })
+          .from(contactBriefsTable)
+          .where(inArray(contactBriefsTable.contactId, allIds))
+          .orderBy(desc(contactBriefsTable.generatedAt));
+        for (const b of briefs) {
+          if (b.contactId && !briefMap[b.contactId]) {
+            briefMap[b.contactId] = (b.briefText || "").slice(0, 120);
+          }
+        }
+      } catch { /* brief lines are best-effort */ }
+    }
+
     res.json({
-      urgentResponses,
-      followUps,
-      top10New: top10New.slice(0, 10),
+      urgentResponses: urgentResponses.map(c => ({ ...c, briefLine: briefMap[c.id as string] || null })),
+      followUps: followUps.map(c => ({ ...c, briefLine: briefMap[c.id as string] || null })),
+      top10New: top10New.slice(0, 10).map(c => ({ ...c, briefLine: briefMap[c.id as string] || null })),
       pipelineSummary,
     });
   } catch (err) {

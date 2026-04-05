@@ -60,6 +60,12 @@ const SAMPLE_LINEAR: LinearItem[] = [
   { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid", size: "M", dueDate: null, inSequence: true, state: "In Progress", stateType: "started", labels: ["marketplace"] },
   { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low", size: "L", dueDate: null, inSequence: true, state: "Backlog", stateType: "backlog", labels: ["data"] },
   { id: "COM-218", task: "CSV export — contact bulk download", who: "Faisal", level: "low", size: "S", dueDate: null, inSequence: true, state: "Done", stateType: "completed", description: "Bulk CSV download of contacts with all standard fields. Completed and deployed.", labels: ["feature"] },
+  { id: "OPS-012", task: "Review & finalize equity contract terms", who: "Ethan", level: "high", size: "S", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "In Progress", stateType: "started", description: "Equity stake revisions — align with Chris Wesser's commentary. Need signature before EOD.", labels: ["legal", "fundraise"] },
+  { id: "OPS-015", task: "Q2 investor update deck", who: "Ethan", level: "mid", size: "M", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), inSequence: null, state: "In Progress", stateType: "started", description: "Slide deck for Q2 investor update — include pipeline numbers, product milestones, hiring.", labels: ["investor"] },
+  { id: "OPS-018", task: "Recruiter playbook finalize", who: "Ethan", level: "mid", size: "S", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "Done", stateType: "completed", description: "Playbook for James and Jesse finalized and sent.", labels: ["hiring"] },
+  { id: "OMS-031", task: "OMS user adaptation report → Tony", who: "Ramy", level: "high", size: "S", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "In Progress", stateType: "started", description: "Report on OMS adoption: who's using it, who isn't, blockers, training gaps.", labels: ["oms", "ops"] },
+  { id: "OMS-034", task: "Title company follow-up — 3 open deals", who: "Ramy", level: "mid", size: "XS", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "Todo", stateType: "unstarted", description: "Follow up with title company on closing timelines for open deals.", labels: ["oms"] },
+  { id: "OMS-037", task: "Compliance notes close-out (today)", who: "Ramy", level: "mid", size: "XS", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "Done", stateType: "completed", description: "Compliance notes closed out for today's transactions.", labels: ["compliance"] },
 ];
 
 // ── Time scheduling ─────────────────────────────────────────────────
@@ -315,6 +321,76 @@ function TD({ children, center, bold, small, dim, strike }: {
   );
 }
 
+// ── Management task table (Ethan / Ramy) ────────────────────────────
+function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin, setTooltipPos }: {
+  items: LinearItem[];
+  prefix: string;
+  todayStr: string;
+  trackStatus: (l: LinearItem) => "overdue" | "due-today" | "at-risk" | "ok";
+  fmtDue: (d: string | null | undefined) => string;
+  setHoveredLin: (l: LinearItem | null) => void;
+  setTooltipPos: (p: { x: number; y: number }) => void;
+}) {
+  return (
+    <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 12 }}>
+      <thead>
+        <tr>
+          <TH w={22} center>ST</TH>
+          <TH w={68}>ID</TH>
+          <TH>TASK</TH>
+          <TH w={56} center>DUE</TH>
+          <TH w={68} center>STATUS</TH>
+          <TH w={36} center>SIZE</TH>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((l, i) => {
+          const isDone = l.stateType === "completed" || l.stateType === "cancelled";
+          const ts = trackStatus(l);
+          const rowBg = isDone ? "#F9F9F9" : l.level === "high" ? "#FFF5F5" : "#fff";
+          const trackColor = isDone ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
+          const trackLabel = isDone ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
+          const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
+          const stateGlyph = isDone && l.stateType === "completed" ? "✓" : isDone ? "✕" : l.stateType === "started" ? "▷" : l.stateType === "backlog" ? "·" : "○";
+          const stateColor = isDone && l.stateType === "completed" ? "#2E7D32" : isDone ? "#999" : l.stateType === "started" ? "#2563EB" : "#aaa";
+          return (
+            <tr
+              key={`${prefix}-${i}`}
+              className="dash-row-hover"
+              style={{ background: rowBg, opacity: isDone ? 0.55 : 1, cursor: "default" }}
+              onMouseEnter={e => { setHoveredLin(l); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
+              onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
+              onMouseLeave={() => setHoveredLin(null)}
+            >
+              <TD center>
+                <span style={{ fontSize: 13, fontWeight: 800, color: stateColor, lineHeight: 1 }}>{stateGlyph}</span>
+              </TD>
+              <TD small bold>
+                {l.url
+                  ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "none" }}>{l.id}</a>
+                  : <span style={{ color: "#2563EB" }}>{l.id}</span>
+                }
+              </TD>
+              <TD strike={isDone}>{l.task}</TD>
+              <TD small center>
+                <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
+                  {fmtDue(l.dueDate)}
+                </span>
+              </TD>
+              <TD small center>
+                <span style={{ fontWeight: 700, color: trackColor }}>{trackLabel}</span>
+              </TD>
+              <TD small center>
+                <span style={{ fontWeight: 800, color: sizeColor }}>{l.size || "—"}</span>
+              </TD>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 // ── White "page" card ────────────────────────────────────────────────
 function Sheet({ children, label }: { children: React.ReactNode; label: string }) {
   return (
@@ -383,8 +459,11 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const callList = contacts.length > 0 ? contacts.slice(0, 10) : SAMPLE_CALLS;
   const meetings = calendarData.filter(c => c.real).length > 0 ? calendarData.filter(c => c.real) : SAMPLE_MEETINGS;
   const emails   = emailsImportant.length > 0 ? emailsImportant.slice(0, 5) : SAMPLE_EMAILS;
-  const linItems = linearItems.length > 0 ? linearItems.slice(0, 13) : SAMPLE_LINEAR;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const allLinItems = linearItems.length > 0 ? linearItems.slice(0, 20) : SAMPLE_LINEAR;
+  const ethanItems  = allLinItems.filter(l => l.who?.toLowerCase().includes("ethan"));
+  const ramiItems   = allLinItems.filter(l => l.who?.toLowerCase().includes("ramy") || l.who?.toLowerCase().includes("remy"));
+  const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));
+  const todayStr    = new Date().toISOString().slice(0, 10);
   const wb       = computeWorkBlocks(meetings);
 
   const trackStatus = (l: LinearItem): "overdue" | "due-today" | "at-risk" | "ok" => {
@@ -631,6 +710,22 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                 })}
               </tbody>
             </table>
+
+            {/* ── ETHAN — Management Tasks ── */}
+            {ethanItems.length > 0 && (
+              <>
+                <SL text="👔 Ethan — Today's Tasks" color="#555" />
+                <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} />
+              </>
+            )}
+
+            {/* ── RAMI — Management Tasks ── */}
+            {ramiItems.length > 0 && (
+              <>
+                <SL text="👔 Ramy — Today's Tasks" color="#555" />
+                <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} />
+              </>
+            )}
 
             {/* ── TODAY'S WINS ── */}
             <SL text="🏆 Today's Wins" color="#B7791F" />

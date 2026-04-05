@@ -4,7 +4,7 @@ import { ClaudePromptBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, meetingHistoryTable, contactsTable, checkinsTable } from "@workspace/db";
 import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable, communicationLogTable } from "../../lib/schema-v2";
-import { createLinearIssue, getLinearIssues } from "../../lib/linear";
+import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
 import { sendAutoEod } from "./eod";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
@@ -29,15 +29,25 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
   },
   {
     name: "create_linear_issue",
-    description: "Create a Linear issue for a tech task or bug. Use for actionable tech ideas and engineering tasks.",
+    description: "Create a Linear issue for a tech task or bug. Use for actionable tech ideas and engineering tasks. Call get_linear_members first if you need to assign to a specific person.",
     input_schema: {
       type: "object" as const,
       properties: {
         title: { type: "string", description: "Short, clear issue title" },
         description: { type: "string", description: "Full description of the task or bug" },
         priority: { type: "number", description: "Priority: 1=urgent, 2=high, 3=medium, 4=low" },
+        assignee_id: { type: "string", description: "Linear user ID to assign this issue to (get from get_linear_members)" },
       },
       required: ["title", "description"],
+    },
+  },
+  {
+    name: "get_linear_members",
+    description: "List all active Linear team members with their user IDs, names, and emails. Use this before assigning a Linear issue to get the correct user ID.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
     },
   },
   {
@@ -194,13 +204,14 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
   },
   {
     name: "create_task",
-    description: "Create a new task (Linear issue) for Tony's team. Use for actionable items that need tracking.",
+    description: "Create a new task (Linear issue) for Tony's team. Use for actionable items that need tracking. Call get_linear_members first if you need to assign to a specific person.",
     input_schema: {
       type: "object" as const,
       properties: {
         title: { type: "string", description: "Short, clear task title" },
         description: { type: "string", description: "Full description of the task" },
         priority: { type: "number", description: "Priority: 1=urgent, 2=high, 3=medium, 4=low" },
+        assignee_id: { type: "string", description: "Linear user ID to assign this task to (get from get_linear_members)" },
       },
       required: ["title"],
     },
@@ -530,9 +541,20 @@ async function executeTool(
         title: String(input.title),
         description: String(input.description || ""),
         priority: typeof input.priority === "number" ? input.priority : 3,
+        assigneeId: input.assignee_id ? String(input.assignee_id) : undefined,
       });
-      if (result.ok) return `✓ Task created: ${result.identifier ?? result.id}`;
+      if (result.ok) return `✓ Task created: ${result.identifier ?? result.id}${result.assigneeName ? ` — assigned to ${result.assigneeName}` : ""}`;
       return `✗ Task creation failed (Linear connection may not be set up yet)`;
+    }
+
+    case "get_linear_members": {
+      try {
+        const members = await getLinearMembers();
+        if (members.length === 0) return "No active Linear members found. Linear may not be connected.";
+        return members.map((m, i) => `${i + 1}. ${m.name} (${m.displayName})\n   ID: ${m.id}\n   Email: ${m.email}`).join("\n\n");
+      } catch (err) {
+        return `Failed to fetch Linear members: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
 
     case "send_email": {
@@ -1229,6 +1251,59 @@ YOUR JOB:
 - If Tony asks for something non-sales-related, gently note it ("Heads up — this is outside your sales block") but ALWAYS execute it.
 - If Tony is clearly drifting from his priorities, note it once, then do what he asked.
 
+VOICE INPUT NOTE:
+- Tony often uses voice-to-text to send messages. His text may be informal, run-on, or have minor transcription quirks.
+- Interpret voice messages charitably. If something sounds like a name, it probably is. If something sounds like an instruction, treat it as one.
+- Never ask Tony to re-type if you can reasonably infer what he meant.
+
+FLIPIQ TEAM ROSTER:
+Tony Diaz (CEO/You)
+  - Email: tony@flipiq.com
+  - Slack ID: U0991BAS0TC | @Tony
+
+Ethan Jolly (CTO / COO)
+  - Email: ethan@flipiq.com
+  - Slack ID: U0991BD321Y | @Ethan
+  - Role: Engineering lead, COO ops, investor updates, Linear review, EOD accountability
+  - Receives: EOD accountability brief daily at 4:30 PM PT
+
+Nate
+  - Slack ID: U0991BFNZ7U | @Nate
+  - Role: Team member
+
+Ramy
+  - Role: CSM / Ops — handles day-to-day operations and customer success
+  - Tony's priority after sales: support Ramy when he needs it
+
+Marisol
+  - Role: Ops Coordinator
+
+Faisal Nazik
+  - Role: Lead Engineer (appears on leaderboard)
+
+Haris Aqeel
+  - Role: Engineer (appears on leaderboard)
+
+Chris Wesser
+  - Role: Legal / Capital raise
+
+SLACK CHANNELS (use channel ID or name):
+  #tech-team-command  →  C0A3CS15MPT  (primary team channel — tech tasks, updates, accountability)
+  #general            →  general team communication
+  #sales              →  sales activity, deal updates
+  #tech-ideas         →  engineering ideas and feature requests
+
+SLACK RULES:
+- When sending a DM or @-mentioning someone, use their Slack ID (U0991...) not their name
+- For channel posts, use the channel name (#tech-team-command) or channel ID
+- To DM Ethan: send to channel = U0991BD321Y (user ID works as DM channel)
+- To DM Tony: send to channel = U0991BAS0TC
+
+LINEAR TEAM:
+- To assign issues, call get_linear_members first to get current user IDs, then pass assignee_id to create_linear_issue
+- Ethan is typically the Linear team lead / CTO reviewer
+- Faisal and Haris are engineers who get assigned tech tasks
+
 SCOPE ADVISORY (not a gatekeeper — always execute):
 - Calendar events outside sales hours: add a note like "Note: this falls in your morning sales block" but still create it.
 - Non-sales meetings: note they're not sales-related, but create them if Tony asks.
@@ -1240,13 +1315,13 @@ PROACTIVE BEHAVIOR:
 - When asked about schedule → pull the full date range, not just today.
 - Always give MORE context, not less. Tony can scan it.
 
-TOOLS AVAILABLE (38 total):
+TOOLS AVAILABLE (39 total):
 Email: list_recent_emails, search_emails, read_email_message, read_email_thread, send_email, draft_gmail_reply, get_email_brain
 Calendar: get_today_calendar, get_calendar_range, create_calendar_event, create_calendar_reminder, update_calendar_event, delete_calendar_event, schedule_meeting
 Slack: send_slack_message, read_slack_channel, list_slack_channels, search_slack
 Contacts: search_contacts, get_contact_brief, research_contact, update_contact_stage, get_communication_log
 Google: read_google_sheet, read_google_doc, search_google_drive
-Tasks: create_linear_issue, create_task, get_all_tasks
+Tasks: create_linear_issue, create_task, get_all_tasks, get_linear_members
 Meetings: get_meeting_history, log_meeting_context, analyze_transcript
 Business: get_business_context, get_daily_checkin_history
 Database: query_database

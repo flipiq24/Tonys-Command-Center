@@ -34,6 +34,7 @@ type Props = InputProps | TextareaProps;
 export function VoiceField(props: Props) {
   const { value, onChange, placeholder, style, disabled, autoFocus, onKeyDown } = props;
   const [recording, setRecording] = useState(false);
+  const [showHint, setShowHint] = useState(false);
   const recRef = useRef<SR | null>(null);
   const SR = getSR();
 
@@ -61,28 +62,51 @@ export function VoiceField(props: Props) {
   };
 
   const micBtn = SR ? (
-    <button
-      type="button"
-      onMouseDown={e => e.preventDefault()}
-      onClick={toggle}
-      title={recording ? "Stop recording" : "Voice input"}
-      style={{
-        position: "absolute", right: 7,
-        top: props.as === "textarea" ? 8 : "50%",
-        transform: props.as === "textarea" ? "none" : "translateY(-50%)",
-        width: 24, height: 24, borderRadius: "50%",
-        border: `1.5px solid ${recording ? "#ef4444" : C.brd}`,
-        background: recording ? "#fee2e2" : "#fff",
-        cursor: "pointer", display: "flex", alignItems: "center",
-        justifyContent: "center", fontSize: 12, padding: 0,
-        animation: recording ? "pulse 1.5s infinite" : "none",
-        zIndex: 2, flexShrink: 0,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-        transition: "all 0.15s",
-      }}
-    >
-      {recording ? "⏹" : "🎙"}
-    </button>
+    <div style={{ position: "absolute", right: 7, top: props.as === "textarea" ? 8 : "50%", transform: props.as === "textarea" ? "none" : "translateY(-50%)", zIndex: 2 }}>
+      {showHint && !recording && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", right: 0,
+          background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8,
+          padding: "7px 10px", width: 210, fontSize: 11, lineHeight: 1.5,
+          color: C.sub, whiteSpace: "normal", boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+          pointerEvents: "none",
+        }}>
+          Tap to speak — text is appended to this field. Tap again to stop. Works best in Chrome.
+          <div style={{ position: "absolute", bottom: -5, right: 10, width: 9, height: 9, background: C.card, border: `1px solid ${C.brd}`, borderTop: "none", borderLeft: "none", transform: "rotate(45deg)" }} />
+        </div>
+      )}
+      {recording && (
+        <div style={{
+          position: "absolute", bottom: "calc(100% + 6px)", right: 0,
+          background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 8,
+          padding: "5px 9px", fontSize: 11, color: "#b91c1c", whiteSpace: "nowrap",
+          fontWeight: 500, boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+          pointerEvents: "none",
+        }}>
+          Recording… tap to stop
+          <div style={{ position: "absolute", bottom: -5, right: 10, width: 9, height: 9, background: "#fee2e2", border: "1px solid #fca5a5", borderTop: "none", borderLeft: "none", transform: "rotate(45deg)" }} />
+        </div>
+      )}
+      <button
+        type="button"
+        onMouseDown={e => e.preventDefault()}
+        onClick={toggle}
+        onMouseEnter={() => setShowHint(true)}
+        onMouseLeave={() => setShowHint(false)}
+        style={{
+          width: 24, height: 24, borderRadius: "50%",
+          border: `1.5px solid ${recording ? "#ef4444" : C.brd}`,
+          background: recording ? "#fee2e2" : "#fff",
+          cursor: "pointer", display: "flex", alignItems: "center",
+          justifyContent: "center", fontSize: 12, padding: 0,
+          animation: recording ? "pulse 1.5s infinite" : "none",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+          transition: "all 0.15s",
+        }}
+      >
+        {recording ? "⏹" : "🎙"}
+      </button>
+    </div>
   ) : null;
 
   const fieldStyle: CSSProperties = {

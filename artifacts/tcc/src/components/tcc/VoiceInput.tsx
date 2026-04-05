@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { C, F } from "./constants";
+import { Tip } from "./Tip";
 
 interface SpeechRecognitionEvent {
   results: SpeechRecognitionResultList;
@@ -95,30 +96,35 @@ export function VoiceInput({ onTranscript, size = 32 }: Props) {
     setRecording(true);
   };
 
+  const tipText = recording
+    ? "Recording… speak now. Tap again to stop and send your message."
+    : "Voice input — tap to start speaking. Works best in Chrome. Tap again when done. Your words will appear in the chat box.";
+
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      title={recording ? "Stop recording" : "Voice input"}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        border: recording ? `2px solid #ef4444` : `2px solid ${C.brd}`,
-        background: recording ? "#fee2e2" : C.card,
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size * 0.45,
-        padding: 0,
-        flexShrink: 0,
-        transition: "all 0.15s ease",
-        animation: recording ? "pulse 1.5s infinite" : "none",
-        fontFamily: F,
-      }}
-    >
-      {recording ? "⏹" : "🎙"}
-    </button>
+    <Tip tip={tipText}>
+      <button
+        type="button"
+        onClick={toggle}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: "50%",
+          border: recording ? `1.5px solid #ef4444` : `1.5px solid ${C.brd}`,
+          background: recording ? "#fee2e2" : C.card,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: size * 0.42,
+          padding: 0,
+          flexShrink: 0,
+          transition: "all 0.15s ease",
+          animation: recording ? "pulse 1.5s infinite" : "none",
+          fontFamily: F,
+        }}
+      >
+        {recording ? "⏹" : "🎙"}
+      </button>
+    </Tip>
   );
 }

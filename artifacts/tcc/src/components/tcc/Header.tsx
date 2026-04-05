@@ -342,14 +342,6 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               )}
               {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
               {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
-              {menuItem("📁", "Setup Drive Folders", null, () => {
-                setOpen(false);
-                fetch("/api/drive/setup-folders", { method: "POST" })
-                  .then(r => r.json())
-                  .then(d => alert(d.ok ? "Drive folders created successfully!" : `Error: ${d.error}`))
-                  .catch(() => alert("Failed to setup Drive folders"));
-              })}
-
               {sep}
 
               {/* EOD — read-only indicator, only shown after EOD is sent */}

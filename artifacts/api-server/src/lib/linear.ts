@@ -105,18 +105,34 @@ export async function createLinearIssue(params: {
   description: string;
   priority?: number;
   teamId?: string;
-}): Promise<{ id?: string; identifier?: string; ok: boolean }> {
+  assigneeId?: string;
+}): Promise<{ id?: string; identifier?: string; assigneeName?: string; ok: boolean }> {
   try {
-    const data = await linearGraphQL<{ issueCreate?: { success: boolean; issue: { id: string; identifier: string } } }>(
-      `mutation CreateIssue($title: String!, $description: String, $priority: Int, $teamId: String!) {
-        issueCreate(input: { title: $title, description: $description, priority: $priority, teamId: $teamId }) {
-          success issue { id identifier }
+    const variables: Record<string, unknown> = {
+      title: params.title,
+      description: params.description,
+      priority: params.priority ?? 3,
+      teamId: params.teamId || process.env.LINEAR_TEAM_ID || "",
+    };
+    if (params.assigneeId) variables.assigneeId = params.assigneeId;
+
+    const data = await linearGraphQL<{
+      issueCreate?: { success: boolean; issue: { id: string; identifier: string; assignee?: { name: string } | null } }
+    }>(
+      `mutation CreateIssue($title: String!, $description: String, $priority: Int, $teamId: String!, $assigneeId: String) {
+        issueCreate(input: { title: $title, description: $description, priority: $priority, teamId: $teamId, assigneeId: $assigneeId }) {
+          success issue { id identifier assignee { name } }
         }
       }`,
-      { title: params.title, description: params.description, priority: params.priority ?? 3, teamId: params.teamId || process.env.LINEAR_TEAM_ID || "" }
+      variables
     );
     const issue = data?.issueCreate?.issue;
-    return { id: issue?.id, identifier: issue?.identifier, ok: !!issue?.id };
+    return {
+      id: issue?.id,
+      identifier: issue?.identifier,
+      assigneeName: issue?.assignee?.name ?? undefined,
+      ok: !!issue?.id,
+    };
   } catch (err) {
     console.error("Linear create issue error:", err);
     return { ok: false };

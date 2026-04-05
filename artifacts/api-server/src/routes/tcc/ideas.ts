@@ -271,21 +271,92 @@ router.post("/ideas/escalate-to-ethan", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/ideas", async (req, res): Promise<void> => {
-  const parsed = ParkIdeaBody.safeParse(req.body);
+const NotifyAssigneeBody = z.object({
+  ideaText: z.string().min(1),
+  category: z.string(),
+  urgency: z.string(),
+  dueDate: z.string(),
+  assigneeName: z.string(),
+  assigneeEmail: z.string().email(),
+  note: z.string().optional(),
+});
+
+router.post("/ideas/notify-assignee", async (req, res): Promise<void> => {
+  const parsed = NotifyAssigneeBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const { text, category, urgency, techType } = parsed.data;
+  const { ideaText, category, urgency, dueDate, assigneeName, assigneeEmail, note } = parsed.data;
+
+  try {
+    const { sendEmail } = await import("../../lib/gmail");
+    const subject = `[FlipIQ] Action Item Assigned to You: ${ideaText.substring(0, 60)}`;
+    const body = [
+      `Hi ${assigneeName},`,
+      "",
+      `Tony Diaz has assigned you an action item from FlipIQ's idea pipeline.`,
+      "",
+      `Idea: ${ideaText}`,
+      `Category: ${category}`,
+      `Urgency: ${urgency}`,
+      `Due Date: ${dueDate}`,
+      ...(note ? [``, `Note from Tony: ${note}`] : []),
+      "",
+      "Please action this by the due date.",
+      "",
+      "— FlipIQ Command Center",
+    ].join("\n");
+
+    const result = await sendEmail({ to: assigneeEmail, subject, body });
+    if (result.ok) {
+      res.json({ ok: true, messageId: result.messageId });
+    } else {
+      req.log.warn({ error: result.error }, "Failed to send assignee notification email");
+      res.status(500).json({ ok: false, error: result.error });
+    }
+  } catch (err) {
+    req.log.error({ err }, "notify-assignee route error");
+    res.status(500).json({ ok: false, error: String(err) });
+  }
+});
+
+const CreateIdeaBody = z.object({
+  text: z.string().min(1),
+  category: z.string(),
+  urgency: z.string(),
+  techType: z.string().nullable().optional(),
+  assigneeName: z.string().optional(),
+  assigneeEmail: z.string().email().optional(),
+  dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+router.post("/ideas", async (req, res): Promise<void> => {
+  const parsed = CreateIdeaBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { text, category, urgency, techType, assigneeName, assigneeEmail, dueDate } = parsed.data;
 
   const existingIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt));
   const priorityPosition = existingIdeas.length + 1;
 
   const [idea] = await db
     .insert(ideasTable)
-    .values({ text, category, urgency, techType: techType ?? undefined, priorityPosition, status: "parked" })
+    .values({
+      text,
+      category,
+      urgency,
+      techType: techType ?? undefined,
+      priorityPosition,
+      status: "parked",
+      assigneeName: assigneeName || undefined,
+      assigneeEmail: assigneeEmail || undefined,
+      dueDate: dueDate || undefined,
+    })
     .returning();
 
   let linearIssue: { id?: string; identifier?: string; ok: boolean } = { ok: false };

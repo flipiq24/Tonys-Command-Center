@@ -41,6 +41,9 @@ export const ideasTable = pgTable("ideas", {
   priorityPosition: integer("priority_position"),
   status: text("status").default("parked"),
   override: boolean("override").default(false),
+  assigneeName: text("assignee_name"),
+  assigneeEmail: text("assignee_email"),
+  dueDate: date("due_date"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("ideas_status_idx").on(t.status),

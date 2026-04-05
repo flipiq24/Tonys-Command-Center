@@ -8,6 +8,33 @@ const CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", 
 const URG = ["Now", "This Week", "This Month", "Someday"];
 const PRIORITY_COLOR: Record<string, string> = { high: C.red, medium: C.amb, low: C.grn };
 
+const TEAM_MEMBERS = [
+  { name: "Ethan Rodriguez", email: "ethan@flipiq.com" },
+  { name: "Maria Santos", email: "maria@flipiq.com" },
+  { name: "James Kim", email: "james@flipiq.com" },
+  { name: "Priya Patel", email: "priya@flipiq.com" },
+  { name: "Carlos Mendez", email: "carlos@flipiq.com" },
+];
+
+const ASSIGNABLE_URGENCIES = ["Now", "This Week", "This Month"];
+
+function getDefaultDueDate(urgency: string): string {
+  const today = new Date();
+  if (urgency === "Now") {
+    return today.toISOString().split("T")[0];
+  } else if (urgency === "This Week") {
+    const dayOfWeek = today.getDay();
+    const daysUntilFriday = dayOfWeek <= 5 ? 5 - dayOfWeek : 6;
+    const friday = new Date(today);
+    friday.setDate(today.getDate() + (daysUntilFriday === 0 && dayOfWeek === 5 ? 0 : daysUntilFriday));
+    return friday.toISOString().split("T")[0];
+  } else if (urgency === "This Month") {
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return lastDay.toISOString().split("T")[0];
+  }
+  return today.toISOString().split("T")[0];
+}
+
 interface Pushback {
   message: string;
   priorityRank: number | null;
@@ -23,6 +50,15 @@ interface Classification {
   priority: string;
   warningIfDistraction?: string;
   pushback?: Pushback | null;
+}
+
+interface AssignState {
+  mode: "none" | "team" | "custom";
+  assigneeName: string;
+  assigneeEmail: string;
+  dueDate: string;
+  notify: "email" | "none";
+  note: string;
 }
 
 interface Props {
@@ -43,6 +79,7 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
   const [linearId, setLinearId] = useState<string | null>(null);
   const [pushback, setPushback] = useState<Pushback | null>(null);
   const [override, setOverride] = useState<{ justification: string } | null>(null);
+  const [assign, setAssign] = useState<AssignState | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -54,6 +91,25 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
   const finalUrg = overrides.urgency ?? classification?.urgency ?? "This Week";
   const finalTt = overrides.techType ?? classification?.techType ?? null;
 
+  const showAssign = ASSIGNABLE_URGENCIES.includes(finalUrg);
+
+  useEffect(() => {
+    if (step === "review" && classification) {
+      if (ASSIGNABLE_URGENCIES.includes(finalUrg)) {
+        setAssign(prev => prev ? { ...prev, dueDate: getDefaultDueDate(finalUrg) } : {
+          mode: "none",
+          assigneeName: "",
+          assigneeEmail: "",
+          dueDate: getDefaultDueDate(finalUrg),
+          notify: "email",
+          note: "",
+        });
+      } else {
+        setAssign(null);
+      }
+    }
+  }, [finalUrg, step, classification]);
+
   const reset = () => {
     setText("");
     setStep("input");
@@ -63,6 +119,7 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
     setLinearId(null);
     setPushback(null);
     setOverride(null);
+    setAssign(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -92,12 +149,35 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
     setStep("saving");
     setError("");
     try {
+      const hasAssignee = assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim();
+      const assigneeName = hasAssignee ? assign!.assigneeName.trim() : undefined;
+      const assigneeEmail = hasAssignee ? assign!.assigneeEmail.trim() : undefined;
+      const dueDate = hasAssignee ? assign!.dueDate || undefined : undefined;
+
       const idea = await post<Idea & { linearIssue?: { identifier: string } | null }>("/ideas", {
         text,
         category: finalCat,
         urgency: finalUrg,
         techType: finalTt || undefined,
+        ...(assigneeName ? { assigneeName, assigneeEmail, dueDate } : {}),
       });
+
+      if (hasAssignee && assigneeName && assigneeEmail && assign?.notify === "email") {
+        try {
+          await post("/ideas/notify-assignee", {
+            ideaText: text,
+            category: finalCat,
+            urgency: finalUrg,
+            dueDate: dueDate || "",
+            assigneeName,
+            assigneeEmail,
+            note: assign!.note || undefined,
+          });
+        } catch {
+          console.warn("[Ideas] Failed to send assignee notification email");
+        }
+      }
+
       if (idea.linearIssue?.identifier) {
         setLinearId(idea.linearIssue.identifier);
         await new Promise<void>(resolve => {
@@ -329,6 +409,113 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
               </div>
             </div>
 
+            {/* ── ASSIGN SECTION (only for Now / This Week / This Month) ── */}
+            {showAssign && !pushback && !override && assign && (
+              <div style={{ padding: "14px 16px", background: "#F0F4FF", border: `1px solid ${C.blu}30`, borderRadius: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
+                  Assign (optional)
+                </div>
+
+                {/* Team member dropdown or "Custom" mode toggle */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ ...lbl, marginBottom: 4 }}>Team member</label>
+                  <select
+                    value={assign.mode === "team" ? `${assign.assigneeName}|${assign.assigneeEmail}` : assign.mode === "custom" ? "__custom__" : ""}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (!val) {
+                        setAssign(a => a ? { ...a, mode: "none", assigneeName: "", assigneeEmail: "" } : a);
+                      } else if (val === "__custom__") {
+                        setAssign(a => a ? { ...a, mode: "custom", assigneeName: "", assigneeEmail: "" } : a);
+                      } else {
+                        const [name, email] = val.split("|");
+                        setAssign(a => a ? { ...a, mode: "team", assigneeName: name, assigneeEmail: email } : a);
+                      }
+                    }}
+                    style={{ ...inp, padding: "6px 10px", fontSize: 13, cursor: "pointer" }}
+                  >
+                    <option value="">— No assignee —</option>
+                    {TEAM_MEMBERS.map(m => (
+                      <option key={m.email} value={`${m.name}|${m.email}`}>{m.name} ({m.email})</option>
+                    ))}
+                    <option value="__custom__">+ Enter custom name & email...</option>
+                  </select>
+                </div>
+
+                {/* Custom name + email inputs */}
+                {assign.mode === "custom" && (
+                  <div style={{ marginBottom: 10, display: "flex", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ ...lbl, marginBottom: 4 }}>Name</label>
+                      <input
+                        type="text"
+                        value={assign.assigneeName}
+                        onChange={e => setAssign(a => a ? { ...a, assigneeName: e.target.value } : a)}
+                        placeholder="Full name"
+                        style={{ ...inp, padding: "6px 10px", fontSize: 13 }}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ ...lbl, marginBottom: 4 }}>Email</label>
+                      <input
+                        type="email"
+                        value={assign.assigneeEmail}
+                        onChange={e => setAssign(a => a ? { ...a, assigneeEmail: e.target.value } : a)}
+                        placeholder="email@example.com"
+                        style={{ ...inp, padding: "6px 10px", fontSize: 13 }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Target date, note, notify — shown when a valid assignee is selected */}
+                {assign.mode !== "none" && (
+                  <>
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={{ ...lbl, marginBottom: 4 }}>Target date</label>
+                      <input
+                        type="date"
+                        value={assign.dueDate}
+                        onChange={e => setAssign(a => a ? { ...a, dueDate: e.target.value } : a)}
+                        style={{ ...inp, padding: "6px 10px", fontSize: 13 }}
+                      />
+                    </div>
+
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={{ ...lbl, marginBottom: 4 }}>Note (optional)</label>
+                      <input
+                        type="text"
+                        value={assign.note}
+                        onChange={e => setAssign(a => a ? { ...a, note: e.target.value } : a)}
+                        placeholder="Any context or instructions..."
+                        style={{ ...inp, padding: "6px 10px", fontSize: 13 }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ ...lbl, marginBottom: 6 }}>Notification</label>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {(["email", "none"] as const).map(opt => (
+                          <button
+                            key={opt}
+                            onClick={() => setAssign(a => a ? { ...a, notify: opt } : a)}
+                            style={{
+                              padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
+                              border: `2px solid ${assign.notify === opt ? C.blu : C.brd}`,
+                              background: assign.notify === opt ? C.bluBg : C.card,
+                              color: assign.notify === opt ? C.blu : C.sub,
+                            }}
+                          >
+                            {opt === "email" ? "Email" : "None"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {error && <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
 
             {/* Only show Park button if there's no active pushback / override flow */}
@@ -336,7 +523,9 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setStep("input")} style={{ ...btn2, flex: 1 }}>← Edit</button>
                 <button onClick={save} style={{ ...btn1, flex: 2 }}>
-                  Park It → Back to Calls
+                  {assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim() && assign.notify === "email"
+                    ? "Park & Notify Assignee →"
+                    : "Park It → Back to Calls"}
                 </button>
               </div>
             )}

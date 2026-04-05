@@ -15,7 +15,8 @@ router.get("/eod-report/today", async (req, res): Promise<void> => {
   res.json(report || null);
 });
 
-router.post("/eod-report", async (req, res): Promise<void> => {
+// ── Helper: build EOD stats + AI text ─────────────────────────────────────────
+async function buildEodReport(log: any): Promise<{ reportText: string; callsMade: number; demosBooked: number; tasksCompleted: number; }> {
   const today = todayPacific();
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
@@ -54,18 +55,54 @@ Write a brief EOD report (3-4 paragraphs) in Tony's voice:
 3. What needs follow-up tomorrow
 4. One motivating closing thought
 
-Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and ethan@flipiq.com.`,
+Keep it honest, direct, and actionable.`,
       }],
     });
     const block = message.content[0];
     if (block.type === "text") reportText = block.text;
   } catch (err) {
-    req.log.warn({ err }, "Claude EOD report generation failed");
+    log?.warn?.({ err }, "Claude EOD report generation failed");
     reportText = `EOD Report — ${today}\n\nCalls Made: ${callsMade}\nDemos Booked: ${demosBooked}\nTasks Completed: ${tasksCompleted}\n\n${callList}\n\nKeep pushing forward tomorrow.`;
   }
 
-  // Send to Tony only (test / manual trigger)
-  const recipients = ["tony@flipiq.com"];
+  return { reportText, callsMade, demosBooked, tasksCompleted };
+}
+
+// ── Preview — generate without sending ────────────────────────────────────────
+router.post("/eod-report/preview", async (req, res): Promise<void> => {
+  const data = await buildEodReport(req.log);
+  res.json({ ok: true, ...data });
+});
+
+router.post("/eod-report", async (req, res): Promise<void> => {
+  const today = todayPacific();
+
+  // If body text + recipient provided, use them directly; otherwise generate
+  const { to: customTo, body: customBody } = req.body ?? {};
+
+  let reportText: string;
+  let callsMade: number;
+  let demosBooked: number;
+  let tasksCompleted: number;
+
+  if (customBody) {
+    reportText = customBody;
+    // Still pull stats for storage
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    const [calls, demoRows, taskCompletions] = await Promise.all([
+      db.select().from(callLogTable).where(gte(callLogTable.createdAt, todayDate)),
+      db.select().from(demosTable).where(eq(demosTable.scheduledDate, today)),
+      db.select().from(taskCompletionsTable).where(gte(taskCompletionsTable.completedAt, todayDate)),
+    ]);
+    callsMade = calls.length;
+    demosBooked = demoRows.length;
+    tasksCompleted = taskCompletions.length;
+  } else {
+    ({ reportText, callsMade, demosBooked, tasksCompleted } = await buildEodReport(req.log));
+  }
+
+  const recipients: string[] = customTo ? [customTo] : ["tony@flipiq.com"];
   const sentResults = await Promise.all(
     recipients.map(async to => {
       const result = await sendEmail({
@@ -73,9 +110,7 @@ Keep it honest, direct, and actionable. This will be sent to tony@flipiq.com and
         subject: `FlipIQ EOD Report — ${today}`,
         body: reportText,
       });
-      if (!result.ok) {
-        req.log.warn({ to }, "Gmail EOD send failed");
-      }
+      if (!result.ok) req.log.warn({ to }, "Gmail EOD send failed");
       return { to, ok: result.ok };
     })
   );

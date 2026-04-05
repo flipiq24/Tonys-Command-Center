@@ -127,7 +127,7 @@ router.post("/checkin", async (req, res): Promise<void> => {
       .filter(v => v > 0);
     if (sleepValues.length >= 3) {
       const avgSleep = sleepValues.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-      if (avgSleep < 6.5) {
+      if (avgSleep < 6) {
         alerts.push({ type: "sleep", message: `Avg sleep this week: ${avgSleep.toFixed(1)}h — You're running a sleep debt. Performance will drop.`, level: "high" });
       }
     }
@@ -138,8 +138,8 @@ router.post("/checkin", async (req, res): Promise<void> => {
     }
 
     const noBible = recent.slice(0, 3).filter(r => !r.bible).length;
-    if (noBible >= 3) {
-      alerts.push({ type: "bible", message: `No Bible time 3 days straight. This is your anchor. Don't drift.`, level: "mid" });
+    if (noBible >= 2) {
+      alerts.push({ type: "bible", message: `No Bible time ${noBible} days straight. This is your anchor. Don't drift.`, level: "mid" });
     }
 
     const badNut = recent.slice(0, 4).filter(r => r.nutrition === "Bad").length;
@@ -150,6 +150,26 @@ router.post("/checkin", async (req, res): Promise<void> => {
     const noUnplug = recent.slice(0, 3).filter(r => !r.unplug).length;
     if (noUnplug >= 3) {
       alerts.push({ type: "unplug", message: `Didn't unplug at 6PM for 3 days straight. Recovery is part of performance.`, level: "low" });
+    }
+
+    // Bedtime after 11 PM pattern check (within recent block so we have history)
+    if (data.bedtime) {
+      const [hStr] = data.bedtime.split(":");
+      const h = parseInt(hStr ?? "0", 10);
+      const isTonightLate = h >= 23 || (h >= 0 && h < 6);
+      if (isTonightLate) {
+        const lateBedtimes = recent.slice(0, 3).filter(r => {
+          if (!r.bedtime) return false;
+          const [rh] = r.bedtime.split(":");
+          const rHour = parseInt(rh ?? "0", 10);
+          return rHour >= 23 || (rHour >= 0 && rHour < 6);
+        });
+        if (lateBedtimes.length >= 2) {
+          alerts.push({ type: "bedtime", message: `Going to bed after 11 PM ${lateBedtimes.length + 1} nights in a row. Your sleep window is shrinking — protect your recovery.`, level: "mid" });
+        } else {
+          alerts.push({ type: "bedtime", message: `You went to bed after 11 PM tonight. Consistent late nights will erode your performance.`, level: "low" });
+        }
+      }
     }
   }
 

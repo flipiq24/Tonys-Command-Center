@@ -4,6 +4,7 @@ import { C, F, FS, inp, btn1, btn2 } from "./constants";
 import { VoiceField } from "./VoiceField";
 import { TimeRoutingBanner } from "./TimeRoutingBanner";
 import { CreateTaskModal } from "./CreateTaskModal";
+import { HoverCard } from "./HoverCard";
 import type { TaskItem } from "./types";
 
 interface WorkNote {
@@ -12,6 +13,7 @@ interface WorkNote {
   date: string;
   note: string;
   progress: number;
+  nextSteps?: string;
   nextSessionDate?: string | null;
   driveFileId?: string | null;
   driveFileName?: string | null;
@@ -438,7 +440,15 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           <div>
             <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "16px 0 4px" }}>My Tasks</div>
             {activeLocals.map(t => (
-              <div key={t.id} style={ROW}>
+              <HoverCard key={t.id} rows={[
+                { label: "Task", value: t.text },
+                ...(t.size ? [{ label: "Size", value: t.size, color: t.size === "XL" ? C.red : t.size === "L" ? C.blu : t.size === "M" ? C.grn : undefined }] : []),
+                ...(t.taskType ? [{ label: "Type", value: t.taskType === "ongoing" ? "↻ Ongoing" : t.taskType }] : []),
+                ...(t.dueDate ? [{ label: "Due", value: new Date(t.dueDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) }] : []),
+                ...(t.priority != null ? [{ label: "Priority", value: String(t.priority) }] : []),
+                ...(t.overrideWarning ? [{ label: "Warning", value: t.overrideWarning, color: C.red }] : []),
+              ]}>
+              <div style={ROW}>
                 <button onClick={() => completeLocalTask(t.id)} style={CIRCLE} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: C.tx, lineHeight: 1.45 }}>{t.text}</div>
@@ -467,6 +477,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                   {t.overrideWarning && <div style={{ fontSize: 11, color: C.red, marginTop: 2 }}>{t.overrideWarning}</div>}
                 </div>
               </div>
+              </HoverCard>
             ))}
           </div>
         )}
@@ -480,7 +491,19 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
               const progress = worked?.progress ?? 0;
               const isUrgent = t.cat === "SALES" || (t as any).urgent;
               return (
-                <div key={t.id} style={ROW}>
+                <HoverCard key={t.id} rows={[
+                  { label: "Task", value: t.text },
+                  { label: "Category", value: t.cat || "—", color: t.cat === "SALES" ? C.red : undefined },
+                  ...(t.priority != null ? [{ label: "Priority", value: String(t.priority) }] : []),
+                  ...(worked ? [
+                    { label: "Progress", value: `${progress}%`, color: progress === 100 ? C.grn : C.blu },
+                    ...(worked.note ? [{ label: "Note", value: worked.note }] : []),
+                    ...(worked.nextSteps ? [{ label: "Next", value: worked.nextSteps }] : []),
+                    ...(worked.nextSessionDate ? [{ label: "Continue", value: fmtDate(worked.nextSessionDate) }] : []),
+                    ...(worked.driveFileName ? [{ label: "File", value: worked.driveFileName, color: C.blu }] : []),
+                  ] : []),
+                ]}>
+                <div style={ROW}>
                   <button
                     onClick={() => t.sales ? onSwitchToSales() : onComplete(t)}
                     style={{ ...CIRCLE, borderColor: isUrgent ? C.red : "#999" }}
@@ -496,9 +519,9 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                           In progress ({progress}%)
                           {worked.nextSessionDate ? ` — continuing ${fmtDate(worked.nextSessionDate)}` : ""}
                         </div>
-                        {(worked as any).nextSteps && (
+                        {worked.nextSteps && (
                           <div style={{ fontSize: 12, color: "#555", marginTop: 3 }}>
-                            Next: {(worked as any).nextSteps}
+                            Next: {worked.nextSteps}
                           </div>
                         )}
                         {worked.driveLinkUrl && (
@@ -529,6 +552,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                     }}>Log</button>
                   )}
                 </div>
+                </HoverCard>
               );
             })}
           </div>

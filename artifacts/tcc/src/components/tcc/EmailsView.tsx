@@ -3,6 +3,7 @@ import { post } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, TIPS } from "./constants";
 import { SmartTip } from "./SmartTip";
 import { EmailReplyModal } from "./EmailReplyModal";
+import { HoverCard } from "./HoverCard";
 import type { EmailItem } from "./types";
 
 interface Props {
@@ -114,7 +115,15 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
           </div>
 
           {visibleEmails.map(e => (
-            <div key={e.id} style={{ marginBottom: 10 }}>
+            <HoverCard key={e.id} rows={[
+              { label: "From", value: e.from },
+              { label: "Subject", value: e.subj || "—" },
+              { label: "Priority", value: e.p === "high" ? "High" : e.p === "med" ? "Medium" : "Normal", color: e.p === "high" ? C.red : e.p === "med" ? C.amb : undefined },
+              { label: "Why", value: e.why || "—" },
+              ...(e.contactContext ? [{ label: "Context", value: e.contactContext, color: C.blu }] : []),
+              ...(e.time ? [{ label: "Time", value: e.time }] : []),
+            ]}>
+            <div style={{ marginBottom: 10 }}>
               <div style={{ padding: 14, background: e.p === "high" ? C.redBg : "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${e.p === "high" ? C.red : e.p === "med" ? C.amb : C.mut}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <a
@@ -137,6 +146,9 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                   style={{ fontSize: 14, fontWeight: 600, marginTop: 2, display: "block", color: C.tx, textDecoration: "none" }}
                 >{e.subj}</a>
                 <div style={{ fontSize: 12, color: C.red, marginTop: 4 }}>→ {e.why}</div>
+                {e.contactContext && (
+                  <div style={{ fontSize: 11, color: C.blu, marginTop: 3, fontStyle: "italic" }}>{e.contactContext}</div>
+                )}
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <SmartTip tipKey="suggestReply" tip={tip("suggestReply")} onSaved={onTipSaved}>
                     <button onClick={() => setReplyEmail(e)} style={{ ...btn2, padding: "5px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}>Suggest Reply</button>
@@ -260,6 +272,7 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                 </div>
               )}
             </div>
+            </HoverCard>
           ))}
 
           {unresolved === 0 && <div style={{ padding: 16, textAlign: "center", color: C.grn, fontWeight: 700, background: C.grnBg, borderRadius: 10 }}>All handled ✓</div>}

@@ -23,8 +23,8 @@ export interface CalItem {
   priority?: string;
   attendeeCount?: number;
 }
-export interface EmailItem { id: number; from: string; subj: string; why: string; time?: string; p?: string; gmailMessageId?: string; }
-export interface TaskItem { id: string; text: string; cat: string; sales?: boolean; }
+export interface EmailItem { id: number; from: string; subj: string; why: string; time?: string; p?: string; gmailMessageId?: string; contactContext?: string; }
+export interface TaskItem { id: string; text: string; cat: string; sales?: boolean; priority?: number; }
 export interface ContactNote {
   id: string;
   contactId: string;
@@ -81,6 +81,7 @@ export interface SlackItem {
   message: string;
   level: "high" | "mid" | "low";
   channel: string;
+  url?: string;
 }
 
 export interface LinearItem {

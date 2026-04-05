@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { get, post } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2 } from "./constants";
 import { VoiceField } from "./VoiceField";
+import { VoiceInput } from "./VoiceInput";
 
 interface Props {
   open: boolean;
@@ -30,7 +31,7 @@ function ContactAutocomplete({
 }) {
   const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const handleInput = (v: string) => {
     onChange(v);
@@ -64,16 +65,22 @@ function ContactAutocomplete({
   return (
     <div style={{ marginBottom: 12, position: "relative" }}>
       <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>{label}</label>
-      <input
-        value={value}
-        onChange={e => handleInput(e.target.value)}
-        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-        placeholder={placeholder}
-        style={{ ...inp, fontSize: 14 }}
-      />
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          value={value}
+          onChange={e => handleInput(e.target.value)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+          placeholder={placeholder}
+          style={{ ...inp, fontSize: 14, flex: 1 }}
+        />
+        <VoiceInput
+          onTranscript={t => onChange(value ? `${value}, ${t}` : t)}
+          size={30}
+        />
+      </div>
       {showSuggestions && (
         <div style={{
-          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+          position: "absolute", top: "100%", left: 0, right: 36, zIndex: 100,
           background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8,
           maxHeight: 200, overflow: "auto", boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
         }}>

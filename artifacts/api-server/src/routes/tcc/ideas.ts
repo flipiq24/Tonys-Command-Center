@@ -58,7 +58,7 @@ Return EXACTLY this JSON:
 {
   "category": "Tech|Sales|Marketing|Strategic Partners|Operations|Product|Personal",
   "urgency": "Now|This Week|This Month|Someday",
-  "techType": "Bug|Feature|Idea|Task|Strategic|null",
+  "techType": "Bug|Feature|Note|Task|Strategic|null",
   "reason": "One sentence explaining why this category fits",
   "businessFit": "One sentence on how this moves the FlipIQ needle",
   "priority": "high|medium|low",

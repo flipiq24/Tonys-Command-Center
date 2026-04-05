@@ -54,14 +54,14 @@ const SAMPLE_EMAILS: EmailItem[] = [
   { id: 5, from: "Ana Gutierrez", subj: "Seller Direct Phase 3 interest", why: "New pipeline opp", p: "Schedule call" },
 ];
 const SAMPLE_LINEAR: LinearItem[] = [
-  { id: "COM-221", task: "Command 1.5 — contact merge fix", who: "Faisal", level: "high" },
-  { id: "COM-224", task: "Dashboard filter persistence", who: "Faisal", level: "mid" },
-  { id: "COM-230", task: "DispoPro integration endpoint", who: "Haris", level: "high" },
-  { id: "COM-219", task: "Acceptance criteria audit — deployed unchecked", who: "Faisal", level: "high" },
-  { id: "FND-118", task: "MLS accuracy pipeline v2", who: "Haris", level: "mid" },
-  { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low" },
-  { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid" },
-  { id: "OMS-045", task: "OMS auto-sequence triggers", who: "Anas", level: "mid" },
+  { id: "COM-221", task: "Command 1.5 — contact merge fix", who: "Faisal", level: "high", size: "L", dueDate: new Date().toISOString().slice(0,10), inSequence: true },
+  { id: "COM-230", task: "DispoPro integration endpoint", who: "Haris", level: "high", size: "XL", dueDate: new Date().toISOString().slice(0,10), inSequence: true },
+  { id: "COM-219", task: "Acceptance criteria audit — deployed unchecked", who: "Faisal", level: "high", size: "M", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), inSequence: false },
+  { id: "COM-224", task: "Dashboard filter persistence", who: "Faisal", level: "mid", size: "S", dueDate: new Date(Date.now()+2*86400000).toISOString().slice(0,10), inSequence: true },
+  { id: "FND-118", task: "MLS accuracy pipeline v2", who: "Haris", level: "mid", size: "XL", dueDate: new Date(Date.now()+5*86400000).toISOString().slice(0,10), inSequence: true },
+  { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid", size: "M", dueDate: null, inSequence: true },
+  { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low", size: "L", dueDate: null, inSequence: true },
+  { id: "OMS-045", task: "OMS auto-sequence triggers", who: "Anas", level: "low", size: "M", dueDate: null, inSequence: true },
 ];
 
 // ── Time scheduling ─────────────────────────────────────────────────
@@ -413,8 +413,25 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const meetings = calendarData.filter(c => c.real).length > 0 ? calendarData.filter(c => c.real) : SAMPLE_MEETINGS;
   const emails   = emailsImportant.length > 0 ? emailsImportant.slice(0, 5) : SAMPLE_EMAILS;
   const linItems = linearItems.length > 0 ? linearItems.slice(0, 8) : SAMPLE_LINEAR;
-  const linHigh  = linItems.filter(l => l.level === "high").slice(0, 4);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const dueTodayCount = linItems.filter(l => l.dueDate === todayStr).length;
   const wb       = computeWorkBlocks(meetings);
+
+  const trackStatus = (l: LinearItem): "overdue" | "due-today" | "at-risk" | "ok" => {
+    if (l.dueDate) {
+      if (l.dueDate < todayStr) return "overdue";
+      if (l.dueDate === todayStr) return "due-today";
+    }
+    if (l.level === "high") return "at-risk";
+    return "ok";
+  };
+  const fmtDue = (d: string | null | undefined): string => {
+    if (!d) return "—";
+    if (d === todayStr) return "Today";
+    const tmrw = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    if (d === tmrw) return "Tmrw";
+    return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
 
   return (
     <div style={{ flex: 1, overflowY: "auto", background: "#fff" }}>
@@ -561,30 +578,59 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         </div>
         <div style={{ padding: "0 20px 18px" }}>
 
-            {/* ── LINEAR ── */}
+            {/* ── LINEAR — Engineering in Progress (flags + sequence baked in) ── */}
             <SL text="⚡ Linear — Engineering in Progress" color="#2563EB" />
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 12 }}>
               <thead>
-                <tr><TH w={22} center>✓</TH><TH w={72}>ID</TH><TH>TASK</TH><TH w={80}>OWNER</TH><TH w={64}>PRIORITY</TH></tr>
+                <tr>
+                  <TH w={22} center>✓</TH>
+                  <TH w={22} center>#</TH>
+                  <TH w={68}>ID</TH>
+                  <TH>TASK</TH>
+                  <TH w={64}>OWNER</TH>
+                  <TH w={24} center>🚩</TH>
+                  <TH w={56} center>DUE</TH>
+                  <TH w={68} center>ON TRACK</TH>
+                  <TH w={36} center>SIZE</TH>
+                  <TH w={40} center>IN SEQ?</TH>
+                </tr>
               </thead>
               <tbody>
                 {linItems.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
+                  <tr><td colSpan={10} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
                 )}
                 {linItems.map((l, i) => {
                   const id = `lin-${i}`;
                   const done = ck(id);
-                  const isHigh = l.level === "high";
+                  const ts = trackStatus(l);
+                  const rowBg = l.level === "high" ? "#FFF5F5" : "#fff";
+                  const trackColor = ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
+                  const trackLabel = ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
+                  const flagIcon = l.level === "high" ? "🚩" : l.level === "mid" ? "⚠" : "";
+                  const seqColor = l.inSequence === false ? "#C62828" : "#2E7D32";
+                  const seqLabel = l.inSequence === false ? "✗" : l.inSequence === true ? "✓" : "—";
+                  const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
                   return (
-                    <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
+                    <tr key={id} className="dash-row-hover" style={{ background: rowBg }}>
                       <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
+                      <TD center small dim>{i + 1}</TD>
                       <TD small bold><span style={{ color: "#2563EB" }}>{l.id}</span></TD>
                       <TD strike={done}>{l.task}</TD>
                       <TD small>{l.who || "—"}</TD>
+                      <TD center><span style={{ fontSize: 11 }}>{flagIcon}</span></TD>
                       <TD small center>
-                        <span style={{ fontWeight: isHigh ? 800 : 400, color: isHigh ? "#C62828" : l.level === "mid" ? "#E65100" : "#888" }}>
-                          {isHigh ? "🔴 High" : l.level === "mid" ? "⚠ Mid" : "Low"}
+                        <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
+                          {fmtDue(l.dueDate)}
                         </span>
+                      </TD>
+                      <TD small center>
+                        <span style={{ fontWeight: 700, color: trackColor }}>{trackLabel}</span>
+                      </TD>
+                      <TD small center>
+                        <span style={{ fontWeight: 800, color: sizeColor }}>{l.size || "—"}</span>
+                      </TD>
+                      <TD small center>
+                        <span style={{ fontWeight: 700, color: seqColor }}>{seqLabel}</span>
                       </TD>
                     </tr>
                   );
@@ -592,56 +638,24 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </tbody>
             </table>
 
-            {/* ── FLAGS + SOFT SEQUENCE ── */}
-            <div className="dash-2col" style={{ marginBottom: 12 }}>
-
-              {/* Flags */}
-              <div>
-                <SL text="⚠ Flags & Blockers" color="#C62828" />
-                <div style={{ border: BORDER, borderRadius: 3, overflow: "hidden" }}>
-                  {linHigh.length === 0 && <div style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic" }}>No high-priority flags 🎉</div>}
-                  {linHigh.map((l, i) => (
-                    <div key={i} style={{ padding: "8px 10px", borderBottom: i < linHigh.length - 1 ? "1px solid #EBEBEB" : "none", background: "#FFF5F5" }}>
-                      <div style={{ fontSize: 9, color: "#2563EB", fontWeight: 700 }}>{l.id}</div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#C62828" }}>{l.task}</div>
-                    </div>
-                  ))}
-                  {Array.from({ length: Math.max(0, 3 - linHigh.length) }).map((_, i) => (
-                    <div key={i} style={{ padding: "9px 10px", borderTop: "1px solid #EBEBEB", display: "flex", gap: 6, alignItems: "center" }}>
-                      <span style={{ fontSize: 10, color: "#E65100" }}>⚠</span>
-                      <div style={{ flex: 1, height: 1, background: "#EEE" }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Soft Sequence */}
-              <div>
-                <SL text="○ Soft Sequence — Next Up" color="#555" />
-                <div style={{ border: BORDER, borderRadius: 3, overflow: "hidden" }}>
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <div key={n} style={{ display: "flex", gap: 8, alignItems: "center", padding: "9px 10px", borderBottom: n < 5 ? "1px solid #EBEBEB" : "none" }}>
-                      <div style={{ width: 14, height: 14, border: "1.5px solid #ccc", borderRadius: "50%", flexShrink: 0 }} />
-                      <div style={{ flex: 1, height: 1, background: "#EEE" }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* ── SCRATCH NOTES ── */}
-            <SL text="📝 Scratch Notes" color="#555" />
-            <div style={{ border: HEAVY, borderRadius: 3, background: "#FDFDFC", marginBottom: 12, overflow: "hidden" }}>
+            {/* ── SCRATCH NOTES — dynamic height based on Linear items due today ── */}
+            <SL
+              text="📝 Scratch Notes"
+              color="#555"
+              time={dueTodayCount > 0 ? `${dueTodayCount} Linear item${dueTodayCount > 1 ? "s" : ""} due today` : undefined}
+            />
+            {/* minHeight grows with items due today: baseline 200px + 36px per due item */}
+            <div style={{ border: HEAVY, borderRadius: 3, background: "#FDFDFC", marginBottom: 12, overflow: "hidden", minHeight: Math.max(200, 200 + dueTodayCount * 36) }}>
               {scratchNotes.length === 0 && (
-                <div style={{ padding: "12px 14px", fontSize: 10, color: "#ccc", fontStyle: "italic" }}>No notes yet — add one below</div>
+                <div style={{ padding: "16px 14px", fontSize: 11, color: "#ccc", fontStyle: "italic" }}>No notes yet — use this space for quick thoughts, action items, and follow-ups as you work through Linear.</div>
               )}
               {scratchNotes.map((note) => (
                 <div key={note.id} className="dash-row-hover" style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "7px 12px",
+                  display: "flex", alignItems: "center", gap: 8, padding: "9px 14px",
                   borderBottom: "1px solid #EBEBEB", background: "#FDFDFC",
                 }}>
                   <CB id={`sn-${note.id}`} checked={note.checked} onToggle={() => toggleScratchNote(note.id)} />
-                  <div style={{ flex: 1, fontSize: 12, fontWeight: 500,
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 500,
                     color: note.checked ? "#bbb" : BLK,
                     textDecoration: note.checked ? "line-through" : "none",
                     opacity: note.checked ? 0.5 : 1,
@@ -649,22 +663,22 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   <button
                     onClick={() => deleteScratchNote(note.id)}
                     style={{
-                      background: "none", border: "none", cursor: "pointer", padding: "0 2px",
-                      fontSize: 11, color: "#ccc", lineHeight: 1, flexShrink: 0,
+                      background: "none", border: "none", cursor: "pointer", padding: "0 4px",
+                      fontSize: 12, color: "#ccc", lineHeight: 1, flexShrink: 0,
                     }}
                     title="Delete note"
                   >✕</button>
                 </div>
               ))}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderTop: scratchNotes.length > 0 ? "1px solid #EBEBEB" : "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderTop: scratchNotes.length > 0 ? "1px solid #EBEBEB" : "none" }}>
                 <input
                   ref={scratchInputRef}
                   value={scratchInput}
                   onChange={e => setScratchInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") addScratchNote(); }}
-                  placeholder="Add a note..."
+                  placeholder="Add a note, action item, or thought..."
                   style={{
-                    flex: 1, border: "none", outline: "none", fontSize: 12,
+                    flex: 1, border: "none", outline: "none", fontSize: 13,
                     fontFamily: F, background: "transparent", color: BLK,
                     padding: "2px 0",
                   }}

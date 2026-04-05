@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, numeric, timestamp, date, integer, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, numeric, timestamp, date, integer, jsonb, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { contactsTable } from "./tcc";
 
 export const contactIntelligenceTable = pgTable("contact_intelligence", {
@@ -138,6 +138,17 @@ export const localTasksTable = pgTable("local_tasks", {
 }, (table) => [
   index("idx_lt_status").on(table.status),
   index("idx_lt_due").on(table.dueDate),
+]);
+
+export const scratchNotesTable = pgTable("scratch_notes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  text: text("text").notNull(),
+  checked: boolean("checked").default(false).notNull(),
+  position: integer("position").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_sn_position").on(table.position),
 ]);
 
 export const manualScheduleEventsTable = pgTable("manual_schedule_events", {

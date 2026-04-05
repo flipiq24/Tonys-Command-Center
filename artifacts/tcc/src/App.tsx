@@ -522,6 +522,7 @@ export default function App() {
         contacts={contacts.map(c => ({ name: c.name, phone: c.phone, company: c.company, status: c.status }))}
         onComplete={handleTaskComplete}
         onNavigate={v => persistView(v as View)}
+        onOpenEmail={em => setEmailCompose({ threadId: em.gmailMessageId, subject: `Re: ${em.subj}` })}
       />
     </div>
   );

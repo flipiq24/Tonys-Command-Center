@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { C, F } from "./constants";
 
-interface Row { label: string; value: string; color?: string; }
+interface Row { label: string; value: string; color?: string; href?: string; }
 
 interface Props {
   rows: Row[];
@@ -12,8 +12,15 @@ export function HoverCard({ rows, children }: Props) {
   const [visible, setVisible] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; above: boolean }>({ top: 0, left: 0, above: false });
   const wrapRef = useRef<HTMLDivElement>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const hasLinks = rows.some(r => !!r.href);
 
   const show = useCallback((e: React.MouseEvent) => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
     if (!wrapRef.current) return;
     const rect = wrapRef.current.getBoundingClientRect();
     const tooltipH = rows.length * 26 + 24;
@@ -26,27 +33,43 @@ export function HoverCard({ rows, children }: Props) {
     setVisible(true);
   }, [rows.length]);
 
-  const hide = useCallback(() => setVisible(false), []);
+  const hide = useCallback(() => {
+    if (hasLinks) {
+      hideTimerRef.current = setTimeout(() => setVisible(false), 200);
+    } else {
+      setVisible(false);
+    }
+  }, [hasLinks]);
+
+  const cancelHide = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  }, []);
 
   return (
     <div ref={wrapRef} onMouseEnter={show} onMouseLeave={hide} style={{ position: "relative" }}>
       {children}
       {visible && (
-        <div style={{
-          position: "fixed",
-          top: pos.top,
-          left: pos.left,
-          zIndex: 99999,
-          background: "#1A1A1A",
-          color: "#F0F0EE",
-          borderRadius: 10,
-          padding: "10px 14px",
-          minWidth: 260,
-          maxWidth: 320,
-          boxShadow: "0 6px 28px rgba(0,0,0,0.35)",
-          pointerEvents: "none",
-          fontFamily: F,
-        }}>
+        <div
+          onMouseEnter={hasLinks ? cancelHide : undefined}
+          onMouseLeave={hasLinks ? hide : undefined}
+          style={{
+            position: "fixed",
+            top: pos.top,
+            left: pos.left,
+            zIndex: 99999,
+            background: "#1A1A1A",
+            color: "#F0F0EE",
+            borderRadius: 10,
+            padding: "10px 14px",
+            minWidth: 260,
+            maxWidth: 320,
+            boxShadow: "0 6px 28px rgba(0,0,0,0.35)",
+            pointerEvents: hasLinks ? "auto" : "none",
+            fontFamily: F,
+          }}>
           {rows.map((r, i) => (
             <div key={i} style={{
               display: "flex", gap: 8, alignItems: "flex-start",
@@ -56,9 +79,20 @@ export function HoverCard({ rows, children }: Props) {
               <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: 0.6, flexShrink: 0, paddingTop: 2, minWidth: 64 }}>
                 {r.label}
               </span>
-              <span style={{ fontSize: 12, color: r.color || "rgba(255,255,255,0.88)", lineHeight: 1.45, wordBreak: "break-word" }}>
-                {r.value}
-              </span>
+              {r.href ? (
+                <a
+                  href={r.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: r.color || "#60A5FA", lineHeight: 1.45, wordBreak: "break-word", textDecoration: "underline", cursor: "pointer" }}
+                >
+                  {r.value}
+                </a>
+              ) : (
+                <span style={{ fontSize: 12, color: r.color || "rgba(255,255,255,0.88)", lineHeight: 1.45, wordBreak: "break-word" }}>
+                  {r.value}
+                </span>
+              )}
             </div>
           ))}
         </div>

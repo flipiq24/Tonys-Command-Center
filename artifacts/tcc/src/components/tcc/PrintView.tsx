@@ -17,59 +17,7 @@ interface Props {
   onRefresh?: () => Promise<void>;
 }
 
-const SAMPLE_SLACK: SlackItem[] = [
-  { from: "Ethan Jolly", message: "Linear sprint blockers need your review", level: "high", channel: "#engineering" },
-  { from: "Faisal", message: "Command deploy blocked on merge conflict", level: "mid", channel: "#dev" },
-  { from: "Dennis", message: "Sales numbers ready for review", level: "low", channel: "#sales" },
-];
-
 const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-
-// ─────────────────────────────────────────────────────────────────
-// SAMPLE DATA — used when real data isn't loaded yet (from your
-// actual FlipIQ Daily Action Sheet v2 Excel file)
-// ─────────────────────────────────────────────────────────────────
-const SAMPLE_TOP3: TaskItem[] = [
-  { id: "s1", text: "Call Dennis — review weekly sales numbers & pipeline", cat: "Sales" },
-  { id: "s2", text: "Follow up with John (TDR) re: Command onboarding feedback", cat: "Operations" },
-  { id: "s3", text: "Review & approve Ramy's OMS user adaptation report", cat: "Operations" },
-];
-const SAMPLE_CALLS: Contact[] = [
-  { name: "Mike Torres", company: "Coko Acq.", phone: "(951) 555-0142", status: "Hot" },
-  { name: "Sarah Chen", company: "Investor Lead", phone: "(626) 555-0198", status: "Warm" },
-  { name: "David Park", company: "Broker-Inv.", phone: "(714) 555-0233", status: "New" },
-  { name: "Lisa Rodriguez", company: "STJ", phone: "(909) 555-0317", status: "Hot" },
-  { name: "James Wu", company: "PropertyRadar", phone: "(415) 555-0421", status: "Warm" },
-  { name: "Rachel Kim", company: "DCP", phone: "(310) 555-0544", status: "New" },
-  { name: "Tom Bradley", company: "Hegemark", phone: "(818) 555-0619", status: "Warm" },
-  { name: "Ana Gutierrez", company: "Acq. Homes", phone: "(562) 555-0788", status: "Cold" },
-  { name: "Kevin O'Brien", company: "New Lead", phone: "(949) 555-0855", status: "New" },
-  { name: "Maria Espinoza", company: "DispoPro", phone: "(213) 555-0961", status: "Warm" },
-];
-const SAMPLE_MEETINGS: CalItem[] = [
-  { t: "9:00 AM", tEnd: "9:30 AM", n: "Sales Team Standup", loc: "Zoom", note: "Review pipeline #s", real: true },
-  { t: "10:30 AM", tEnd: "11:00 AM", n: "OMS Adaptation Check-in — Ramy", loc: "Google Meet", note: "Bring P0 status", real: true },
-  { t: "1:00 PM", tEnd: "1:45 PM", n: "Sales Playbook Review — Dennis", loc: "Office", note: "Bondelin scripts", real: true },
-  { t: "3:00 PM", tEnd: "3:30 PM", n: "Weekly COO Sync — Ethan", loc: "Google Meet", note: "Linear blockers", real: true },
-  { t: "4:30 PM", tEnd: "5:00 PM", n: "EOD Wrap / Day Review", loc: "", note: "Update CRM, set tomorrow Top 3", real: true },
-];
-const SAMPLE_EMAILS: EmailItem[] = [
-  { id: 1, from: "Rick Sharga", subj: "Lightning Docs positioning", why: "Strategic decision pending", p: "Reply by EOD" },
-  { id: 2, from: "John @ TDR", subj: "RE: Command bugs — onboarding blocker", why: "Active client issue", p: "Fwd to Faisal" },
-  { id: 3, from: "David Breneman", subj: "Dialpad replacement quote", why: "Vendor eval in progress", p: "Review numbers" },
-  { id: 4, from: "Ethan Jolly", subj: "Linear sprint audit — missing owners", why: "Engineering risk flag", p: "Discuss @ 3pm" },
-  { id: 5, from: "Ana Gutierrez / Acq. Homes", subj: "Seller Direct Phase 3 interest", why: "New pipeline opp", p: "Schedule call" },
-];
-const SAMPLE_LINEAR: LinearItem[] = [
-  { id: "COM-221", task: "Command 1.5 — contact merge fix", who: "Faisal", level: "high" },
-  { id: "COM-224", task: "Dashboard filter persistence", who: "Faisal", level: "mid" },
-  { id: "COM-230", task: "DispoPro integration endpoint", who: "Haris", level: "high" },
-  { id: "COM-219", task: "Acceptance criteria audit — deployed unchecked", who: "Faisal", level: "high" },
-  { id: "FND-118", task: "MLS accuracy pipeline v2", who: "Haris", level: "mid" },
-  { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low" },
-  { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid" },
-  { id: "OMS-045", task: "OMS auto-sequence triggers", who: "Anas", level: "mid" },
-];
 
 // ─────────────────────────────────────────────────────────────────
 // TIME SCHEDULING — compute free work blocks from today's meetings
@@ -288,24 +236,13 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
 
   const ck = (id: string) => done.has(id);
 
-  // Data prep — fall back to sample data when real data is empty
-  const realTop3 = tasks.filter(t => !tDone[t.id] && !t.sales).slice(0, 3);
-  const top3 = realTop3.length > 0 ? realTop3 : SAMPLE_TOP3;
-
-  const realCalls = topCallContacts.slice(0, 10);
-  const callList = realCalls.length > 0 ? realCalls : SAMPLE_CALLS;
-
-  const realMeetings = calendarData.filter(c => c.real);
-  const meetings = realMeetings.length > 0 ? realMeetings : SAMPLE_MEETINGS;
-
-  const realEmails = emailsImportant.slice(0, 6);
-  const emails = realEmails.length > 0 ? realEmails : SAMPLE_EMAILS;
-
-  const realLinear = linearItems.slice(0, 8);
-  const linActive = realLinear.length > 0 ? realLinear : SAMPLE_LINEAR;
-
-  const realSlack = slackItems.slice(0, 6);
-  const slackActive = realSlack.length > 0 ? realSlack : SAMPLE_SLACK;
+  // Data — real sources only
+  const top3 = tasks.filter(t => !tDone[t.id] && !t.sales).slice(0, 3);
+  const callList = topCallContacts.slice(0, 10);
+  const meetings = calendarData.filter(c => c.real);
+  const emails = emailsImportant.slice(0, 6);
+  const linActive = linearItems.slice(0, 8);
+  const slackActive = slackItems.slice(0, 6);
 
   // Compute free-window schedule from meeting times
   const workBlocks = computeWorkBlocks(meetings);

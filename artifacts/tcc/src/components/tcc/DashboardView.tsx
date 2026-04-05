@@ -22,54 +22,6 @@ interface Props {
   onOpenEmail?: (em: EmailItem) => void;
 }
 
-// ── Sample fallback data ────────────────────────────────────────────
-const SAMPLE_TOP3: TaskItem[] = [
-  { id: "s1", text: "Call Dennis — review weekly sales numbers & pipeline", cat: "Sales" },
-  { id: "s2", text: "Follow up with John (TDR) re: Command onboarding feedback", cat: "Operations" },
-  { id: "s3", text: "Review & approve Ramy's OMS user adaptation report", cat: "Operations" },
-];
-const SAMPLE_CALLS: Contact[] = [
-  { name: "Mike Torres", company: "Coko Acq.", phone: "(951) 555-0142", status: "Hot", nextStep: "Send LOI + follow up on deal terms", lastContactDate: "Today" },
-  { name: "Sarah Chen", company: "Investor Lead", phone: "(626) 555-0198", status: "Warm", nextStep: "Schedule intro call — 10K investors", lastContactDate: "Yesterday" },
-  { name: "David Park", company: "Broker-Inv.", phone: "(714) 555-0233", status: "New", nextStep: "Intro pitch — Chino portfolio", lastContactDate: "Mar 30" },
-  { name: "Lisa Rodriguez", company: "STJ", phone: "(909) 555-0317", status: "Hot", nextStep: "Close on Phase 3 Seller Direct", lastContactDate: "Today" },
-  { name: "James Wu", company: "PropertyRadar", phone: "(415) 555-0421", status: "Warm", nextStep: "Demo FlipIQ data layer", lastContactDate: "Apr 1" },
-  { name: "Rachel Kim", company: "DCP", phone: "(310) 555-0544", status: "New", nextStep: "Qualify budget & timeline", lastContactDate: "Mar 28" },
-  { name: "Tom Bradley", company: "Hegemark", phone: "(818) 555-0619", status: "Warm", nextStep: "Send Broker Playbook PDF", lastContactDate: "Apr 2" },
-  { name: "Ana Gutierrez", company: "Acq. Homes", phone: "(562) 555-0788", status: "Cold", nextStep: "Re-engage — check on deal status", lastContactDate: "Mar 20" },
-  { name: "Kevin O'Brien", company: "New Lead", phone: "(949) 555-0855", status: "New", nextStep: "First touch — introduce FlipIQ", lastContactDate: "Never" },
-  { name: "Maria Espinoza", company: "DispoPro", phone: "(213) 555-0961", status: "Warm", nextStep: "Integration call — API timeline", lastContactDate: "Apr 3" },
-];
-const SAMPLE_MEETINGS: CalItem[] = [
-  { t: "9:00 AM", tEnd: "9:30 AM", n: "Sales Team Standup", loc: "Zoom", note: "Review pipeline #s", real: true },
-  { t: "10:30 AM", tEnd: "11:00 AM", n: "OMS Adaptation Check-in — Ramy", note: "Bring P0 status", real: true },
-  { t: "1:00 PM", tEnd: "1:45 PM", n: "Sales Playbook Review — Dennis", loc: "Office", note: "Bondelin scripts", real: true },
-  { t: "3:00 PM", tEnd: "3:30 PM", n: "Weekly COO Sync — Ethan", note: "Linear blockers", real: true },
-  { t: "4:30 PM", tEnd: "5:00 PM", n: "EOD Wrap / Day Review", note: "Update CRM, set tomorrow Top 3", real: true },
-];
-const SAMPLE_EMAILS: EmailItem[] = [
-  { id: 1, from: "Rick Sharga", subj: "Lightning Docs positioning", why: "Strategic decision pending", p: "Reply by EOD" },
-  { id: 2, from: "John @ TDR", subj: "RE: Command bugs — onboarding blocker", why: "Active client issue", p: "Fwd to Faisal" },
-  { id: 3, from: "David Breneman", subj: "Dialpad replacement quote", why: "Vendor eval in progress", p: "Review numbers" },
-  { id: 4, from: "Ethan Jolly", subj: "Linear sprint audit — missing owners", why: "Engineering risk flag", p: "Discuss @ 3pm" },
-  { id: 5, from: "Ana Gutierrez", subj: "Seller Direct Phase 3 interest", why: "New pipeline opp", p: "Schedule call" },
-];
-const SAMPLE_LINEAR: LinearItem[] = [
-  { id: "COM-221", task: "Command 1.5 — contact merge fix", who: "Faisal", level: "high", size: "L", dueDate: new Date().toISOString().slice(0,10), inSequence: true, state: "In Progress", stateType: "started", description: "Fix the contact merge duplicates showing in Command 1.5. Root cause: ID collision on re-import.", labels: ["bug", "command"] },
-  { id: "COM-230", task: "DispoPro integration endpoint", who: "Haris", level: "high", size: "XL", dueDate: new Date().toISOString().slice(0,10), inSequence: true, state: "In Progress", stateType: "started", description: "Build and expose the REST endpoint for DispoPro to push deal data into FlipIQ.", labels: ["integration"] },
-  { id: "COM-219", task: "Acceptance criteria audit — deployed unchecked", who: "Faisal", level: "high", size: "M", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), inSequence: false, state: "In Review", stateType: "started", description: "Several ACs were marked complete but not verified in production. Audit and document.", labels: ["qa"] },
-  { id: "COM-224", task: "Dashboard filter persistence", who: "Faisal", level: "mid", size: "S", dueDate: new Date(Date.now()+2*86400000).toISOString().slice(0,10), inSequence: true, state: "Todo", stateType: "unstarted", description: "User's selected filters should persist across page navigation and browser refresh.", labels: ["ux"] },
-  { id: "FND-118", task: "MLS accuracy pipeline v2", who: "Haris", level: "mid", size: "XL", dueDate: new Date(Date.now()+5*86400000).toISOString().slice(0,10), inSequence: true, state: "Todo", stateType: "unstarted", description: "Rebuild MLS ingestion pipeline to handle county-level accuracy improvements.", labels: ["data", "mls"] },
-  { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid", size: "M", dueDate: null, inSequence: true, state: "In Progress", stateType: "started", labels: ["marketplace"] },
-  { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low", size: "L", dueDate: null, inSequence: true, state: "Backlog", stateType: "backlog", labels: ["data"] },
-  { id: "COM-218", task: "CSV export — contact bulk download", who: "Faisal", level: "low", size: "S", dueDate: null, inSequence: true, state: "Done", stateType: "completed", description: "Bulk CSV download of contacts with all standard fields. Completed and deployed.", labels: ["feature"] },
-  { id: "OPS-012", task: "Review & finalize equity contract terms", who: "Ethan", level: "high", size: "S", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "In Progress", stateType: "started", description: "Equity stake revisions — align with Chris Wesser's commentary. Need signature before EOD.", labels: ["legal", "fundraise"] },
-  { id: "OPS-015", task: "Q2 investor update deck", who: "Ethan", level: "mid", size: "M", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), inSequence: null, state: "In Progress", stateType: "started", description: "Slide deck for Q2 investor update — include pipeline numbers, product milestones, hiring.", labels: ["investor"] },
-  { id: "OPS-018", task: "Recruiter playbook finalize", who: "Ethan", level: "mid", size: "S", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "Done", stateType: "completed", description: "Playbook for James and Jesse finalized and sent.", labels: ["hiring"] },
-  { id: "OMS-031", task: "OMS user adaptation report → Tony", who: "Ramy", level: "high", size: "S", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "In Progress", stateType: "started", description: "Report on OMS adoption: who's using it, who isn't, blockers, training gaps.", labels: ["oms", "ops"] },
-  { id: "OMS-034", task: "Title company follow-up — 3 open deals", who: "Ramy", level: "mid", size: "XS", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "Todo", stateType: "unstarted", description: "Follow up with title company on closing timelines for open deals.", labels: ["oms"] },
-  { id: "OMS-037", task: "Compliance notes close-out (today)", who: "Ramy", level: "mid", size: "XS", dueDate: new Date().toISOString().slice(0,10), inSequence: null, state: "Done", stateType: "completed", description: "Compliance notes closed out for today's transactions.", labels: ["compliance"] },
-];
 
 // ── Time scheduling ─────────────────────────────────────────────────
 function parseTimeMins(t: string): number | null {
@@ -619,13 +571,12 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   };
 
 
-  // Data with sample fallbacks
-  const _t3pool = tasks.filter(t => !tDone[t.id]).filter(t => !/sales.?call/i.test(t.text));
-  const top3    = _t3pool.length > 0 ? _t3pool.slice(0, 3) : SAMPLE_TOP3;
-  const callList = contacts.length > 0 ? contacts.slice(0, 10) : SAMPLE_CALLS;
-  const meetings = calendarData.filter(c => c.real).length > 0 ? calendarData.filter(c => c.real) : SAMPLE_MEETINGS;
-  const emails   = emailsImportant.length > 0 ? emailsImportant.slice(0, 5) : SAMPLE_EMAILS;
-  const allLinItems = linearItems.length > 0 ? linearItems.slice(0, 20) : SAMPLE_LINEAR;
+  // Data — real sources only
+  const top3    = tasks.filter(t => !tDone[t.id]).filter(t => !/sales.?call/i.test(t.text)).slice(0, 3);
+  const callList = contacts.slice(0, 10);
+  const meetings = calendarData.filter(c => c.real);
+  const emails   = emailsImportant.slice(0, 5);
+  const allLinItems = linearItems.slice(0, 20);
   const ethanItems  = allLinItems.filter(l => l.who?.toLowerCase().includes("ethan"));
   const ramiItems   = allLinItems.filter(l => l.who?.toLowerCase().includes("ramy") || l.who?.toLowerCase().includes("remy"));
   const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));

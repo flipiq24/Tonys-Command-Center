@@ -131,6 +131,16 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
         onConnected={name => { onConnected(name); setSelectedContactId(null); }}
         onSmsOpen={c => { setSmsContact(c); setSelectedContactId(null); }}
         onCompose={onCompose ? c => { onCompose(c); setSelectedContactId(null); } : undefined}
+        contacts={results}
+        onNavigate={id => setSelectedContactId(id)}
+        filters={{ status: filterStatus, stage: filterStage, type: filterType, category: filterCategory, search }}
+        onFiltersChange={partial => {
+          if (partial.status !== undefined) setFilterStatus(partial.status);
+          if (partial.stage !== undefined) setFilterStage(partial.stage);
+          if (partial.type !== undefined) setFilterType(partial.type);
+          if (partial.category !== undefined) setFilterCategory(partial.category);
+          if (partial.search !== undefined) setSearch(partial.search);
+        }}
       />
       <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
 

@@ -606,9 +606,10 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     if (l.stateType === "completed" || l.stateType === "cancelled") return false;
     return l.stateType === "started" || l.dueDate === todayStr || (!!l.dueDate && l.dueDate < todayStr);
   };
+  const stateRank = (l: LinearItem) => l.state === "In Progress" ? 0 : 1;
   const allLinItems = linearItems
     .filter(l => l.state === "In Progress" || l.state === "In QA")
-    .sort((a, b) => priorityRank(a) - priorityRank(b));
+    .sort((a, b) => stateRank(a) - stateRank(b) || priorityRank(a) - priorityRank(b));
   const ethanItems  = allLinItems.filter(l => l.who?.toLowerCase().includes("ethan"));
   const ramiItems   = allLinItems.filter(l => l.who?.toLowerCase().includes("rami") || l.who?.toLowerCase().includes("ramy") || l.who?.toLowerCase().includes("remy"));
   const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));
@@ -811,7 +812,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                 {linItems.map((l, i) => {
                   const isCompleted = l.stateType === "completed" || l.stateType === "cancelled";
                   const ts = trackStatus(l);
-                  const rowBg = isCompleted ? "#F9F9F9" : l.level === "high" ? "#FFF5F5" : "#fff";
+                  const noDue = !l.dueDate;
+                  const rowBg = isCompleted ? "#F9F9F9" : l.level === "high" ? "#FFF5F5" : noDue ? "#FFFBEB" : "#fff";
                   const rowOpacity = isCompleted ? 0.55 : 1;
                   const trackColor = isCompleted ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
                   const trackLabel = isCompleted ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
@@ -873,9 +875,13 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       <TD small>{l.who || "—"}</TD>
                       <TD center><span style={{ fontSize: 11 }}>{flagIcon}</span></TD>
                       <TD small center>
-                        <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
-                          {fmtDue(l.dueDate)}
-                        </span>
+                        {noDue ? (
+                          <span style={{ fontWeight: 700, color: "#B45309", fontSize: 9, letterSpacing: 0.3 }}>⚠ No date</span>
+                        ) : (
+                          <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
+                            {fmtDue(l.dueDate)}
+                          </span>
+                        )}
                       </TD>
                       <TD small center>
                         <span style={{ fontWeight: 700, color: trackColor }}>{trackLabel}</span>
@@ -1108,8 +1114,12 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             <span style={{ color: hoveredLin.level === "high" ? C.red : hoveredLin.level === "mid" ? C.amb : C.mut, fontWeight: 600 }}>
               {hoveredLin.level === "high" ? "High" : hoveredLin.level === "mid" ? "Medium" : "Low"}
             </span>
-            <span style={{ color: C.mut }}>Due</span>
-            <span style={{ color: C.tx }}>{fmtDue(hoveredLin.dueDate)}</span>
+            <span style={{ color: C.mut }}>Started</span>
+            <span style={{ color: C.tx }}>{hoveredLin.startDate ? fmtDue(hoveredLin.startDate) : "—"}</span>
+            <span style={{ color: hoveredLin.dueDate ? C.mut : C.amb }}>Due</span>
+            <span style={{ color: hoveredLin.dueDate ? C.tx : C.amb, fontWeight: hoveredLin.dueDate ? 400 : 700 }}>
+              {hoveredLin.dueDate ? fmtDue(hoveredLin.dueDate) : "⚠ No due date set"}
+            </span>
             <span style={{ color: C.mut }}>Size</span>
             <span style={{ color: C.tx, fontWeight: 700 }}>{hoveredLin.size || "—"}</span>
             {hoveredLin.labels && hoveredLin.labels.length > 0 && (

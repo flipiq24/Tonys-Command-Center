@@ -91,6 +91,7 @@ export interface LinearItem {
   identifier?: string;
   level: "high" | "mid" | "low";
   dueDate?: string | null;
+  startDate?: string | null;
   size?: string | null;
   inSequence?: boolean | null;
   state?: string;

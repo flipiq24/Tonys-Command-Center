@@ -94,7 +94,7 @@ type EmailImportant = { id: number; from: string; subj: string; why: string; tim
 type EmailFyi = { id: number; from: string; subj: string; why: string };
 type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
-type LinearItem = { who: string; task: string; id: string; level: string; dueDate?: string | null };
+type LinearItem = { who: string; task: string; id: string; level: string; dueDate?: string | null; size?: string | null; inSequence?: boolean | null };
 
 // ─── Live Gmail fetch via Replit google-mail connector ────────────────────────
 
@@ -325,16 +325,24 @@ async function fetchLiveLinear(): Promise<LinearItem[] | null> {
     const issues = await getLinearIssues();
     if (!issues.length) return [];
     const priorityToLevel = (p: number) => p <= 1 ? "high" : p === 2 ? "mid" : "low";
-    return issues
-      .filter(i => !["Done", "Cancelled"].includes(i.state.name))
-      .slice(0, 5)
-      .map(n => ({
-        who: "You",
-        task: n.title,
-        id: n.identifier,
-        level: priorityToLevel(n.priority),
-        dueDate: n.dueDate ?? null,
-      }));
+    const estToSize = (e: number | null | undefined): string | null => {
+      if (!e) return null;
+      if (e <= 1) return "XS";
+      if (e <= 2) return "S";
+      if (e <= 3) return "M";
+      if (e <= 5) return "L";
+      return "XL";
+    };
+    const filtered = issues.filter(i => !["Done", "Cancelled"].includes(i.state.name)).slice(0, 8);
+    return filtered.map((n, idx) => ({
+      who: n.assignee?.name ?? "—",
+      task: n.title,
+      id: n.identifier,
+      level: priorityToLevel(n.priority),
+      dueDate: n.dueDate ?? null,
+      size: estToSize((n as unknown as Record<string, number | null>).estimate),
+      inSequence: idx === 0 ? true : priorityToLevel(n.priority) !== "high",
+    }));
   } catch (err) {
     console.warn("[brief] Linear live fetch failed:", err instanceof Error ? err.message : err);
     return null;

@@ -89,6 +89,8 @@ export interface LinearItem {
   id: string;
   level: "high" | "mid" | "low";
   dueDate?: string | null;
+  size?: string | null;
+  inSequence?: boolean | null;
 }
 
 export interface DailyBrief {

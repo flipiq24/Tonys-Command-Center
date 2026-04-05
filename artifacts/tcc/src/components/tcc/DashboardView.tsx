@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
-import { get, patch, post } from "@/lib/api";
+import { get, patch } from "@/lib/api";
+import { ContactDrawer } from "./ContactDrawer";
 import type { TaskItem, CalItem, EmailItem, LinearItem, SlackItem } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
 interface Contact { id?: string; name: string; phone?: string; company?: string; status?: string; nextStep?: string; lastContactDate?: string; email?: string; }
-interface BriefModalData { contactId: string; contactName: string; briefText: string; aiScore?: string | number | null; linkedinUrl?: string | null; openTasks?: string[]; }
 type NavView = "emails" | "schedule" | "sales" | "tasks";
 
 interface Props {
@@ -530,22 +530,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
   // ── Today's Wins — manual entries, persisted in localStorage per day ─
   const _winsKey = `tcc_wins_${new Date().toISOString().slice(0, 10)}`;
-  const [briefModal, setBriefModal] = useState<BriefModalData | null>(null);
-  const [briefLoading, setBriefLoading] = useState<string | null>(null);
-
-  const handleContactClick = useCallback(async (c: Contact) => {
-    if (!c.id) return;
-    if (briefLoading === c.id) return;
-    setBriefLoading(c.id);
-    try {
-      const data = await post<BriefModalData>("/contacts/brief", { contactId: c.id });
-      setBriefModal(data);
-    } catch {
-      setBriefModal({ contactId: c.id, contactName: c.name, briefText: "Could not load brief — try again.", openTasks: [] });
-    } finally {
-      setBriefLoading(null);
-    }
-  }, [briefLoading]);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
 
   const [wins, setWins] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(_winsKey) || '["",""]'); } catch { return ["", ""]; }
@@ -630,11 +615,11 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       <TD center dim>{i + 1}</TD>
                       <TD bold strike={done}>
                         <span
-                          onClick={() => c.id && handleContactClick(c)}
+                          onClick={() => c.id && setSelectedContactId(String(c.id))}
                           style={{ cursor: c.id ? "pointer" : "default", textDecoration: c.id ? "underline dotted" : "none", textUnderlineOffset: 3 }}
-                          title={c.id ? "Click for pre-call brief" : undefined}
+                          title={c.id ? "Click to view contact" : undefined}
                         >
-                          {briefLoading === c.id ? "Loading…" : c.name}
+                          {c.name}
                         </span>
                       </TD>
                       <TD small>{c.company || "—"}</TD>
@@ -1079,50 +1064,16 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         </div>
       )}
 
-      {/* ── Contact Brief Modal ── */}
-      {briefModal && (
-        <div
-          onClick={() => setBriefModal(null)}
-          style={{ position: "fixed", inset: 0, background: "#00000066", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background: "#fff", borderRadius: 12, padding: "24px 28px", maxWidth: 540, width: "90%", maxHeight: "80vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", fontFamily: F }}
-          >
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-              <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: "#111", flex: 1 }}>{briefModal.contactName}</div>
-              {briefModal.aiScore != null && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: Number(briefModal.aiScore) >= 70 ? C.grn : Number(briefModal.aiScore) >= 40 ? C.amb : C.mut, background: (Number(briefModal.aiScore) >= 70 ? C.grn : Number(briefModal.aiScore) >= 40 ? C.amb : C.mut) + "22", border: `1px solid ${(Number(briefModal.aiScore) >= 70 ? C.grn : Number(briefModal.aiScore) >= 40 ? C.amb : C.mut)}44`, borderRadius: 4, padding: "2px 7px" }}>
-                  Score: {Math.round(Number(briefModal.aiScore))}
-                </span>
-              )}
-              {briefModal.linkedinUrl && (
-                <a href={briefModal.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.blu, textDecoration: "none" }}>LinkedIn ↗</a>
-              )}
-            </div>
-            {/* Brief text */}
-            <div style={{ background: "#FAFAF8", borderRadius: 8, padding: "14px 16px", marginBottom: 14, fontSize: 13, lineHeight: 1.75, whiteSpace: "pre-wrap", color: "#222" }}>
-              {briefModal.briefText}
-            </div>
-            {/* Open tasks */}
-            {(briefModal.openTasks ?? []).length > 0 && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Open Tasks</div>
-                {briefModal.openTasks!.map((t, i) => (
-                  <div key={i} style={{ fontSize: 12, color: "#555", marginBottom: 3 }}>→ {t}</div>
-                ))}
-              </div>
-            )}
-            {/* Footer */}
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={() => setBriefModal(null)} style={{ fontSize: 13, fontWeight: 700, padding: "8px 20px", background: "#111", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: F }}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Contact Drawer (same sidebar as Sales page) ── */}
+      <ContactDrawer
+        contactId={selectedContactId}
+        onClose={() => setSelectedContactId(null)}
+        onUpdated={() => {}}
+        onDeleted={() => setSelectedContactId(null)}
+        onAttempt={() => setSelectedContactId(null)}
+        onConnected={() => setSelectedContactId(null)}
+        onSmsOpen={() => setSelectedContactId(null)}
+      />
     </div>
   );
 }

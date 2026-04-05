@@ -500,7 +500,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
                     ...(worked.note ? [{ label: "Note", value: worked.note }] : []),
                     ...(worked.nextSteps ? [{ label: "Next", value: worked.nextSteps }] : []),
                     ...(worked.nextSessionDate ? [{ label: "Continue", value: fmtDate(worked.nextSessionDate) }] : []),
-                    ...(worked.driveFileName ? [{ label: "File", value: worked.driveFileName, color: C.blu }] : []),
+                    ...(worked.driveFileName ? [{ label: "File", value: worked.driveFileName, color: C.blu, ...(worked.driveLinkUrl ? { href: worked.driveLinkUrl } : {}) }] : []),
                   ] : []),
                 ]}>
                 <div style={ROW}>

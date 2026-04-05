@@ -358,13 +358,27 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     }
     case "search_drive": {
       try {
-        const query = String(input.query).replace(/'/g, "\\'");
+        const rawQuery = String(input.query).replace(/'/g, "\\'");
         const maxResults = Math.min(Number(input.max_results) || 5, 10);
-        const files = await listDriveFiles(`fullText contains '${query}'`, maxResults);
-        if (!files.length) return `No Drive files found for "${input.query}".`;
-        return files.map((f, i) => `${i + 1}. ${f.name} (${f.mimeType})\n   Modified: ${f.modifiedTime}`).join("\n\n");
+        // Use name-based search (works with drive.file scope); fall back gracefully
+        const files = await listDriveFiles(`name contains '${rawQuery}' and trashed = false`, maxResults);
+        if (!files.length) {
+          return `No Drive files found matching "${input.query}".\n\nKnown resources:\n- Business Master Sheet: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE`;
+        }
+        return files.map((f, i) => {
+          const link = f.mimeType?.includes("spreadsheet")
+            ? `https://docs.google.com/spreadsheets/d/${f.id}`
+            : f.mimeType?.includes("document")
+            ? `https://docs.google.com/document/d/${f.id}`
+            : `https://drive.google.com/file/d/${f.id}`;
+          return `${i + 1}. ${f.name}\n   ${link}\n   Modified: ${f.modifiedTime}`;
+        }).join("\n\n");
       } catch (err) {
-        return `Drive search failed: ${err instanceof Error ? err.message : String(err)}`;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("Insufficient Permission") || msg.includes("insufficientPermissions")) {
+          return `Drive search is limited by permissions. Here are Tony's known resources:\n- Business Master Sheet: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE`;
+        }
+        return `Drive search failed: ${msg}`;
       }
     }
     case "send_eod_report": {
@@ -414,6 +428,10 @@ SCOPE GATEKEEPER:
 - If Tony drifts into non-sales activities during prime hours, redirect him.
 - For compose_email: draft for review, Tony sends via Gmail himself.
 - For schedule_meeting: only sales or Ramy support meetings allowed.
+
+KNOWN RESOURCES (always use these direct links — do not search Drive for these):
+- FlipIQ Business Master Sheet: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE
+- FlipIQ Master Contact List: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE
 
 BE BRIEF. Tony doesn't like to read. Bullet points, not paragraphs.${brainSection}${contextSection}`;
 }

@@ -93,8 +93,18 @@ export async function searchFiles(params: {
 
 export async function readGoogleDoc(documentId: string): Promise<string> {
   const drive = await getDrive();
-  const result = await drive.files.export({ fileId: documentId, mimeType: "text/plain" });
-  return result.data as string;
+  const meta = await drive.files.get({ fileId: documentId, fields: "mimeType,name" });
+  const mimeType = meta.data.mimeType || "";
+  if (mimeType.startsWith("application/vnd.google-apps.")) {
+    const result = await drive.files.export({ fileId: documentId, mimeType: "text/plain" });
+    return result.data as string;
+  } else {
+    const result = await drive.files.get(
+      { fileId: documentId, alt: "media" },
+      { responseType: "text" }
+    );
+    return (result.data as string) || "";
+  }
 }
 
 export async function listDriveFiles(

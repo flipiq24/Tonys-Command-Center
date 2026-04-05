@@ -40,6 +40,8 @@ server.on("error", (err) => {
 
 function startEodScheduler(): void {
   logger.info("EOD scheduler started — checks every 60s for 4:30 PM Pacific trigger");
+  let lastEodDate = "";
+
   setInterval(async () => {
     try {
       const nowPacific = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
@@ -49,14 +51,15 @@ function startEodScheduler(): void {
       const totalMinutes = hour * 60 + minute;
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
 
-      // Trigger any time on or after 4:30 PM Pacific — DB guard in sendAutoEod() prevents double-sends
-      if (totalMinutes >= 16 * 60 + 30) {
+      // Trigger once per day at/after 4:30 PM Pacific — in-memory guard prevents repeated calls
+      if (totalMinutes >= 16 * 60 + 30 && lastEodDate !== today) {
         const { sendAutoEod } = await import("./routes/tcc/eod");
         const result = await sendAutoEod();
-        if (result.alreadySent) {
-          // DB guard handles deduplication — normal during the 90-min window
-        } else if (result.ok) {
-          logger.info({ today, callsMade: result.callsMade, demosBooked: result.demosBooked }, "EOD scheduler: EOD report sent");
+        if (result.ok || result.alreadySent) {
+          lastEodDate = today;
+          if (!result.alreadySent) {
+            logger.info({ today, callsMade: result.callsMade, demosBooked: result.demosBooked }, "EOD scheduler: EOD report sent");
+          }
         } else {
           logger.warn({ today }, "EOD scheduler: EOD report failed — will retry next check");
         }

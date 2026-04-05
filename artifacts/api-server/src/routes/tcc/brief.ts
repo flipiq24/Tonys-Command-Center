@@ -52,8 +52,8 @@ const DEFAULT_EMAILS_FYI = [
 
 // FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
 const DEFAULT_SLACK = [
-  { from: "Faisal", message: "Fixes deployed, live in 10-15 min", level: "low", channel: "#engineering" },
-  { from: "Ethan", message: "My top 2 goals today. You?", level: "mid", channel: "#leadership" },
+  { from: "Faisal", message: "Fixes deployed, live in 10-15 min", level: "low", channel: "#tech-team-command" },
+  { from: "Ethan", message: "My top 2 goals today. You?", level: "mid", channel: "#tech-team-command" },
 ];
 
 // FALLBACK SEED DATA — Only used when live APIs not connected. Static examples. Safe to ignore in production.
@@ -267,7 +267,7 @@ async function fetchLiveSlack(): Promise<SlackItem[] | null> {
     ).then(r => r.json()) as { ok: boolean; error?: string; channels?: { id: string; name: string; is_member: boolean }[] };
 
     if (chanRes.ok) {
-      const targetNames = ["engineering", "leadership", "general", "sales"];
+      const targetNames = ["tech-team-command"];
       const targets = (chanRes.channels || []).filter(c => targetNames.includes(c.name) && c.is_member);
 
       for (const ch of targets.slice(0, 5)) {
@@ -422,7 +422,7 @@ Return ONLY valid JSON (no markdown, no explanation):
     {"id": 10, "from": "<person>", "subj": "<subject>", "why": "<one-line summary>"}
   ],
   "slackItems": [
-    {"from": "<team member>", "message": "<under 100 chars>", "level": "<high|mid|low>", "channel": "<#engineering|#leadership|#general|#sales|DM>"}
+    {"from": "<team member>", "message": "<under 100 chars>", "level": "<high|mid|low>", "channel": "<#tech-team-command|DM>"}
   ],
   "tasks": [
     {"id": "t1", "text": "10 Sales Calls", "cat": "SALES", "sales": true},

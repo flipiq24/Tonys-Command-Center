@@ -43,6 +43,7 @@ export const ideasTable = pgTable("ideas", {
   override: boolean("override").default(false),
   assigneeName: text("assignee_name"),
   assigneeEmail: text("assignee_email"),
+  linearIdentifier: text("linear_identifier"),
   dueDate: date("due_date"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [

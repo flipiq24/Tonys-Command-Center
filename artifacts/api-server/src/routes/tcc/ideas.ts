@@ -449,6 +449,9 @@ router.post("/ideas", async (req, res): Promise<void> => {
       });
       if (linearIssue.ok) {
         req.log.info({ identifier: linearIssue.identifier }, "Created Linear issue");
+        if (linearIssue.identifier) {
+          await db.update(ideasTable).set({ linearIdentifier: linearIssue.identifier }).where(eq(ideasTable.id, idea.id)).catch(() => {});
+        }
       }
     } catch (err) {
       req.log.warn({ err }, "Linear issue creation failed");

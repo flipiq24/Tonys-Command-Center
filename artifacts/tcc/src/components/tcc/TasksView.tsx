@@ -133,7 +133,6 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
   const [alerts, setAlerts] = useState<TaskAlerts>({ outOfSequence: [], missingDueDates: [] });
-  const [focusOnly, setFocusOnly] = useState(false);
   const [pillarFilter, setPillarFilter] = useState<string | null>(null);
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
@@ -425,91 +424,9 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         </div>
 
-        {/* ── Focus Top-3 (always-visible pinned section) ── */}
-        {(() => {
-          const GOLD = "#B45309";
-          const GOLD_BG = "#FFFBEB";
-          const GOLD_BRD = "#FCD34D";
-          const briefTop = activeTasks.filter(t => !t.sales).slice(0, 2);
-          const salesDone = tasks.some(t => t.sales && tDone[t.id]);
-          const top3: Array<{ label: string; done: boolean; onClick?: () => void; sub?: string; isRed?: boolean }> = [
-            {
-              label: "10 Sales Calls",
-              done: salesDone,
-              onClick: onSwitchToSales,
-              sub: "Tap to open Sales tracker",
-              isRed: true,
-            },
-            briefTop[0]
-              ? { label: briefTop[0].text, done: tDone[briefTop[0].id] ?? false, onClick: () => {} }
-              : { label: "—", done: false },
-            briefTop[1]
-              ? { label: briefTop[1].text, done: tDone[briefTop[1].id] ?? false, onClick: () => {} }
-              : { label: "—", done: false },
-          ];
-          const allDone = top3[1]?.done && top3[2]?.done;
-          return (
-            <div style={{ margin: "16px 0 8px", background: GOLD_BG, border: `1.5px solid ${GOLD_BRD}`, borderRadius: 10, padding: "12px 14px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: GOLD, textTransform: "uppercase", letterSpacing: 1.2, flex: 1 }}>
-                  ★ Focus
-                </div>
-                {allDone && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: C.grn, background: C.grnBg, borderRadius: 6, padding: "2px 8px" }}>All 3 Done ✓</span>
-                )}
-                <button
-                  onClick={() => setFocusOnly(f => !f)}
-                  style={{
-                    background: focusOnly ? GOLD : "transparent",
-                    border: `1px solid ${GOLD_BRD}`,
-                    color: focusOnly ? "#fff" : GOLD,
-                    borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700,
-                    cursor: "pointer", fontFamily: F,
-                  }}
-                >
-                  {focusOnly ? "Focus Only ✓" : "Focus Only"}
-                </button>
-              </div>
-              {top3.map((item, idx) => (
-                <div
-                  key={idx}
-                  onClick={item.onClick}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
-                    background: "#fff",
-                    border: `1px solid ${GOLD_BRD}`,
-                    borderRadius: 8, marginBottom: idx < 2 ? 6 : 0,
-                    cursor: item.onClick ? "pointer" : "default",
-                    opacity: item.done ? 0.45 : 1,
-                    transition: "opacity 0.15s",
-                  }}
-                  onMouseEnter={e => { if (item.onClick) e.currentTarget.style.background = "#FEF9EE"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "#fff"; }}
-                >
-                  <span style={{
-                    fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 13,
-                    color: idx === 0 ? C.red : GOLD,
-                    width: 18, textAlign: "center", flexShrink: 0,
-                  }}>{idx + 1}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 13, fontWeight: 600,
-                      color: item.isRed ? C.red : C.tx,
-                      textDecoration: item.done ? "line-through" : "none",
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}>{item.label}</div>
-                    {item.sub && <div style={{ fontSize: 11, color: GOLD, marginTop: 1 }}>{item.sub}</div>}
-                  </div>
-                  {item.done && <span style={{ fontSize: 11, color: C.grn, fontWeight: 700, flexShrink: 0 }}>✓</span>}
-                  {!item.done && item.onClick && idx === 0 && <span style={{ fontSize: 14, color: C.red, flexShrink: 0 }}>›</span>}
-                </div>
-              ))}
-            </div>
-          );
-        })()}
 
         {/* My Tasks (local) */}
-        {!focusOnly && activeLocals.length > 0 && (
+        {activeLocals.length > 0 && (
           <div>
             <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "16px 0 4px" }}>My Tasks</div>
             {activeLocals.map(t => (
@@ -566,7 +483,7 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
         )}
 
         {/* Active Tasks */}
-        {!focusOnly && activeTasks.length > 0 && (
+        {activeTasks.length > 0 && (
           <div>
             <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "16px 0 4px" }}>Today</div>
             {activeTasks.map(t => {
@@ -641,14 +558,14 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         )}
 
-        {!focusOnly && activeTasks.length === 0 && activeLocals.length === 0 && (
+        {activeTasks.length === 0 && activeLocals.length === 0 && (
           <div style={{ padding: "48px 0", textAlign: "center", color: "#999", fontSize: 14 }}>
             All done for today.
           </div>
         )}
 
         {/* Done */}
-        {!focusOnly && doneTasks.length > 0 && (
+        {doneTasks.length > 0 && (
           <div>
             <div style={{ fontSize: 11, color: "#999", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, padding: "20px 0 4px" }}>Done</div>
             {doneTasks.map(t => (

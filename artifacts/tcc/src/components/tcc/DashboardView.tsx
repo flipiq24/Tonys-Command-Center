@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
 import { get, patch, post, del } from "@/lib/api";
 import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
@@ -7,7 +7,6 @@ import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
 interface Contact { name: string; phone?: string; company?: string; status?: string; }
 interface ScratchNote { id: string; text: string; checked: boolean; position: number; }
-interface AiPlanBlock { start: string; end: string; label: string; items: string[]; tip?: string; }
 
 type NavView = "emails" | "schedule" | "sales" | "tasks";
 
@@ -113,6 +112,132 @@ const BORDER = "1px solid #D4D4D4";
 const HEAVY = "2px solid #222";
 const HDR_BG = "#F0F0EE";
 const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+// ── Day Timeline ─────────────────────────────────────────────────────
+const TL_START = 8 * 60;              // 8:00 AM in minutes from midnight
+const TL_END   = 18 * 60;            // 6:00 PM
+const TL_TOTAL = TL_END - TL_START;  // 600 minutes
+const PPM      = 2.5;                 // pixels per minute → 1500px total
+const TL_W     = TL_TOTAL * PPM;
+
+function getCurrentMins() {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
+}
+
+function DayTimeline({ meetings }: { meetings: CalItem[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [nowMins, setNowMins] = useState<number>(getCurrentMins);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMins(getCurrentMins()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const nowX = Math.max(0, Math.min((nowMins - TL_START) * PPM, TL_W));
+    const containerW = containerRef.current.clientWidth;
+    containerRef.current.scrollLeft = nowX - containerW / 2;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const nowX  = (nowMins - TL_START) * PPM;
+  const inDay = nowMins >= TL_START && nowMins <= TL_END;
+  const hours = Array.from({ length: 11 }, (_, i) => i + 8); // 8..18
+
+  return (
+    <div style={{ borderBottom: "1px solid #EBEBEB" }}>
+      <div
+        ref={containerRef}
+        style={{ overflowX: "auto", overflowY: "hidden", padding: "8px 20px 0", WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+      >
+        <div style={{ position: "relative", width: TL_W, height: 90, flexShrink: 0 }}>
+
+          {/* Hour gridlines + labels */}
+          {hours.map(h => {
+            const x = (h * 60 - TL_START) * PPM;
+            const isNoon = h === 12;
+            const label  = isNoon ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`;
+            return (
+              <React.Fragment key={h}>
+                <div style={{
+                  position: "absolute", left: x, top: 0, bottom: 22,
+                  width: 1, background: h === 8 ? "transparent" : "#EBEBEB",
+                }} />
+                <div style={{
+                  position: "absolute", left: x + 3, bottom: 5,
+                  fontSize: 8, fontWeight: isNoon ? 800 : 600,
+                  color: isNoon ? "#555" : "#BBB",
+                  letterSpacing: 0.2, whiteSpace: "nowrap",
+                }}>
+                  {label}
+                </div>
+              </React.Fragment>
+            );
+          })}
+
+          {/* Meeting blocks */}
+          {meetings.map((m, i) => {
+            const startMin = parseTimeMins(m.t);
+            const endMin   = m.tEnd ? parseTimeMins(m.tEnd) : startMin !== null ? startMin + 30 : null;
+            if (startMin === null || endMin === null) return null;
+            const x = Math.max(0, (startMin - TL_START) * PPM);
+            const w = Math.max(6, (endMin - startMin) * PPM - 2);
+            const wide = w > 100;
+            return (
+              <div key={i} style={{
+                position: "absolute", left: x, top: 6,
+                width: w, height: 58,
+                background: "#fff", border: "1.5px solid #222",
+                borderRadius: 3, padding: "4px 5px",
+                overflow: "hidden", boxSizing: "border-box",
+                cursor: "default",
+              }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 900, color: "#111",
+                  lineHeight: 1.2, whiteSpace: "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                  {m.n}
+                </div>
+                {wide && (
+                  <div style={{ fontSize: 8, color: "#777", marginTop: 2, whiteSpace: "nowrap" }}>
+                    {m.t}{m.tEnd ? ` – ${m.tEnd}` : ""}
+                  </div>
+                )}
+                {wide && m.loc && (
+                  <div style={{ fontSize: 8, color: "#AAA", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {m.loc}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Now line */}
+          {inDay && (
+            <>
+              <div style={{
+                position: "absolute", left: nowX, top: 0, bottom: 22,
+                width: 2, background: "#C62828", borderRadius: 1, zIndex: 10,
+              }} />
+              <div style={{
+                position: "absolute", left: nowX + 4, top: 6,
+                fontSize: 8, fontWeight: 900, color: "#C62828",
+                letterSpacing: 0.3, whiteSpace: "nowrap",
+                background: "#fff", padding: "0 2px", zIndex: 11,
+              }}>
+                {fmtMins(nowMins)}
+              </div>
+            </>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Interactive checkbox ─────────────────────────────────────────────
 function CB({ id, checked, onToggle }: { id: string; checked: boolean; onToggle: (id: string) => void }) {
@@ -223,12 +348,6 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, contacts, onComplete, onNavigate }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [dayPlan, setDayPlan] = useState<AiPlanBlock[] | null>(null);
-  const [planLoading, setPlanLoading] = useState(false);
-  // Track the last brief fingerprint that triggered an AI plan fetch so we can
-  // re-fetch automatically whenever the underlying brief data changes (e.g. brief
-  // is refreshed, new meetings load, contacts change) without infinite looping.
-  const lastFetchedBriefKey = useRef<string | null>(null);
 
   // ── Scratch Notes state ─────────────────────────────────────────
   const [scratchNotes, setScratchNotes] = useState<ScratchNote[]>([]);
@@ -239,47 +358,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
     get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
   }, []);
-
-  // ── Brief fingerprint — stable key that changes when real brief data changes ──
-  // Used to re-fetch AI plan on brief refresh without infinite looping.
-  const briefKey = useMemo(() => {
-    const hasData = tasks.length > 0 || calendarData.length > 0 || emailsImportant.length > 0 || contacts.length > 0;
-    if (!hasData) return null;
-    const realMeetings = calendarData.filter(c => c.real);
-    // Include scheduling-critical fields so the key changes when times, statuses,
-    // or priorities change — not just when names/IDs change.
-    return [
-      realMeetings.slice(0, 3).map(m => `${m.n}@${m.t}-${m.tEnd ?? ""}`).join("+"),
-      contacts.slice(0, 3).map(c => `${c.name}:${c.status ?? ""}`).join("+"),
-      tasks.slice(0, 3).map(t => `${t.id}:${t.text.slice(0, 20)}`).join("+"),
-      emailsImportant.slice(0, 3).map(e => `${e.id}:${e.p ?? ""}`).join("+"),
-    ].join("|");
-  }, [
-    tasks.length, tasks.slice(0,3).map(t=>`${t.id}:${t.text.slice(0,20)}`).join(","),
-    calendarData.length, calendarData.filter(c=>c.real).slice(0,3).map(c=>`${c.n}@${c.t}-${c.tEnd??""}`).join(","),
-    emailsImportant.length, emailsImportant.slice(0,3).map(e=>`${e.id}:${e.p??""}`).join(","),
-    contacts.length, contacts.slice(0,3).map(c=>`${c.name}:${c.status??""}`).join(","),
-  ]);
-
-  // ── Fetch AI day plan whenever brief fingerprint changes ──────────
-  useEffect(() => {
-    if (!briefKey || briefKey === lastFetchedBriefKey.current) return;
-    lastFetchedBriefKey.current = briefKey;
-    setPlanLoading(true);
-    const realMeetings = calendarData.filter(c => c.real);
-    post<{ ok: boolean; blocks: AiPlanBlock[] }>("/schedule/ai-plan", {
-      meetings: realMeetings.map(m => ({ time: m.t, name: m.n, tEnd: m.tEnd })),
-      contacts: contacts.slice(0, 10).map(c => ({ name: c.name, company: c.company, status: c.status })),
-      tasks: [
-        ...tasks.filter(t => !tDone[t.id]).slice(0, 3).map(t => t.text),
-        ...localTasks.map(t => t.text),
-      ],
-      emails: emailsImportant.slice(0, 5).map(e => ({ from: e.from, subject: e.subj, action: e.p })),
-    })
-      .then(r => { if (r.ok) setDayPlan(r.blocks); })
-      .catch(() => {})
-      .finally(() => setPlanLoading(false));
-  }, [briefKey]);
 
   const toggle = useCallback((id: string) => {
     setChecked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -349,57 +427,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         {/* ══ FRONT ════════════════════════════════════════════════ */}
         <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
 
-        {/* ── AI Day Plan Banner ── */}
-        <div style={{ padding: "10px 20px 0", borderBottom: "1px solid #EBEBEB" }}>
-          <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1.4, color: "#888", marginBottom: 8 }}>
-            ◈ TODAY'S AI SCHEDULE PLAN
-          </div>
-          {planLoading && (
-            <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-              {[1, 2, 3].map(i => (
-                <div key={i} style={{
-                  flex: 1, height: 72, borderRadius: 4, background: "#F0F0EE",
-                  animation: "pulse 1.4s ease-in-out infinite",
-                  animationDelay: `${i * 0.15}s`,
-                }} />
-              ))}
-              <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
-            </div>
-          )}
-          {!planLoading && dayPlan && (
-            <div style={{ display: "flex", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-              {dayPlan.map((block, i) => (
-                <div key={i} style={{
-                  flex: "1 1 200px", minWidth: 180, border: `1px solid ${i === 0 ? "#222" : "#D4D4D4"}`,
-                  borderRadius: 4, padding: "10px 12px",
-                  background: i === 0 ? "#FAFAF8" : "#fff",
-                }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, color: BLK, marginBottom: 2 }}>
-                    {block.start} – {block.end}
-                  </div>
-                  <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: "#777", marginBottom: 6 }}>
-                    {block.label}
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: 14, listStyle: "disc" }}>
-                    {block.items.map((item, j) => (
-                      <li key={j} style={{ fontSize: 10, color: BLK, lineHeight: 1.5, marginBottom: 1 }}>{item}</li>
-                    ))}
-                  </ul>
-                  {block.tip && (
-                    <div style={{ fontSize: 9, color: "#888", fontStyle: "italic", marginTop: 6, borderTop: "1px solid #EBEBEB", paddingTop: 5 }}>
-                      {block.tip}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {!planLoading && !dayPlan && (
-            <div style={{ fontSize: 10, color: "#bbb", fontStyle: "italic", paddingBottom: 12 }}>
-              Loading your schedule... open app fresh each morning to generate today's AI plan.
-            </div>
-          )}
-        </div>
+        {/* ── Day Timeline ── */}
+        <DayTimeline meetings={meetings} />
 
         <div style={{ padding: "12px 20px 18px" }}>
 
@@ -454,77 +483,39 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </>
             )}
 
-            {/* ── SALES CALLS + APPOINTMENTS side by side ── */}
-            <div className="dash-2col" style={{ marginBottom: 12 }}>
-
-              {/* Sales Calls */}
-              <div>
-                <SL text="📞 Sales Calls" color="#C62828" time={wb.salesCalls} view="sales" onNavigate={onNavigate} />
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                  <thead>
-                    <tr><TH w={22} center>✓</TH><TH w={18} center>#</TH><TH>NAME / CO.</TH><TH w={44}>STATUS</TH></tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: 10 }).map((_, i) => {
-                      const c = callList[i];
-                      const id = `call-${i}`;
-                      const done = ck(id);
-                      return (
-                        <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
-                          <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
-                          <TD center small dim>{i + 1}</TD>
-                          {c ? (
-                            <>
-                              <TD strike={done}>
-                                <div style={{ fontWeight: 600, fontSize: 11, color: done ? "#ccc" : BLK }}>{c.name}</div>
-                                {c.company && <div style={{ fontSize: 8, color: "#aaa" }}>{c.company}</div>}
-                              </TD>
-                              <TD center small bold>
-                                <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : c.status === "Cold" ? "#888" : "#555" }}>{c.status || "—"}</span>
-                              </TD>
-                            </>
-                          ) : <><TD /><TD /></>}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Appointments */}
-              <div>
-                <SL text="📅 Today's Appointments" color="#1565C0" view="schedule" onNavigate={onNavigate} />
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                  <thead>
-                    <tr><TH w={22} center>✓</TH><TH w={68}>TIME</TH><TH>MEETING</TH></tr>
-                  </thead>
-                  <tbody>
-                    {meetings.length === 0 && (
-                      <tr><td colSpan={3} style={{ padding: "10px 7px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No meetings today</td></tr>
-                    )}
-                    {meetings.map((m, i) => {
-                      const id = `meet-${i}`;
-                      const done = ck(id);
-                      return (
-                        <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
-                          <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
-                          <TD small bold>{m.t}</TD>
-                          <TD strike={done}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: done ? "#ccc" : BLK }}>{m.n}</div>
-                            {m.note && <div style={{ fontSize: 8, color: "#aaa" }}>{m.note}</div>}
-                          </TD>
-                        </tr>
-                      );
-                    })}
-                    {Array.from({ length: Math.max(0, 4 - meetings.length) }).map((_, i) => (
-                      <tr key={`mb-${i}`} style={{ background: "#fff" }}>
-                        <TD center><CB id={`mb-${i}`} checked={ck(`mb-${i}`)} onToggle={toggle} /></TD>
-                        <TD /><TD />
+            {/* ── SALES CALLS ── */}
+            <div style={{ marginBottom: 12 }}>
+              <SL text="📞 Sales Calls" color="#C62828" time={wb.salesCalls} view="sales" onNavigate={onNavigate} />
+              <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
+                <thead>
+                  <tr><TH w={22} center>✓</TH><TH w={18} center>#</TH><TH>NAME / CO.</TH><TH w={80}>PHONE</TH><TH w={52}>STATUS</TH></tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 10 }).map((_, i) => {
+                    const c = callList[i];
+                    const id = `call-${i}`;
+                    const done = ck(id);
+                    return (
+                      <tr key={id} className="dash-row-hover" style={{ background: "#fff" }}>
+                        <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
+                        <TD center small dim>{i + 1}</TD>
+                        {c ? (
+                          <>
+                            <TD strike={done}>
+                              <div style={{ fontWeight: 600, fontSize: 11, color: done ? "#ccc" : BLK }}>{c.name}</div>
+                              {c.company && <div style={{ fontSize: 8, color: "#aaa" }}>{c.company}</div>}
+                            </TD>
+                            <TD small dim>{c.phone || "—"}</TD>
+                            <TD center small bold>
+                              <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : c.status === "Cold" ? "#888" : "#555" }}>{c.status || "—"}</span>
+                            </TD>
+                          </>
+                        ) : <><TD /><TD /><TD /></>}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
             {/* ── PRIORITY EMAILS ── */}

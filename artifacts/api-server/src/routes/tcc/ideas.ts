@@ -3,8 +3,8 @@ import { db, ideasTable } from "@workspace/db";
 import { ParkIdeaBody } from "@workspace/api-zod";
 import { desc, eq } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { createLinearIssue } from "../../lib/linear";
-import { postTechIdeaToSlack } from "../../lib/slack";
+import { createLinearIssue, getLinearMembers } from "../../lib/linear";
+import { postTechIdeaToSlack, postSlackMessage, listSlackUsers, notifyAssigneeViaSlack } from "../../lib/slack";
 import { z } from "zod/v4";
 import { businessContextTable } from "../../lib/schema-v2";
 
@@ -15,6 +15,64 @@ async function getBusinessContext(): Promise<string> {
   if (!rows.length) return "";
   return rows.map(r => `[${r.documentType}] ${r.summary || r.content?.substring(0, 300) || ""}`.trim()).join("\n");
 }
+
+// ─── Team members: merge Linear users + Slack users by email ─────────────────
+router.get("/ideas/team-members", async (_req, res): Promise<void> => {
+  try {
+    const [linearMembers, slackResult] = await Promise.allSettled([
+      getLinearMembers(),
+      listSlackUsers(),
+    ]);
+
+    const linear = linearMembers.status === "fulfilled" ? linearMembers.value : [];
+    const slackUsers = slackResult.status === "fulfilled" ? (slackResult.value.members ?? []) : [];
+
+    // Build a map of email → slackId from Slack users
+    const slackByEmail = new Map<string, string>();
+    const slackByName = new Map<string, string>();
+    for (const su of slackUsers) {
+      const email = su.profile?.email?.toLowerCase();
+      if (email) slackByEmail.set(email, su.id);
+      const displayName = (su.profile?.display_name || su.real_name || "").toLowerCase();
+      if (displayName) slackByName.set(displayName, su.id);
+    }
+
+    // Start with Linear members (they have real emails)
+    const members: { name: string; email: string; slackId: string | null; source: string }[] = linear.map(m => {
+      const emailKey = m.email.toLowerCase();
+      const slackId = slackByEmail.get(emailKey)
+        || slackByName.get((m.displayName || m.name).toLowerCase())
+        || null;
+      return {
+        name: m.displayName || m.name,
+        email: m.email,
+        slackId,
+        source: "linear",
+      };
+    });
+
+    // Add Slack-only users (those with emails not already covered by Linear)
+    const coveredEmails = new Set(members.map(m => m.email.toLowerCase()));
+    for (const su of slackUsers) {
+      const email = su.profile?.email;
+      if (!email || coveredEmails.has(email.toLowerCase())) continue;
+      members.push({
+        name: su.profile?.display_name || su.real_name || su.name,
+        email,
+        slackId: su.id,
+        source: "slack" as const,
+      });
+    }
+
+    // Filter out bots, noreply, and obvious non-humans
+    const filtered = members.filter(m => m.email && !m.email.includes("noreply") && !m.email.includes("bot@") && m.name);
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({ ok: true, members: filtered });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: String(err), members: [] });
+  }
+});
 
 const BUSINESS_PLAN = `FlipIQ is a real estate wholesale platform.
 - NORTH STAR: Every Acquisition Associate closes 2 deals/month
@@ -157,8 +215,7 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
           priorityRank: null,
           action: null,
         };
-        const { postToSlack } = await import("../../lib/slack");
-        postToSlack({
+        postSlackMessage({
           channel: "#engineering",
           text: `*Bug Report (auto-filed from TCC)*\n\n> ${text}\n\n*Severity:* ${classification.urgency || "Unknown"}\n*Priority Recommendation:* ${classification.urgency === "Now" ? "P1" : classification.urgency === "This Week" ? "P2" : "P3"}`,
         }).catch(() => {});
@@ -223,12 +280,11 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
 router.post("/ideas/notify-override", async (req, res): Promise<void> => {
   const { text, justification } = req.body as { text?: string; justification?: string };
   try {
-    const { postToSlack } = await import("../../lib/slack");
-    await postToSlack({
+    await postSlackMessage({
       channel: "#leadership",
       text: `*Priority Override Alert*\n\nTony overrode the 90-day plan to prioritize:\n> ${text || "Unknown idea"}\n\n*Justification:* ${justification || "No justification provided"}`,
     });
-    postToSlack({
+    postSlackMessage({
       channel: "@ethan",
       text: `Tony overrode the plan. New priority: "${text || ""}". Justification: ${justification || "None"}`,
     }).catch(() => {});
@@ -241,8 +297,7 @@ router.post("/ideas/notify-override", async (req, res): Promise<void> => {
 router.post("/ideas/escalate-to-ethan", async (req, res): Promise<void> => {
   const { text, rank, reasoning } = req.body as { text?: string; rank?: number; reasoning?: string };
   try {
-    const { postToSlack } = await import("../../lib/slack");
-    await postToSlack({
+    await postSlackMessage({
       channel: "@ethan",
       text: `*Idea Parked + Meeting Requested*\n\nTony submitted an idea that was flagged as out-of-scope and auto-parked:\n> ${text || ""}\n\nPlease schedule a meeting to discuss if this should be prioritized.`,
     });
@@ -278,6 +333,8 @@ const NotifyAssigneeBody = z.object({
   dueDate: z.string(),
   assigneeName: z.string(),
   assigneeEmail: z.string().email(),
+  slackUserId: z.string().optional(),
+  notifyChannels: z.array(z.enum(["email", "slack"])).default(["email"]),
   note: z.string().optional(),
 });
 
@@ -288,34 +345,54 @@ router.post("/ideas/notify-assignee", async (req, res): Promise<void> => {
     return;
   }
 
-  const { ideaText, category, urgency, dueDate, assigneeName, assigneeEmail, note } = parsed.data;
+  const { ideaText, category, urgency, dueDate, assigneeName, assigneeEmail, slackUserId, notifyChannels, note } = parsed.data;
+  const results: Record<string, boolean> = {};
 
   try {
-    const { sendEmail } = await import("../../lib/gmail");
-    const subject = `[FlipIQ] Action Item Assigned to You: ${ideaText.substring(0, 60)}`;
-    const body = [
-      `Hi ${assigneeName},`,
-      "",
-      `Tony Diaz has assigned you an action item from FlipIQ's idea pipeline.`,
-      "",
-      `Idea: ${ideaText}`,
-      `Category: ${category}`,
-      `Urgency: ${urgency}`,
-      `Due Date: ${dueDate}`,
-      ...(note ? [``, `Note from Tony: ${note}`] : []),
-      "",
-      "Please action this by the due date.",
-      "",
-      "— FlipIQ Command Center",
-    ].join("\n");
-
-    const result = await sendEmail({ to: assigneeEmail, subject, body });
-    if (result.ok) {
-      res.json({ ok: true, messageId: result.messageId });
-    } else {
-      req.log.warn({ error: result.error }, "Failed to send assignee notification email");
-      res.status(500).json({ ok: false, error: result.error });
+    if (notifyChannels.includes("email")) {
+      try {
+        const { sendEmail } = await import("../../lib/gmail");
+        const subject = `[FlipIQ] Action Item Assigned to You: ${ideaText.substring(0, 60)}`;
+        const body = [
+          `Hi ${assigneeName},`,
+          "",
+          `Tony Diaz has assigned you an action item from FlipIQ's idea pipeline.`,
+          "",
+          `Idea: ${ideaText}`,
+          `Category: ${category}`,
+          `Urgency: ${urgency}`,
+          `Due Date: ${dueDate}`,
+          ...(note ? [``, `Note from Tony: ${note}`] : []),
+          "",
+          "Please action this by the due date.",
+          "",
+          "— FlipIQ Command Center",
+        ].join("\n");
+        const result = await sendEmail({ to: assigneeEmail, subject, body });
+        results.email = result.ok;
+      } catch {
+        results.email = false;
+      }
     }
+
+    if (notifyChannels.includes("slack") && slackUserId) {
+      try {
+        const slackResult = await notifyAssigneeViaSlack({
+          slackUserId,
+          ideaText,
+          category,
+          urgency,
+          dueDate,
+          assigneeName,
+          note,
+        });
+        results.slack = slackResult.ok;
+      } catch {
+        results.slack = false;
+      }
+    }
+
+    res.json({ ok: true, results });
   } catch (err) {
     req.log.error({ err }, "notify-assignee route error");
     res.status(500).json({ ok: false, error: String(err) });

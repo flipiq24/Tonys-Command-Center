@@ -104,6 +104,43 @@ export async function searchSlack(query: string): Promise<{
   };
 }
 
+// ─── List workspace users ──────────────────────────────────────────────────────
+export async function listSlackUsers(): Promise<{
+  ok: boolean;
+  members?: { id: string; name: string; real_name?: string; profile?: { email?: string; display_name?: string } }[];
+  error?: string;
+}> {
+  const result = await slackFetch<{
+    members?: { id: string; name: string; real_name?: string; deleted?: boolean; is_bot?: boolean; profile?: { email?: string; display_name?: string } }[];
+  }>("users.list", { limit: 200 });
+
+  const filtered = (result.members ?? []).filter(m => !m.deleted && !m.is_bot && m.name !== "slackbot");
+  return { ok: result.ok, members: filtered, error: result.error };
+}
+
+// ─── DM a user directly ────────────────────────────────────────────────────────
+export async function notifyAssigneeViaSlack(params: {
+  slackUserId: string;
+  ideaText: string;
+  category: string;
+  urgency: string;
+  dueDate: string;
+  assigneeName: string;
+  note?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const urgencyEmoji: Record<string, string> = { "Now": "🔴", "This Week": "🟡", "This Month": "🟢", "Someday": "⚪" };
+  const emoji = urgencyEmoji[params.urgency] ?? "💡";
+  const dueLine = params.dueDate ? `\n*Due:* ${params.dueDate}` : "";
+  const noteLine = params.note ? `\n*Note from Tony:* ${params.note}` : "";
+  const text = `${emoji} *Action item assigned to you by Tony Diaz*\n>${params.ideaText}\n*Category:* ${params.category} • *Urgency:* ${params.urgency}${dueLine}${noteLine}`;
+
+  const result = await slackFetch<{ ts?: string }>("chat.postMessage", {
+    channel: params.slackUserId,
+    text,
+  });
+  return { ok: result.ok, error: result.error };
+}
+
 // ─── Tech idea helper ─────────────────────────────────────────────────────────
 export async function postTechIdeaToSlack(idea: {
   text: string;

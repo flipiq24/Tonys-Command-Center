@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { post } from "@/lib/api";
+import { post, get } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2, lbl } from "./constants";
 import { VoiceInput } from "./VoiceInput";
 import type { Idea } from "./types";
@@ -8,13 +8,7 @@ const CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", 
 const URG = ["Now", "This Week", "This Month", "Someday"];
 const PRIORITY_COLOR: Record<string, string> = { high: C.red, medium: C.amb, low: C.grn };
 
-const TEAM_MEMBERS = [
-  { name: "Ethan Rodriguez", email: "ethan@flipiq.com" },
-  { name: "Maria Santos", email: "maria@flipiq.com" },
-  { name: "James Kim", email: "james@flipiq.com" },
-  { name: "Priya Patel", email: "priya@flipiq.com" },
-  { name: "Carlos Mendez", email: "carlos@flipiq.com" },
-];
+interface TeamMember { name: string; email: string; slackId?: string | null; source?: string; }
 
 const ASSIGNABLE_URGENCIES = ["Now", "This Week", "This Month"];
 
@@ -56,8 +50,10 @@ interface AssignState {
   mode: "none" | "team" | "custom";
   assigneeName: string;
   assigneeEmail: string;
+  assigneeSlackId: string | null;
   dueDate: string;
-  notify: "email" | "none";
+  notifyEmail: boolean;
+  notifySlack: boolean;
   note: string;
 }
 
@@ -80,12 +76,21 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
   const [pushback, setPushback] = useState<Pushback | null>(null);
   const [override, setOverride] = useState<{ justification: string } | null>(null);
   const [assign, setAssign] = useState<AssignState | null>(null);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const mountedRef = useRef(true);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (open && teamMembers.length === 0) {
+      get<{ ok: boolean; members: TeamMember[] }>("/ideas/team-members")
+        .then(res => { if (res.ok && mountedRef.current) setTeamMembers(res.members); })
+        .catch(() => {});
+    }
+  }, [open]);
 
   const finalCat = overrides.category ?? classification?.category ?? "Tech";
   const finalUrg = overrides.urgency ?? classification?.urgency ?? "This Week";
@@ -100,8 +105,10 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
           mode: "none",
           assigneeName: "",
           assigneeEmail: "",
+          assigneeSlackId: null,
           dueDate: getDefaultDueDate(finalUrg),
-          notify: "email",
+          notifyEmail: true,
+          notifySlack: false,
           note: "",
         });
       } else {
@@ -120,6 +127,7 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
     setPushback(null);
     setOverride(null);
     setAssign(null);
+    // keep teamMembers cached — no need to reset
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -162,19 +170,26 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
         ...(assigneeName ? { assigneeName, assigneeEmail, dueDate } : {}),
       });
 
-      if (hasAssignee && assigneeName && assigneeEmail && assign?.notify === "email") {
-        try {
-          await post("/ideas/notify-assignee", {
-            ideaText: text,
-            category: finalCat,
-            urgency: finalUrg,
-            dueDate: dueDate || "",
-            assigneeName,
-            assigneeEmail,
-            note: assign!.note || undefined,
-          });
-        } catch {
-          console.warn("[Ideas] Failed to send assignee notification email");
+      if (hasAssignee && assigneeName && assigneeEmail && (assign?.notifyEmail || assign?.notifySlack)) {
+        const notifyChannels: string[] = [];
+        if (assign?.notifyEmail) notifyChannels.push("email");
+        if (assign?.notifySlack && assign?.assigneeSlackId) notifyChannels.push("slack");
+        if (notifyChannels.length > 0) {
+          try {
+            await post("/ideas/notify-assignee", {
+              ideaText: text,
+              category: finalCat,
+              urgency: finalUrg,
+              dueDate: dueDate || "",
+              assigneeName,
+              assigneeEmail,
+              slackUserId: assign?.assigneeSlackId || undefined,
+              notifyChannels,
+              note: assign!.note || undefined,
+            });
+          } catch {
+            console.warn("[Ideas] Failed to send assignee notification");
+          }
         }
       }
 
@@ -418,25 +433,29 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
 
                 {/* Team member dropdown or "Custom" mode toggle */}
                 <div style={{ marginBottom: 10 }}>
-                  <label style={{ ...lbl, marginBottom: 4 }}>Team member</label>
+                  <label style={{ ...lbl, marginBottom: 4 }}>
+                    Team member {teamMembers.length > 0 ? <span style={{ color: C.grn, fontWeight: 400 }}>({teamMembers.length} from Linear/Slack)</span> : <span style={{ color: C.mut, fontWeight: 400 }}>loading...</span>}
+                  </label>
                   <select
                     value={assign.mode === "team" ? `${assign.assigneeName}|${assign.assigneeEmail}` : assign.mode === "custom" ? "__custom__" : ""}
                     onChange={e => {
                       const val = e.target.value;
                       if (!val) {
-                        setAssign(a => a ? { ...a, mode: "none", assigneeName: "", assigneeEmail: "" } : a);
+                        setAssign(a => a ? { ...a, mode: "none", assigneeName: "", assigneeEmail: "", assigneeSlackId: null } : a);
                       } else if (val === "__custom__") {
-                        setAssign(a => a ? { ...a, mode: "custom", assigneeName: "", assigneeEmail: "" } : a);
+                        setAssign(a => a ? { ...a, mode: "custom", assigneeName: "", assigneeEmail: "", assigneeSlackId: null } : a);
                       } else {
-                        const [name, email] = val.split("|");
-                        setAssign(a => a ? { ...a, mode: "team", assigneeName: name, assigneeEmail: email } : a);
+                        const [name, email, slackId] = val.split("|");
+                        setAssign(a => a ? { ...a, mode: "team", assigneeName: name, assigneeEmail: email, assigneeSlackId: slackId || null } : a);
                       }
                     }}
                     style={{ ...inp, padding: "6px 10px", fontSize: 13, cursor: "pointer" }}
                   >
                     <option value="">— No assignee —</option>
-                    {TEAM_MEMBERS.map(m => (
-                      <option key={m.email} value={`${m.name}|${m.email}`}>{m.name} ({m.email})</option>
+                    {teamMembers.map(m => (
+                      <option key={m.email} value={`${m.name}|${m.email}|${m.slackId || ""}`}>
+                        {m.name}{m.slackId ? " ✓ Slack" : ""} · {m.email}
+                      </option>
                     ))}
                     <option value="__custom__">+ Enter custom name & email...</option>
                   </select>
@@ -493,23 +512,37 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
                     </div>
 
                     <div>
-                      <label style={{ ...lbl, marginBottom: 6 }}>Notification</label>
+                      <label style={{ ...lbl, marginBottom: 6 }}>Notify via</label>
                       <div style={{ display: "flex", gap: 6 }}>
-                        {(["email", "none"] as const).map(opt => (
-                          <button
-                            key={opt}
-                            onClick={() => setAssign(a => a ? { ...a, notify: opt } : a)}
-                            style={{
-                              padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-                              border: `2px solid ${assign.notify === opt ? C.blu : C.brd}`,
-                              background: assign.notify === opt ? C.bluBg : C.card,
-                              color: assign.notify === opt ? C.blu : C.sub,
-                            }}
-                          >
-                            {opt === "email" ? "Email" : "None"}
-                          </button>
-                        ))}
+                        <button
+                          onClick={() => setAssign(a => a ? { ...a, notifyEmail: !a.notifyEmail } : a)}
+                          style={{
+                            padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
+                            border: `2px solid ${assign.notifyEmail ? C.blu : C.brd}`,
+                            background: assign.notifyEmail ? C.bluBg : C.card,
+                            color: assign.notifyEmail ? C.blu : C.sub,
+                          }}
+                        >
+                          📧 Email
+                        </button>
+                        <button
+                          onClick={() => setAssign(a => a ? { ...a, notifySlack: !a.notifySlack } : a)}
+                          disabled={!assign.assigneeSlackId && assign.mode !== "custom"}
+                          title={!assign.assigneeSlackId && assign.mode !== "custom" ? "This person has no Slack account linked" : ""}
+                          style={{
+                            padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: assign.assigneeSlackId || assign.mode === "custom" ? "pointer" : "not-allowed", fontFamily: F,
+                            border: `2px solid ${assign.notifySlack ? "#1D9353" : C.brd}`,
+                            background: assign.notifySlack ? "#E8F5E9" : C.card,
+                            color: assign.notifySlack ? "#1D9353" : (assign.assigneeSlackId || assign.mode === "custom") ? C.sub : C.mut,
+                            opacity: !assign.assigneeSlackId && assign.mode !== "custom" ? 0.45 : 1,
+                          }}
+                        >
+                          💬 Slack {assign.assigneeSlackId ? "✓" : ""}
+                        </button>
                       </div>
+                      {!assign.assigneeSlackId && assign.mode === "team" && (
+                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>No Slack account found for this person</div>
+                      )}
                     </div>
                   </>
                 )}
@@ -518,14 +551,18 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
 
             {error && <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
 
-            {/* Only show Park button if there's no active pushback / override flow */}
+            {/* Only show action button if there's no active pushback / override flow */}
             {!pushback && !override && (
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setStep("input")} style={{ ...btn2, flex: 1 }}>← Edit</button>
-                <button onClick={save} style={{ ...btn1, flex: 2 }}>
-                  {assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim() && assign.notify === "email"
-                    ? "Park & Notify Assignee →"
-                    : "Park It → Back to Calls"}
+                <button onClick={save} style={{ ...btn1, flex: 2, background: finalUrg === "Now" ? "#B71C1C" : undefined }}>
+                  {(() => {
+                    const hasAssignee = assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim();
+                    const willNotify = hasAssignee && (assign!.notifyEmail || (assign!.notifySlack && assign!.assigneeSlackId));
+                    if (finalUrg === "Now") return willNotify ? "Post and Deliver →" : "Post Now →";
+                    if (willNotify) return "Park & Notify Assignee →";
+                    return "Park It → Back to Calls";
+                  })()}
                 </button>
               </div>
             )}
@@ -539,11 +576,11 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
               {linearId ? "✅" : "⏳"}
             </div>
             <div style={{ fontFamily: FS, fontSize: 18, marginBottom: 8 }}>
-              {linearId ? `Parked! Linear: ${linearId}` : "Parking your idea..."}
+              {linearId ? `${finalUrg === "Now" ? "Posted!" : "Parked!"} Linear: ${linearId}` : finalUrg === "Now" ? "Posting and delivering..." : "Parking your idea..."}
             </div>
             {linearId && (
               <div style={{ fontSize: 13, color: C.grn }}>
-                Tech idea sent to Linear — back to calls!
+                {finalUrg === "Now" ? "Delivered now — action item live." : "Tech idea sent to Linear — back to calls!"}
               </div>
             )}
             {!linearId && (

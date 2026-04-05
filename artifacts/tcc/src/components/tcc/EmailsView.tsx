@@ -145,10 +145,28 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                   rel="noopener noreferrer"
                   style={{ fontSize: 14, fontWeight: 600, marginTop: 2, display: "block", color: C.tx, textDecoration: "none" }}
                 >{e.subj}</a>
-                <div style={{ fontSize: 12, color: C.red, marginTop: 4 }}>→ {e.why}</div>
-                {e.contactContext && (
-                  <div style={{ fontSize: 11, color: C.blu, marginTop: 3, fontStyle: "italic" }}>{e.contactContext}</div>
-                )}
+
+                {/* Info grid: Why / Action / Context */}
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {e.why && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase", color: C.red, minWidth: 52, flexShrink: 0, paddingTop: 2 }}>Why</span>
+                      <span style={{ fontSize: 12, color: C.tx, lineHeight: 1.45 }}>{e.why}</span>
+                    </div>
+                  )}
+                  {e.p && !["high","med","low"].includes(e.p) && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase", color: C.amb, minWidth: 52, flexShrink: 0, paddingTop: 2 }}>Action</span>
+                      <span style={{ fontSize: 12, color: C.tx, fontWeight: 600, lineHeight: 1.45 }}>{e.p}</span>
+                    </div>
+                  )}
+                  {e.contactContext && (
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.9, textTransform: "uppercase", color: C.blu, minWidth: 52, flexShrink: 0, paddingTop: 2 }}>Context</span>
+                      <span style={{ fontSize: 12, color: C.sub, lineHeight: 1.45 }}>{e.contactContext}</span>
+                    </div>
+                  )}
+                </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <SmartTip tipKey="suggestReply" tip={tip("suggestReply")} onSaved={onTipSaved}>
                     <button onClick={() => setReplyEmail(e)} style={{ ...btn2, padding: "5px 12px", fontSize: 11, color: C.blu, borderColor: C.blu }}>Suggest Reply</button>

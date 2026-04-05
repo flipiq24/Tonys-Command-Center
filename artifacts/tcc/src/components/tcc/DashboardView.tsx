@@ -645,27 +645,36 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
         <div style={{ padding: "12px 20px 18px" }}>
 
-            {/* ── 90 DAY FOCUS ── */}
-            <div style={{ marginBottom: 14 }}>
-              <SL text="🎯 90 Day Focus" color="#111" />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginTop: 4 }}>
-                {[
-                  { num: "01", label: "Adaptation", desc: "Systems, processes & team alignment" },
-                  { num: "02", label: "Sales",      desc: "Pipeline growth & 10-call daily cadence" },
-                  { num: "03", label: "Foundation", desc: "Data integrity, infra & FlipIQ core" },
-                  { num: "04", label: "COO Dashboard", desc: "Ethan & Ramy accountability loop" },
-                ].map(({ num, label, desc }) => (
-                  <div key={label} style={{
-                    border: BORDER, borderRadius: 8, padding: "12px 14px",
-                    background: "#FAFAF8", display: "flex", flexDirection: "column", gap: 4,
-                  }}>
-                    <div style={{ fontSize: 10, fontWeight: 800, color: "#bbb", letterSpacing: 1 }}>{num}</div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: BLK, lineHeight: 1.2 }}>{label}</div>
-                    <div style={{ fontSize: 10, color: "#999", lineHeight: 1.4, marginTop: 2 }}>{desc}</div>
-                  </div>
+            {/* ── SALES CALLS — 10 Today ── */}
+            <SL text="📞 Sales Calls — 10 Today" color="#C62828" view="sales" onNavigate={onNavigate} />
+            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 2 }}>
+              <thead>
+                <tr><TH w={22} center>✓</TH><TH w={28} center>#</TH><TH>CONTACT</TH><TH w={120}>COMPANY</TH><TH w={90}>STATUS</TH><TH>NEXT STEP</TH></tr>
+              </thead>
+              <tbody>
+                {callList.slice(0, 10).map((c, i) => {
+                  const id = `call-${i}`;
+                  const done = ck(id);
+                  return (
+                    <tr key={id} className="dash-row-hover" style={{ background: done ? "#FAFAF8" : "#fff" }}>
+                      <TD center><CB id={id} checked={done} onToggle={() => toggle(id)} /></TD>
+                      <TD center dim>{i + 1}</TD>
+                      <TD bold strike={done}>{c.name}</TD>
+                      <TD small>{c.company || "—"}</TD>
+                      <TD small><span style={{ color: done ? "#ccc" : (c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#B7791F" : c.status === "New" ? "#1565C0" : "#888") }}>{c.status || "—"}</span></TD>
+                      <TD small dim strike={done}>{c.nextStep || "—"}</TD>
+                    </tr>
+                  );
+                })}
+                {callList.length < 10 && Array.from({ length: 10 - callList.length }).map((_, i) => (
+                  <tr key={`cb-${i}`} style={{ background: "#fff" }}>
+                    <TD center><CB id={`cb-blank-${i}`} checked={false} onToggle={() => {}} /></TD>
+                    <TD center dim>{callList.length + i + 1}</TD>
+                    <TD /><TD /><TD /><TD />
+                  </tr>
                 ))}
-              </div>
-            </div>
+              </tbody>
+            </table>
 
             {/* ── TOP 3 ── */}
             <SL text="★ Top 3 — Do These First" color="#B7791F" view="tasks" onNavigate={onNavigate} />
@@ -724,70 +733,37 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
             {/* ── PRIORITY EMAILS ── */}
             <SL text="📧 Priority Emails" color="#E65100" time={wb.emails} view="emails" onNavigate={onNavigate} />
-            <div style={{ border: BORDER, borderRadius: 6, overflow: "hidden" }}>
-              {emails.map((em, i) => {
-                const id = `email-${i}`;
-                const done = ck(id);
-                const showAction = em.p && !["high","med","low"].includes(em.p);
-                return (
-                  <div key={id} style={{
-                    borderBottom: i < emails.length - 1 ? BORDER : "none",
-                    padding: "10px 14px",
-                    background: done ? "#FAFAF8" : "#fff",
-                    opacity: done ? 0.65 : 1,
-                  }}>
-                    {/* Row 1: checkbox + sender + time */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                      <CB id={id} checked={done} onToggle={ev => { ev; toggle(id); }} />
-                      <div style={{ flex: 1, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ fontWeight: 800, fontSize: 13, color: done ? "#bbb" : BLK, fontFamily: FS, letterSpacing: 0.2, textDecoration: done ? "line-through" : "none" }}>{em.from}</span>
-                        {em.time && <span style={{ fontSize: 10, color: "#999", fontFamily: FS, flexShrink: 0 }}>{em.time}</span>}
-                      </div>
-                    </div>
-                    {/* Row 2: subject */}
-                    <div style={{ paddingLeft: 24 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: done ? "#bbb" : "#333", textDecoration: done ? "line-through" : "none", lineHeight: 1.45, marginBottom: 7, fontFamily: FS }}>{em.subj}</div>
-                      {/* WHY / ACTION / CONTEXT tags */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 9 }}>
-                        {em.why && (
-                          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                            <span style={{ fontSize: 8, fontWeight: 900, color: "#fff", background: "#B71C1C", borderRadius: 3, padding: "2px 5px", flexShrink: 0, marginTop: 1, letterSpacing: 0.5, fontFamily: FS }}>WHY</span>
-                            <span style={{ fontSize: 11, color: "#B71C1C", fontWeight: 600, lineHeight: 1.4, fontFamily: FS }}>{em.why}</span>
-                          </div>
-                        )}
-                        {showAction && (
-                          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                            <span style={{ fontSize: 8, fontWeight: 900, color: "#fff", background: "#E65100", borderRadius: 3, padding: "2px 5px", flexShrink: 0, marginTop: 1, letterSpacing: 0.5, fontFamily: FS }}>ACTION</span>
-                            <span style={{ fontSize: 11, color: "#E65100", fontWeight: 600, lineHeight: 1.4, fontFamily: FS }}>{em.p}</span>
-                          </div>
-                        )}
-                        {em.contactContext && (
-                          <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                            <span style={{ fontSize: 8, fontWeight: 900, color: "#fff", background: "#1565C0", borderRadius: 3, padding: "2px 5px", flexShrink: 0, marginTop: 1, letterSpacing: 0.5, fontFamily: FS }}>CONTEXT</span>
-                            <span style={{ fontSize: 11, color: "#555", lineHeight: 1.4, fontFamily: FS }}>{em.contactContext}</span>
-                          </div>
-                        )}
-                      </div>
-                      {/* Buttons */}
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          onClick={e => { e.stopPropagation(); if (onOpenEmail) onOpenEmail(em); }}
-                          style={{ fontSize: 10, fontWeight: 700, padding: "5px 12px", background: "#111", border: "1px solid #111", borderRadius: 5, color: "#fff", cursor: "pointer", fontFamily: FS, letterSpacing: 0.3 }}
-                        >
-                          Read Summary for this Thread
-                        </button>
-                        <button
-                          onClick={e => { e.stopPropagation(); onNavigate("emails"); }}
-                          style={{ fontSize: 10, fontWeight: 600, padding: "5px 10px", background: "none", border: BORDER, borderRadius: 5, color: "#888", cursor: "pointer", fontFamily: FS }}
-                        >
-                          All Emails →
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
+              <thead>
+                <tr><TH w={22} center>✓</TH><TH w={120}>FROM</TH><TH>SUBJECT</TH><TH w={110}>WHY</TH><TH w={85}>ACTION</TH></tr>
+              </thead>
+              <tbody>
+                {emails.map((em, i) => {
+                  const id = `email-${i}`;
+                  const done = ck(id);
+                  return (
+                    <tr key={id} className="dash-row-hover" style={{ background: "#fff", cursor: "pointer" }}
+                      onClick={() => onNavigate("emails")}
+                      onMouseEnter={e => onHoverEnter({ kind: "email", em }, e)}
+                      onMouseMove={onHoverMove}
+                      onMouseLeave={onHoverLeave}
+                    >
+                      <TD center><CB id={id} checked={done} onToggle={ev => { ev; toggle(id); }} /></TD>
+                      <TD bold strike={done}>{em.from}</TD>
+                      <TD small strike={done}>{em.subj}</TD>
+                      <TD small dim>{em.why || ""}</TD>
+                      <TD small bold><span style={{ color: "#1565C0" }}>{em.p || "—"}</span></TD>
+                    </tr>
+                  );
+                })}
+                {Array.from({ length: Math.max(0, 3 - emails.length) }).map((_, i) => (
+                  <tr key={`eb-${i}`} style={{ background: "#fff" }}>
+                    <TD center><CB id={`eb-${i}`} checked={ck(`eb-${i}`)} onToggle={toggle} /></TD>
+                    <TD /><TD /><TD /><TD />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
           </div>
 

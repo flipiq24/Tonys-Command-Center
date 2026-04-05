@@ -377,6 +377,28 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         </div>
 
+        {/* ── 90 Day Focus ── */}
+        <div style={{ margin: "16px 0 14px" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>🎯 90-Day Focus</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            {[
+              { num: "01", label: "Adaptation", desc: "Systems, processes & team alignment" },
+              { num: "02", label: "Sales", desc: "Pipeline growth & 10-call daily cadence" },
+              { num: "03", label: "Foundation", desc: "Data integrity, infra & FlipIQ core" },
+              { num: "04", label: "COO Dashboard", desc: "Ethan & Ramy accountability loop" },
+            ].map(({ num, label, desc }) => (
+              <div key={label} style={{
+                border: `1px solid ${C.brd}`, borderRadius: 8, padding: "12px 14px",
+                background: C.card, display: "flex", flexDirection: "column", gap: 4,
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#bbb", letterSpacing: 1 }}>{num}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.tx, lineHeight: 1.2 }}>{label}</div>
+                <div style={{ fontSize: 10, color: C.mut, lineHeight: 1.4, marginTop: 2 }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* ── Focus Top-3 (always-visible pinned section) ── */}
         {(() => {
           const GOLD = "#B45309";

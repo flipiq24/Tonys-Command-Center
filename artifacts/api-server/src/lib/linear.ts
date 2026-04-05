@@ -77,6 +77,29 @@ export async function getRecentlyCompletedLinearIssues(teamId?: string, sinceDay
   }
 }
 
+export type LinearMember = {
+  id: string;
+  name: string;
+  displayName: string;
+  email: string;
+  avatarUrl?: string | null;
+};
+
+export async function getLinearMembers(): Promise<LinearMember[]> {
+  try {
+    const data = await linearGraphQL<{ users?: { nodes: LinearMember[] } }>(
+      `query {
+        users(filter: { active: { eq: true } }) {
+          nodes { id name displayName email avatarUrl }
+        }
+      }`
+    );
+    return data?.users?.nodes ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function createLinearIssue(params: {
   title: string;
   description: string;

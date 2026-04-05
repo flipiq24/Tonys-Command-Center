@@ -484,7 +484,8 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
             <tr
               key={`${prefix}-${i}`}
               className="dash-row-hover"
-              style={{ background: rowBg, opacity: isDone ? 0.55 : 1, cursor: "default" }}
+              style={{ background: rowBg, opacity: isDone ? 0.55 : 1, cursor: l.url ? "pointer" : "default" }}
+              onClick={() => l.url && window.open(l.url, "_blank", "noopener")}
               onMouseEnter={e => { setHoveredLin(l); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
               onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
               onMouseLeave={() => setHoveredLin(null)}
@@ -823,7 +824,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     <tr
                       key={`lin-${i}`}
                       className="dash-row-hover"
-                      style={{ background: rowBg, opacity: rowOpacity, cursor: "default" }}
+                      style={{ background: rowBg, opacity: rowOpacity, cursor: l.url ? "pointer" : "default" }}
+                      onClick={() => l.url && window.open(l.url, "_blank", "noopener")}
                       onMouseEnter={e => { setHoveredLin(l); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
                       onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
                       onMouseLeave={() => setHoveredLin(null)}
@@ -1085,7 +1087,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
           </div>
           {hoveredLin.url && (
             <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333", fontSize: 10, color: "#93C5FD" }}>
-              Open in Linear ↗ — click the ID to navigate
+              Click anywhere on the row to open in Linear ↗
             </div>
           )}
         </div>

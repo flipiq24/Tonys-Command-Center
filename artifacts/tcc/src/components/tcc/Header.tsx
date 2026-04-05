@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR } from "./constants";
+import { post } from "@/lib/api";
 import type { Idea, SlackItem, LinearItem } from "./types";
 
 // ─── High-urgency Slack banner ────────────────────────────────────────────────
@@ -71,6 +72,47 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   const [dismissedHighUrgency, setDismissedHighUrgency] = useState(false);
   const [showSlackPopover, setShowSlackPopover] = useState(false);
   const [attendeeBriefExpanded, setAttendeeBriefExpanded] = useState(false);
+  const [showEodModal, setShowEodModal] = useState(false);
+  const [eodText, setEodText] = useState("");
+  const [eodTo, setEodTo] = useState("ethan@flipiq.com");
+  const [eodLoading, setEodLoading] = useState(false);
+  const [eodSending, setEodSending] = useState(false);
+  const [eodResult, setEodResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const openEodModal = useCallback(async () => {
+    setOpen(false);
+    setShowEodModal(true);
+    setEodResult(null);
+    if (eodText) return; // already loaded
+    setEodLoading(true);
+    try {
+      const r = await post<{ ok: boolean; reportText: string }>("/eod-report/preview", {});
+      if (r.ok) setEodText(r.reportText);
+    } catch {
+      setEodText("Could not generate preview. Edit this field with your EOD summary.");
+    } finally {
+      setEodLoading(false);
+    }
+  }, [eodText]);
+
+  const sendEod = useCallback(async () => {
+    if (eodSending || !eodTo.trim()) return;
+    setEodSending(true);
+    setEodResult(null);
+    try {
+      const r = await post<{ ok: boolean }>("/eod-report", { to: eodTo.trim(), body: eodText });
+      if (r.ok) {
+        setEodResult({ ok: true, msg: `Sent to ${eodTo.trim()}` });
+        onEod();
+      } else {
+        setEodResult({ ok: false, msg: "Send failed — try again" });
+      }
+    } catch {
+      setEodResult({ ok: false, msg: "Error sending — check connection" });
+    } finally {
+      setEodSending(false);
+    }
+  }, [eodSending, eodTo, eodText, onEod]);
   const menuRef = useRef<HTMLDivElement>(null);
   const slackPopoverRef = useRef<HTMLDivElement>(null);
 
@@ -344,16 +386,21 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
               {sep}
 
-              {/* EOD — read-only indicator, only shown after EOD is sent */}
-              {eod && (
-                <div style={{
+              {/* EOD Report — always available, shows sent status if already sent */}
+              <div
+                onClick={openEodModal}
+                style={{
                   display: "flex", alignItems: "center", gap: 10,
-                  padding: "9px 14px", fontFamily: F,
-                }}>
-                  <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>📊</span>
-                  <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: C.grn }}>EOD Sent ✓</span>
-                </div>
-              )}
+                  padding: "9px 14px", fontFamily: F, cursor: "pointer",
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#F5F5F5")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>📊</span>
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: eod ? C.grn : C.tx }}>
+                  {eod ? "EOD Sent ✓ — Resend" : "Send EOD Report"}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -400,6 +447,79 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               {meetingWarning.attendeeBrief}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── EOD Report Modal ── */}
+      {showEodModal && (
+        <div
+          onClick={() => setShowEodModal(false)}
+          style={{ position: "fixed", inset: 0, background: "#00000066", zIndex: 9100, display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: "#fff", borderRadius: 12, padding: "24px 28px", maxWidth: 600, width: "94%", maxHeight: "85vh", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", fontFamily: F }}
+          >
+            <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: "#111" }}>📊 EOD Report</div>
+
+            {/* To field */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 5 }}>To</div>
+              <input
+                value={eodTo}
+                onChange={e => setEodTo(e.target.value)}
+                placeholder="ethan@flipiq.com"
+                style={{ width: "100%", padding: "9px 12px", fontSize: 13, border: "1px solid #DDD", borderRadius: 8, fontFamily: F, boxSizing: "border-box" }}
+              />
+            </div>
+
+            {/* Report body */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 5 }}>Message</div>
+              {eodLoading ? (
+                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#FAFAF8", borderRadius: 8, border: "1px solid #EEE", color: "#999", fontSize: 13, minHeight: 200 }}>
+                  Generating EOD report…
+                </div>
+              ) : (
+                <textarea
+                  value={eodText}
+                  onChange={e => setEodText(e.target.value)}
+                  style={{ flex: 1, minHeight: 260, padding: "12px 14px", fontSize: 13, lineHeight: 1.65, border: "1px solid #DDD", borderRadius: 8, fontFamily: F, resize: "vertical", boxSizing: "border-box", width: "100%" }}
+                />
+              )}
+            </div>
+
+            {/* Result banner */}
+            {eodResult && (
+              <div style={{ padding: "8px 12px", borderRadius: 8, background: eodResult.ok ? "#F0FDF4" : "#FFF5F5", color: eodResult.ok ? "#15803D" : "#B91C1C", fontSize: 13, fontWeight: 600 }}>
+                {eodResult.ok ? "✓ " : "⚠ "}{eodResult.msg}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setEodText(""); setEodResult(null); openEodModal(); }}
+                disabled={eodLoading}
+                style={{ fontSize: 12, padding: "8px 14px", background: "none", border: "1px solid #DDD", borderRadius: 8, cursor: "pointer", fontFamily: F, color: "#666" }}
+              >
+                ↻ Regenerate
+              </button>
+              <button
+                onClick={() => setShowEodModal(false)}
+                style={{ fontSize: 12, padding: "8px 14px", background: "none", border: "1px solid #DDD", borderRadius: 8, cursor: "pointer", fontFamily: F, color: "#666" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={sendEod}
+                disabled={eodSending || eodLoading || !eodTo.trim()}
+                style={{ fontSize: 13, fontWeight: 700, padding: "8px 22px", background: eodSending ? "#888" : "#111", color: "#fff", border: "none", borderRadius: 8, cursor: eodSending ? "default" : "pointer", fontFamily: F }}
+              >
+                {eodSending ? "Sending…" : "Send"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

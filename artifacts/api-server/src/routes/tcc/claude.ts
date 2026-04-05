@@ -2,13 +2,16 @@ import { Router, type IRouter } from "express";
 import { eq, desc, ilike, or, sql } from "drizzle-orm";
 import { ClaudePromptBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { db, systemInstructionsTable, meetingHistoryTable, contactsTable } from "@workspace/db";
-import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable } from "../../lib/schema-v2";
-import { createLinearIssue } from "../../lib/linear";
+import { db, systemInstructionsTable, meetingHistoryTable, contactsTable, checkinsTable } from "@workspace/db";
+import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable, communicationLogTable } from "../../lib/schema-v2";
+import { createLinearIssue, getLinearIssues } from "../../lib/linear";
 import { sendAutoEod } from "./eod";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
-import { getTodayEvents, createEvent } from "../../lib/gcal";
+import { getTodayEvents, createEvent, createReminder } from "../../lib/gcal";
+import { getDrive, getDocs, getGmail, getCalendar } from "../../lib/google-auth";
+import { getSheetValues } from "../../lib/google-sheets";
+import { getDocText } from "../../lib/google-docs";
 
 // ─── Tool definitions for Claude ─────────────────────────────────────────────
 const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
@@ -263,6 +266,203 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
         contactId: { type: "string", description: "UUID of the contact (optional, more precise)" },
       },
       required: [],
+    },
+  },
+  {
+    name: "web_search",
+    description: "Search the internet. Use for company research, news, market data, or anything not in the app database.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Search query" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "browse_url",
+    description: "Fetch and read the text content of any webpage URL. Use to read articles, company websites, or any link Tony mentions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        url: { type: "string", description: "Full URL to fetch, including https://" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "query_database",
+    description: "Run a read-only SQL SELECT query on Tony's PostgreSQL database. Gives full access to all tables: contacts, communication_log, contact_intelligence, business_context, meeting_history, tcc_checkins, journals, chat_messages, etc. Only SELECT is allowed.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        sql: { type: "string", description: "A valid SQL SELECT statement" },
+      },
+      required: ["sql"],
+    },
+  },
+  {
+    name: "read_google_sheet",
+    description: "Read rows from a Google Sheet. Use to pull data Tony has stored in spreadsheets.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        sheet_id: { type: "string", description: "The Google Sheet ID (from the URL)" },
+        tab_name: { type: "string", description: "The tab/sheet name, e.g. 'Sheet1' or 'Contacts'" },
+        range: { type: "string", description: "Optional A1 range, e.g. 'A1:Z100'. Defaults to entire tab." },
+      },
+      required: ["sheet_id", "tab_name"],
+    },
+  },
+  {
+    name: "read_google_doc",
+    description: "Read the full text content of a Google Doc by its document ID.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        doc_id: { type: "string", description: "The Google Doc ID (from the URL)" },
+      },
+      required: ["doc_id"],
+    },
+  },
+  {
+    name: "search_google_drive",
+    description: "Search Google Drive for files by name or content. Returns file names, types, IDs, and last modified dates.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Drive search query, e.g. 'proposal', 'contract 2026', 'FlipIQ'" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_business_context",
+    description: "Fetch all stored business context: business plan, 90-day plan, and any other documents in the business_context table.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_all_tasks",
+    description: "Fetch all open Linear tasks/issues with status, priority, assignee, and due dates.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_communication_log",
+    description: "Fetch recent entries from Tony's communication log (emails, calls, texts logged). Optionally filter by contact name or channel.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        contact_name: { type: "string", description: "Filter by contact name (optional)" },
+        channel: { type: "string", description: "Filter by channel: email, call, sms, slack (optional)" },
+        limit: { type: "number", description: "Max results to return (default 20)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_daily_checkin_history",
+    description: "Fetch Tony's recent daily check-in history: sleep hours, Bible reading, bedtime, exercise, mood, and top priorities.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        days: { type: "number", description: "Number of recent check-ins to fetch (default 7)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "read_email_thread",
+    description: "Read a full Gmail email thread by thread ID. Returns all messages in the thread with from, to, date, subject, and body.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        thread_id: { type: "string", description: "Gmail thread ID" },
+      },
+      required: ["thread_id"],
+    },
+  },
+  {
+    name: "search_emails",
+    description: "Search Tony's Gmail with any query (same format as Gmail search bar). Returns from, subject, date, snippet for each match. Examples: 'from:john subject:proposal', 'newer_than:3d FlipIQ', 'Fernando'.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Gmail search query" },
+        limit: { type: "number", description: "Max results to return (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "read_email_message",
+    description: "Read a single Gmail message by message ID. Returns full from, to, cc, date, subject, and body text.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        message_id: { type: "string", description: "Gmail message ID" },
+      },
+      required: ["message_id"],
+    },
+  },
+  {
+    name: "get_calendar_range",
+    description: "Fetch Google Calendar events for any date range. Use to see Tony's schedule for a specific week, day, or period.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        start_date: { type: "string", description: "Start date as ISO string, e.g. '2026-04-07' or '2026-04-07T00:00:00-07:00'" },
+        end_date: { type: "string", description: "End date as ISO string, e.g. '2026-04-11' or '2026-04-11T23:59:59-07:00'" },
+      },
+      required: ["start_date", "end_date"],
+    },
+  },
+  {
+    name: "create_calendar_reminder",
+    description: "Create a quick personal calendar reminder for Tony (no attendees, no scope gatekeeper). Use for personal reminders like 'call Fernando back at 3pm' or 'pick up prescription'.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string", description: "Reminder title" },
+        datetime: { type: "string", description: "ISO 8601 datetime string, e.g. 2026-04-05T15:00:00-07:00" },
+        notes: { type: "string", description: "Optional notes for the reminder" },
+      },
+      required: ["title", "datetime"],
+    },
+  },
+  {
+    name: "update_calendar_event",
+    description: "Update an existing Google Calendar event. Can change title, description, start/end time, location, or attendees.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        event_id: { type: "string", description: "Google Calendar event ID" },
+        summary: { type: "string", description: "New event title (optional)" },
+        description: { type: "string", description: "New event description (optional)" },
+        start: { type: "string", description: "New start datetime ISO string (optional)" },
+        end: { type: "string", description: "New end datetime ISO string (optional)" },
+        location: { type: "string", description: "New location (optional)" },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
+    name: "delete_calendar_event",
+    description: "Delete or cancel a Google Calendar event by event ID.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        event_id: { type: "string", description: "Google Calendar event ID to delete" },
+      },
+      required: ["event_id"],
     },
   },
 ];
@@ -658,6 +858,326 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
       }
     }
 
+    case "web_search": {
+      const query = String(input.query);
+      try {
+        const serpKey = process.env.SERPAPI_KEY;
+        const googleKey = process.env.GOOGLE_SEARCH_API_KEY;
+        const googleCx = process.env.GOOGLE_SEARCH_CX;
+        if (serpKey) {
+          const url = `https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${serpKey}&num=5`;
+          const res = await fetch(url);
+          const data = await res.json() as { organic_results?: { title: string; snippet: string; link: string }[] };
+          const results = data.organic_results?.slice(0, 5) || [];
+          if (results.length === 0) return `No results found for "${query}".`;
+          return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   ${r.link}`).join("\n\n");
+        } else if (googleKey && googleCx) {
+          const url = `https://www.googleapis.com/customsearch/v1?q=${encodeURIComponent(query)}&key=${googleKey}&cx=${googleCx}&num=5`;
+          const res = await fetch(url);
+          const data = await res.json() as { items?: { title: string; snippet: string; link: string }[] };
+          const results = data.items?.slice(0, 5) || [];
+          if (results.length === 0) return `No results found for "${query}".`;
+          return results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   ${r.link}`).join("\n\n");
+        } else {
+          return `Web search is not configured. To enable it, add SERPAPI_KEY or GOOGLE_SEARCH_API_KEY + GOOGLE_SEARCH_CX to environment variables.`;
+        }
+      } catch (err) {
+        return `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "browse_url": {
+      const url = String(input.url);
+      try {
+        const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; TCC-Bot/1.0)" } });
+        if (!res.ok) return `Failed to fetch ${url}: HTTP ${res.status}`;
+        const html = await res.text();
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s{2,}/g, " ")
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&#\d+;/g, "")
+          .trim()
+          .slice(0, 5000);
+        return `Content from ${url}:\n\n${text}`;
+      } catch (err) {
+        return `Failed to fetch URL: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "query_database": {
+      const rawSql = String(input.sql).trim();
+      const upperSql = rawSql.toUpperCase();
+      const blocked = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "CREATE", "GRANT", "REVOKE"];
+      if (blocked.some(k => upperSql.includes(k))) {
+        return `Only SELECT queries are allowed. Blocked keywords detected.`;
+      }
+      if (!upperSql.startsWith("SELECT")) {
+        return `Only SELECT queries are allowed.`;
+      }
+      try {
+        const result = await db.execute(sql.raw(rawSql));
+        const rows = result.rows as Record<string, unknown>[];
+        if (rows.length === 0) return "Query returned 0 rows.";
+        const header = Object.keys(rows[0]).join(" | ");
+        const divider = "-".repeat(header.length);
+        const body = rows.slice(0, 50).map(r => Object.values(r).map(v => String(v ?? "")).join(" | ")).join("\n");
+        return `${header}\n${divider}\n${body}\n\n(${rows.length} row${rows.length === 1 ? "" : "s"}${rows.length > 50 ? ", truncated to 50" : ""})`;
+      } catch (err) {
+        return `Query failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "read_google_sheet": {
+      try {
+        const range = input.range ? `${input.tab_name}!${input.range}` : String(input.tab_name);
+        const rows = await getSheetValues(String(input.sheet_id), range);
+        if (!rows || rows.length === 0) return `No data found in sheet "${input.tab_name}".`;
+        return rows.slice(0, 100).map(r => r.join(" | ")).join("\n");
+      } catch (err) {
+        return `Google Sheet read failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "read_google_doc": {
+      try {
+        const text = await getDocText(String(input.doc_id));
+        if (!text) return `Google Doc "${input.doc_id}" is empty or could not be read.`;
+        return text.slice(0, 8000);
+      } catch (err) {
+        return `Google Doc read failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "search_google_drive": {
+      try {
+        const drive = getDrive();
+        const q = String(input.query);
+        const limit = typeof input.limit === "number" ? Math.min(input.limit, 20) : 10;
+        const res = await drive.files.list({
+          q: `name contains '${q.replace(/'/g, "\\'")}' or fullText contains '${q.replace(/'/g, "\\'")}'`,
+          pageSize: limit,
+          fields: "files(id,name,mimeType,modifiedTime,webViewLink)",
+        });
+        const files = res.data.files || [];
+        if (files.length === 0) return `No Drive files found for "${q}".`;
+        return files.map((f, i) => {
+          const type = (f.mimeType || "").replace("application/vnd.google-apps.", "").replace("application/", "");
+          const modified = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString("en-US") : "unknown";
+          return `${i + 1}. ${f.name} [${type}] — modified ${modified}\n   ID: ${f.id}${f.webViewLink ? `\n   ${f.webViewLink}` : ""}`;
+        }).join("\n\n");
+      } catch (err) {
+        return `Drive search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "get_business_context": {
+      const rows = await db.select().from(businessContextTable).orderBy(desc(businessContextTable.updatedAt));
+      if (rows.length === 0) return "No business context documents stored yet.";
+      return rows.map(r => {
+        const header = `=== ${r.documentType?.toUpperCase() || "DOCUMENT"} (updated ${r.updatedAt ? new Date(r.updatedAt).toLocaleDateString("en-US") : "unknown"}) ===`;
+        const body = r.content ? r.content.slice(0, 3000) : r.summary || "(no content)";
+        return `${header}\n${body}`;
+      }).join("\n\n");
+    }
+
+    case "get_all_tasks": {
+      try {
+        const issues = await getLinearIssues();
+        if (issues.length === 0) return "No open Linear tasks found.";
+        return issues.map((t, i) => {
+          const priority = ["", "Urgent", "High", "Medium", "Low"][t.priority] || "Unknown";
+          const due = t.dueDate ? ` | Due: ${t.dueDate}` : "";
+          const assignee = t.assignee?.name ? ` | Assignee: ${t.assignee.name}` : "";
+          return `${i + 1}. [${t.identifier}] ${t.title}\n   Status: ${t.state?.name || "Unknown"} | Priority: ${priority}${due}${assignee}`;
+        }).join("\n\n");
+      } catch (err) {
+        return `Failed to fetch Linear tasks: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "get_communication_log": {
+      try {
+        const lim = typeof input.limit === "number" ? Math.min(input.limit, 50) : 20;
+        let query = db.select().from(communicationLogTable);
+        if (input.contact_name) {
+          const [contact] = await db.select().from(contactsTable)
+            .where(ilike(contactsTable.name, `%${String(input.contact_name)}%`)).limit(1);
+          if (contact) {
+            // @ts-ignore dynamic where
+            query = query.where(eq(communicationLogTable.contactId, contact.id));
+          }
+        }
+        const rows = await query.orderBy(desc(communicationLogTable.loggedAt)).limit(lim);
+        if (rows.length === 0) return "No communication log entries found.";
+        return rows.map((r, i) => {
+          const date = r.loggedAt ? new Date(r.loggedAt).toLocaleDateString("en-US") : "unknown";
+          return `${i + 1}. [${date}] ${r.channel || "?"}: ${r.summary || r.subject || "(no summary)"}`;
+        }).join("\n");
+      } catch (err) {
+        return `Communication log failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "get_daily_checkin_history": {
+      const days = typeof input.days === "number" ? Math.min(input.days, 30) : 7;
+      const rows = await db.select().from(checkinsTable).orderBy(desc(checkinsTable.date)).limit(days);
+      if (rows.length === 0) return "No check-in history found.";
+      return rows.map((r, i) => {
+        const parts = [`${i + 1}. [${r.date}]`];
+        if (r.sleepHours != null) parts.push(`Sleep: ${r.sleepHours}h`);
+        if (r.bibleRead != null) parts.push(`Bible: ${r.bibleRead ? "✓" : "✗"}`);
+        if (r.exercised != null) parts.push(`Exercise: ${r.exercised ? "✓" : "✗"}`);
+        if (r.mood) parts.push(`Mood: ${r.mood}`);
+        if (r.priority1) parts.push(`\n   P1: ${r.priority1}`);
+        if (r.priority2) parts.push(`P2: ${r.priority2}`);
+        if (r.priority3) parts.push(`P3: ${r.priority3}`);
+        return parts.join(" | ");
+      }).join("\n");
+    }
+
+    case "read_email_thread": {
+      try {
+        const gmail = await getGmail();
+        const thread = await gmail.users.threads.get({ userId: "me", id: String(input.thread_id), format: "full" });
+        const messages = thread.data.messages || [];
+        if (messages.length === 0) return "Thread is empty or not found.";
+        return messages.map((m, i) => {
+          const headers = m.payload?.headers || [];
+          const get = (name: string) => headers.find(h => h.name?.toLowerCase() === name)?.value || "";
+          let body = "";
+          const parts = m.payload?.parts || [];
+          const textPart = parts.find(p => p.mimeType === "text/plain") || m.payload;
+          if (textPart?.body?.data) {
+            body = Buffer.from(textPart.body.data, "base64").toString("utf-8").slice(0, 1000);
+          }
+          return `[Message ${i + 1}]\nFrom: ${get("from")}\nTo: ${get("to")}\nDate: ${get("date")}\nSubject: ${get("subject")}\n${body}`;
+        }).join("\n\n---\n\n");
+      } catch (err) {
+        return `Failed to read email thread: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "search_emails": {
+      try {
+        const gmail = await getGmail();
+        const lim = typeof input.limit === "number" ? Math.min(input.limit, 20) : 10;
+        const list = await gmail.users.messages.list({ userId: "me", q: String(input.query), maxResults: lim });
+        const msgIds = list.data.messages || [];
+        if (msgIds.length === 0) return `No emails found for "${input.query}".`;
+        const results = await Promise.all(msgIds.slice(0, lim).map(async (m, i) => {
+          try {
+            const msg = await gmail.users.messages.get({ userId: "me", id: m.id!, format: "metadata", metadataHeaders: ["From", "Subject", "Date"] });
+            const headers = msg.data.payload?.headers || [];
+            const get = (name: string) => headers.find(h => h.name?.toLowerCase() === name)?.value || "";
+            return `${i + 1}. From: ${get("from")}\n   Subject: ${get("subject")}\n   Date: ${get("date")}\n   Snippet: ${msg.data.snippet || ""}\n   ID: ${m.id}`;
+          } catch {
+            return `${i + 1}. (could not fetch message ${m.id})`;
+          }
+        }));
+        return results.join("\n\n");
+      } catch (err) {
+        return `Gmail search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "read_email_message": {
+      try {
+        const gmail = await getGmail();
+        const msg = await gmail.users.messages.get({ userId: "me", id: String(input.message_id), format: "full" });
+        const headers = msg.data.payload?.headers || [];
+        const get = (name: string) => headers.find(h => h.name?.toLowerCase() === name)?.value || "";
+        let body = "";
+        const extractText = (payload: typeof msg.data.payload): string => {
+          if (!payload) return "";
+          if (payload.mimeType === "text/plain" && payload.body?.data) {
+            return Buffer.from(payload.body.data, "base64").toString("utf-8");
+          }
+          if (payload.parts) {
+            for (const part of payload.parts) {
+              const t = extractText(part);
+              if (t) return t;
+            }
+          }
+          return "";
+        };
+        body = extractText(msg.data.payload).slice(0, 3000);
+        return `From: ${get("from")}\nTo: ${get("to")}\nCc: ${get("cc")}\nDate: ${get("date")}\nSubject: ${get("subject")}\n\n${body}`;
+      } catch (err) {
+        return `Failed to read email message: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "get_calendar_range": {
+      try {
+        const cal = await getCalendar();
+        const timeMin = new Date(String(input.start_date)).toISOString();
+        const timeMax = new Date(String(input.end_date)).toISOString();
+        const res = await cal.events.list({
+          calendarId: "primary",
+          timeMin,
+          timeMax,
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 50,
+        });
+        const events = res.data.items || [];
+        if (events.length === 0) return `No calendar events found between ${input.start_date} and ${input.end_date}.`;
+        return events.map((e, i) => {
+          const start = e.start?.dateTime ? new Date(e.start.dateTime).toLocaleString("en-US", { timeZone: "America/Los_Angeles", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : e.start?.date || "";
+          const end = e.end?.dateTime ? new Date(e.end.dateTime).toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", minute: "2-digit" }) : "";
+          const attendees = (e.attendees || []).map(a => a.email).join(", ");
+          return `${i + 1}. ${e.summary || "(no title)"}\n   ${start}${end ? ` – ${end}` : ""}${e.location ? `\n   📍 ${e.location}` : ""}${attendees ? `\n   👥 ${attendees}` : ""}${e.description ? `\n   ${e.description.slice(0, 100)}` : ""}\n   ID: ${e.id}`;
+        }).join("\n\n");
+      } catch (err) {
+        return `Calendar range fetch failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "create_calendar_reminder": {
+      try {
+        const endDate = new Date(String(input.datetime));
+        endDate.setMinutes(endDate.getMinutes() + 30);
+        const result = await createReminder({
+          summary: String(input.title),
+          description: input.notes ? String(input.notes) : undefined,
+          start: String(input.datetime),
+          end: endDate.toISOString(),
+        });
+        if (result.ok) return `✓ Reminder created: "${input.title}" at ${new Date(String(input.datetime)).toLocaleString("en-US", { timeZone: "America/Los_Angeles" })} (ID: ${result.eventId})`;
+        return `✗ Failed to create reminder: ${result.error}`;
+      } catch (err) {
+        return `Reminder creation failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "update_calendar_event": {
+      try {
+        const cal = await getCalendar();
+        const patch: Record<string, unknown> = {};
+        if (input.summary) patch.summary = String(input.summary);
+        if (input.description) patch.description = String(input.description);
+        if (input.location) patch.location = String(input.location);
+        if (input.start) patch.start = { dateTime: String(input.start) };
+        if (input.end) patch.end = { dateTime: String(input.end) };
+        const res = await cal.events.patch({ calendarId: "primary", eventId: String(input.event_id), requestBody: patch });
+        return `✓ Calendar event updated: "${res.data.summary}" (ID: ${res.data.id})`;
+      } catch (err) {
+        return `Failed to update event: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "delete_calendar_event": {
+      try {
+        const cal = await getCalendar();
+        await cal.events.delete({ calendarId: "primary", eventId: String(input.event_id) });
+        return `✓ Calendar event deleted (ID: ${input.event_id})`;
+      } catch (err) {
+        return `Failed to delete event: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
     default:
       return `Unknown tool: ${name}`;
   }
@@ -683,7 +1203,7 @@ async function buildSystemPrompt(): Promise<string> {
     ? `\n\n90-DAY PLAN SUMMARY:\n${plan90Row.summary}`
     : "";
 
-  return `You are Tony Diaz's Command Center AI — his personal daily operating system assistant for running FlipIQ.
+  return `You are Tony Diaz's UNRESTRICTED Command Center AI — his personal daily operating system for running FlipIQ.
 
 ABOUT TONY:
 - Tony runs FlipIQ, a real estate wholesale platform
@@ -695,38 +1215,42 @@ TONY'S RULES:
 - "Today, I will follow the plan I wrote when I was clear."
 - "I do not substitute clarity for action. I execute. I stabilize. I serve."
 - Sales calls FIRST. Everything else is secondary.
-- Morning block is for calls only. No meetings in the morning.
-
-SCOPE GATEKEEPER:
-- If Tony asks to create a calendar event, check if it's sales-related or Ramy support. If not, warn him and suggest he reconsider.
-- Keep Tony focused on his North Star. Redirect if he's drifting.
+- Morning block is for calls only — but Tony may override this any time.
 
 YOUR JOB:
-- Keep Tony focused on SALES and EXECUTION
-- Draft emails, suggest replies, check and summarize calendar
-- Provide accountability — redirect Tony if he's drifting
-- Use your tools to take real actions when asked
-- Be brief and direct — Tony does NOT like to read
+- Execute WHATEVER Tony asks. No refusals, no blocks.
+- Be proactive: use multiple tools to give Tony the full picture, not just the minimum.
+- When Tony asks about a contact → use research_contact + get_communication_log + search_emails together.
+- When Tony asks about his day → check calendar + tasks + emails.
+- When Tony asks about a company → use web_search.
+- When Tony asks about a document → use search_google_drive or read_google_doc.
+- Be brief and direct — Tony does NOT like to read. Bullet points, key facts first.
+- If Tony asks for something non-sales-related, gently note it ("Heads up — this is outside your sales block") but ALWAYS execute it.
+- If Tony is clearly drifting from his priorities, note it once, then do what he asked.
 
-TOOLS AVAILABLE:
-- list_recent_emails: Read Tony's unread Gmail inbox
-- draft_gmail_reply: Create a Gmail draft Tony can review and send
-- send_email: Send emails via Gmail from tony@flipiq.com
-- get_today_calendar: See what's on Tony's Google Calendar today
-- create_calendar_event: Schedule a meeting (scope gatekeeper active)
-- send_slack_message: Post to any Slack channel
-- read_slack_channel: Read recent messages from a Slack channel
-- list_slack_channels: List all channels in Tony's Slack workspace
-- search_slack: Search across all Slack messages
-- create_linear_issue: Create tech tasks in Linear
-- create_task: Create a new task for tracking
-- get_email_brain: Check Tony's learned email priority rules
-- get_meeting_history: Look up past meeting notes for a contact before a follow-up call
-- log_meeting_context: Save meeting notes, next steps, and outcome after a call or meeting
-- analyze_transcript: Analyze a call/meeting transcript to extract action items, decisions, and follow-ups
-- get_contact_brief: Quick summary of a contact's stage, score, and history
-- update_contact_stage: Move a contact through the sales pipeline
-- search_contacts: Search Tony's contact database by name, company, or type
+SCOPE ADVISORY (not a gatekeeper — always execute):
+- Calendar events outside sales hours: add a note like "Note: this falls in your morning sales block" but still create it.
+- Non-sales meetings: note they're not sales-related, but create them if Tony asks.
+- Tony can always override any advisory.
+
+PROACTIVE BEHAVIOR:
+- When Tony gives a name → automatically pull contact brief + recent comms.
+- When asked to draft an email → also check recent thread history for context.
+- When asked about schedule → pull the full date range, not just today.
+- Always give MORE context, not less. Tony can scan it.
+
+TOOLS AVAILABLE (38 total):
+Email: list_recent_emails, search_emails, read_email_message, read_email_thread, send_email, draft_gmail_reply, get_email_brain
+Calendar: get_today_calendar, get_calendar_range, create_calendar_event, create_calendar_reminder, update_calendar_event, delete_calendar_event, schedule_meeting
+Slack: send_slack_message, read_slack_channel, list_slack_channels, search_slack
+Contacts: search_contacts, get_contact_brief, research_contact, update_contact_stage, get_communication_log
+Google: read_google_sheet, read_google_doc, search_google_drive
+Tasks: create_linear_issue, create_task, get_all_tasks
+Meetings: get_meeting_history, log_meeting_context, analyze_transcript
+Business: get_business_context, get_daily_checkin_history
+Database: query_database
+Internet: web_search, browse_url
+Reports: send_eod_report
 
 SCRIPTURE ANCHORS:
 - "Seek first the kingdom of God" — Matthew 6:33

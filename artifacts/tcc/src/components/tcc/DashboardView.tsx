@@ -743,7 +743,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             <SL text="📧 Priority Emails" color="#E65100" time={wb.emails} view="emails" onNavigate={onNavigate} />
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
               <thead>
-                <tr><TH w={22} center>✓</TH><TH w={120}>FROM</TH><TH>SUBJECT</TH><TH w={110}>WHY</TH><TH w={85}>ACTION</TH></tr>
+                <tr><TH w={22} center>✓</TH><TH w={120}>FROM</TH><TH>SUBJECT / WHY</TH><TH w={85}>ACTION</TH></tr>
               </thead>
               <tbody>
                 {emails.map((em, i) => {
@@ -758,8 +758,10 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     >
                       <TD center><CB id={id} checked={done} onToggle={ev => { ev; toggle(id); }} /></TD>
                       <TD bold strike={done}>{em.from}</TD>
-                      <TD small strike={done}>{em.subj}</TD>
-                      <TD small dim>{em.why || ""}</TD>
+                      <td style={{ padding: "6px 8px", verticalAlign: "top" }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: done ? "#bbb" : BLK, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>{em.subj}</div>
+                        {em.why && <div style={{ fontSize: 11, color: C.mut, marginTop: 2, lineHeight: 1.4 }}>{em.why}</div>}
+                      </td>
                       <TD small bold><span style={{ color: "#1565C0" }}>{em.p || "—"}</span></TD>
                     </tr>
                   );
@@ -767,7 +769,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                 {Array.from({ length: Math.max(0, 3 - emails.length) }).map((_, i) => (
                   <tr key={`eb-${i}`} style={{ background: "#fff" }}>
                     <TD center><CB id={`eb-${i}`} checked={ck(`eb-${i}`)} onToggle={toggle} /></TD>
-                    <TD /><TD /><TD /><TD />
+                    <TD /><TD /><TD />
                   </tr>
                 ))}
               </tbody>

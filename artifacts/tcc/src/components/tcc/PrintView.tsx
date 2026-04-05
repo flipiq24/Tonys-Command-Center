@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { F, FS } from "./constants";
-import { get } from "@/lib/api";
+import { get, post } from "@/lib/api";
 import type { TaskItem, CalItem, EmailItem, SlackItem, LinearItem } from "./types";
 
 interface LocalTask { id: string; text: string; dueDate?: string | null; priority?: number | null; taskType?: string | null; size?: string | null; }
@@ -250,6 +250,9 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [taskAlerts, setTaskAlerts] = useState<TaskAlerts>({ outOfSequence: [], missingDueDates: [] });
+  const [inboxEmail, setInboxEmail] = useState<string>("");
+  const [processing, setProcessing] = useState(false);
+  const [processResult, setProcessResult] = useState<string | null>(null);
 
   const toggle = useCallback((id: string) => {
     setDone(prev => {
@@ -262,7 +265,31 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
   useEffect(() => {
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
     get<TaskAlerts>("/tasks/alerts").then(setTaskAlerts).catch(() => {});
+    get<{ ok: boolean; email?: string }>("/sheet-scan/inbox")
+      .then(r => { if (r.ok && r.email) setInboxEmail(r.email); })
+      .catch(() => {});
   }, []);
+
+  const handleProcessScan = async () => {
+    if (processing) return;
+    setProcessing(true);
+    setProcessResult(null);
+    try {
+      const r = await post<{ ok: boolean; callsLogged?: string[]; tasksCompleted?: number[]; confidence?: string; error?: string }>("/sheet-scan/process");
+      if (r.ok) {
+        const parts = [];
+        if ((r.callsLogged?.length ?? 0) > 0) parts.push(`${r.callsLogged!.length} call(s) logged`);
+        if ((r.tasksCompleted?.length ?? 0) > 0) parts.push(`${r.tasksCompleted!.length} task(s) marked done`);
+        setProcessResult(parts.length > 0 ? `✅ Processed (${r.confidence}): ${parts.join(", ")}` : "✅ Sheet scanned — nothing checked yet");
+      } else {
+        setProcessResult(`⚠ ${r.error ?? "Could not process"}`);
+      }
+    } catch {
+      setProcessResult("⚠ Error contacting server");
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -319,9 +346,21 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
           <div style={{ fontSize: 11, color: "#777", marginTop: 1 }}>{DATE_STR}</div>
         </div>
         <Btn label={refreshing ? "Refreshing…" : "↻ Refresh"} onClick={handleRefresh} disabled={refreshing} dim />
+        <Btn label={processing ? "Processing…" : "📷 Process Scanned Sheet"} onClick={handleProcessScan} disabled={processing} dim />
         <Btn label="🖨 Print" onClick={() => window.print()} primary />
         <Btn label="✕ Close" onClick={onClose} dim />
       </div>
+      {processResult && (
+        <div style={{
+          padding: "8px 24px", background: processResult.startsWith("✅") ? "#1A3A1A" : "#3A1A1A",
+          color: processResult.startsWith("✅") ? "#86efac" : "#fca5a5",
+          fontSize: 12, fontFamily: F, fontWeight: 600, borderBottom: "1px solid #2a2a2a",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <span>{processResult}</span>
+          <button onClick={() => setProcessResult(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>✕</button>
+        </div>
+      )}
 
       {/* ── Scrollable sheets area ── */}
       <div style={{
@@ -336,82 +375,102 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
           <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
           <div style={{ padding: "14px 18px" }}>
 
-            {/* TOP 3 */}
+            {/* ══ SALES CALLS — 10 TODAY (TOP / FULL WIDTH) ══ */}
+            <SL text="📞 Sales Calls — 10 Today" color="#C62828" time={workBlocks.salesCalls} />
+            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 10 }}>
+              <thead>
+                <tr>
+                  <TH w={20} center>✓</TH>
+                  <TH w={18} center>#</TH>
+                  <TH w={140}>NAME / COMPANY</TH>
+                  <TH w={90}>PHONE</TH>
+                  <TH w={42}>STATUS</TH>
+                  <TH>OUTCOME / NOTES</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 10 }).map((_, i) => {
+                  const c = callList[i];
+                  const id = `call-${i}`;
+                  const done2 = ck(id);
+                  return (
+                    <tr key={id} style={{ height: 28, background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                      <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
+                      <TD center small dim>{i + 1}</TD>
+                      {c ? (
+                        <>
+                          <TD strike={done2}>
+                            <div style={{ fontWeight: 700, fontSize: 10, color: done2 ? "#bbb" : BLK }}>{c.name}</div>
+                            {c.company && <div style={{ fontSize: 8, color: "#888" }}>{c.company}</div>}
+                          </TD>
+                          <TD small>{c.phone || "—"}</TD>
+                          <TD center small bold>
+                            <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : "#555" }}>
+                              {c.status || "—"}
+                            </span>
+                          </TD>
+                        </>
+                      ) : (
+                        <>
+                          <TD /><TD /><TD />
+                        </>
+                      )}
+                      {/* Wide notes column — blank space for handwriting */}
+                      <td style={{
+                        borderBottom: "1px solid #E8E8E8", verticalAlign: "bottom",
+                        padding: "0 6px 3px",
+                      }}>
+                        <div style={{ borderBottom: "1px solid #CCC", width: "100%", height: 1, marginBottom: 2 }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* ══ TOP 3 — DO THESE FIRST ══ */}
             <SL text="★ Top 3 — Do These First" color="#B7791F" />
-            <div style={{ marginBottom: 10 }}>
+            <div style={{ marginBottom: 10, border: "1.5px solid #E8D5A3", borderRadius: 4, overflow: "hidden" }}>
               {Array.from({ length: 3 }).map((_, i) => {
                 const t = top3[i];
                 const id = t ? `top3-${t.id}` : `top3-blank-${i}`;
                 return (
                   <div key={id} style={{
                     display: "flex", gap: 8, alignItems: "flex-start",
-                    padding: "7px 8px", borderBottom: "1px solid #E8E8E8",
+                    padding: "8px 10px",
+                    borderBottom: i < 2 ? "1px solid #EEE4CC" : "none",
                     background: i === 0 ? "#FFFBF2" : "#fff",
+                    minHeight: 36,
                   }}>
                     <CB id={id} done={ck(id)} onToggle={toggle} />
                     <div style={{
                       width: 18, height: 18, background: i === 0 ? BLK : "#E0E0E0",
                       color: i === 0 ? "#fff" : "#888", borderRadius: 3,
                       fontSize: 9, fontWeight: 900, display: "flex", alignItems: "center",
-                      justifyContent: "center", flexShrink: 0,
+                      justifyContent: "center", flexShrink: 0, marginTop: 1,
                     }}>{i + 1}</div>
-                    {t ? (
-                      <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1 }}>
+                      {t ? (
                         <div style={{
                           fontSize: 12, fontWeight: i === 0 ? 700 : 600,
                           color: ck(id) ? "#bbb" : BLK,
                           textDecoration: ck(id) ? "line-through" : "none",
+                          lineHeight: 1.4,
                         }}>{t.text}</div>
-                        {t.cat && <div style={{ fontSize: 9, color: "#999", marginTop: 1 }}>{t.cat}</div>}
-                      </div>
-                    ) : (
-                      <div style={{ flex: 1, height: 1, background: "#E8E8E8", marginTop: 8 }} />
-                    )}
+                      ) : (
+                        <div style={{ borderBottom: "1px solid #DDD", width: "100%", marginTop: 10 }} />
+                      )}
+                      {t?.cat && <div style={{ fontSize: 8, color: "#aaa", marginTop: 2 }}>{t.cat}</div>}
+                    </div>
+                    {/* Notes line beside each top-3 item */}
+                    <div style={{ width: 180, borderBottom: "1px solid #DDD", marginTop: 12, flexShrink: 0 }} />
                   </div>
                 );
               })}
             </div>
 
-            {/* SALES CALLS + APPOINTMENTS side by side */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14 }}>
-
-              {/* Sales Calls */}
-              <div>
-                <SL text="📞 Sales Calls" color="#C62828" time={workBlocks.salesCalls} />
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                  <thead>
-                    <tr>
-                      <TH w={22} center>✓</TH>
-                      <TH w={20} center>#</TH>
-                      <TH>NAME / COMPANY</TH>
-                      <TH w={88}>PHONE</TH>
-                      <TH w={44}>STATUS</TH>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: 10 }).map((_, i) => {
-                      const c = callList[i];
-                      const id = `call-${i}`;
-                      const done2 = ck(id);
-                      return (
-                        <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                          <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
-                          <TD center small dim>{i + 1}</TD>
-                          {c ? (
-                            <>
-                              <TD strike={done2}><div style={{ fontWeight: 600, fontSize: 10, color: done2 ? "#bbb" : BLK }}>{c.name}</div>{c.company && <div style={{ fontSize: 8, color: "#888" }}>{c.company}</div>}</TD>
-                              <TD small>{c.phone || "—"}</TD>
-                              <TD center small bold><span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : "#555" }}>{c.status || "—"}</span></TD>
-                            </>
-                          ) : (
-                            <><TD /><TD /><TD /></>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+            {/* ══ APPOINTMENTS + TODAY'S QUICK TASKS (2-col) ══ */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 6 }}>
 
               {/* Appointments */}
               <div>
@@ -420,9 +479,9 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
                   <thead>
                     <tr>
                       <TH w={22} center>✓</TH>
-                      <TH w={58}>TIME</TH>
-                      <TH>TOPIC</TH>
-                      <TH w={80}>PREP/NOTES</TH>
+                      <TH w={60}>TIME</TH>
+                      <TH>MEETING</TH>
+                      <TH w={70}>PREP</TH>
                     </tr>
                   </thead>
                   <tbody>
@@ -436,7 +495,7 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
                         <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
                           <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
                           <TD small bold>{m.t}{m.tEnd ? `–${m.tEnd}` : ""}</TD>
-                          <TD strike={done2}>{m.n}</TD>
+                          <TD strike={done2} small>{m.n}</TD>
                           <TD small dim>{m.loc || m.note || ""}</TD>
                         </tr>
                       );
@@ -450,6 +509,53 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
                   </tbody>
                 </table>
               </div>
+
+              {/* Quick Tasks */}
+              <div>
+                <SL text="✏ Additional Tasks" color="#555" time={workBlocks.tasks} />
+                <div style={{ border: BORDER, borderRadius: 2 }}>
+                  {activeLocals.slice(0, 6).map((t, i) => {
+                    const id = `lt-${i}`;
+                    const done2 = ck(id);
+                    return (
+                      <div key={id} style={{
+                        display: "flex", gap: 7, alignItems: "flex-start", padding: "6px 8px",
+                        borderBottom: i < Math.min(5, activeLocals.length - 1) ? "1px solid #EEE" : "none",
+                        background: i % 2 === 0 ? "#fff" : "#FAFAFA",
+                      }}>
+                        <CB id={id} done={done2} onToggle={toggle} />
+                        <div style={{ flex: 1, fontSize: 10, fontWeight: 500, color: done2 ? "#bbb" : BLK, textDecoration: done2 ? "line-through" : "none", lineHeight: 1.4 }}>{t.text}</div>
+                      </div>
+                    );
+                  })}
+                  {Array.from({ length: Math.max(0, 6 - activeLocals.length) }).map((_, i) => (
+                    <div key={`ltblank-${i}`} style={{
+                      display: "flex", gap: 7, alignItems: "center", padding: "6px 8px",
+                      borderBottom: i < 5 - activeLocals.length ? "1px solid #EEE" : "none",
+                      background: (activeLocals.length + i) % 2 === 0 ? "#fff" : "#FAFAFA",
+                    }}>
+                      <CB id={`ltblank-${i}`} done={false} onToggle={toggle} />
+                      <div style={{ flex: 1, borderBottom: "1px solid #E8E8E8" }} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* ══ SCAN FOOTER ══ */}
+            <div style={{
+              marginTop: 8, padding: "7px 12px",
+              border: "1.5px dashed #BBB", borderRadius: 4,
+              background: "#FAFAFA",
+              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+            }}>
+              <div style={{ fontSize: 8, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "#888" }}>
+                📷 Fill &amp; scan — email photo to TCC
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "#444", fontFamily: "monospace" }}>
+                {inboxEmail || "loading inbox…"}
+              </div>
+              <div style={{ fontSize: 8, color: "#888" }}>TCC reads it automatically &amp; updates your system</div>
             </div>
 
           </div>

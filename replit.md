@@ -42,6 +42,22 @@ A full-stack personal daily operating system for Tony Diaz, CEO of FlipIQ.
 - `chat_messages` — Claude chat messages per thread
 - `task_work_notes` — Task working notes
 
+## Print Sheet + Scan-to-Update Workflow
+
+**Daily Action Sheet** — printable 2-page document (front + back) generated from live TCC data:
+- **Front page**: Sales Calls 10 Today (full-width, OUTCOME/NOTES column for handwriting) → Top 3 → Appointments + Additional Tasks
+- **Back page**: Linear issues, Flags & Blockers, Priority Emails, Slack, Scratch Notes, 3 Wins
+
+**Scan-to-Update** — closed-loop paper → digital flow:
+1. Tony prints, fills out sheet by hand (checks boxes, writes call outcomes/notes)
+2. Takes a photo, emails it to the TCC AgentMail inbox (shown in footer of printed sheet)
+3. Clicks "📷 Process Scanned Sheet" in the print toolbar (or triggers automatically)
+4. Claude Vision reads the photo, identifies checked boxes and handwritten notes
+5. System updates: completed calls logged to `call_log` table, checked top-3 tasks logged to `task_completions`
+
+**Routes**: `GET /api/sheet-scan/inbox`, `POST /api/sheet-scan/process`
+**File**: `artifacts/api-server/src/routes/tcc/sheet-scan.ts`
+
 ## API Routes
 
 All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
@@ -92,6 +108,8 @@ All routes under `/api/` (defined in `artifacts/api-server/src/routes/`):
 | `POST /api/sheets/ingest-90-day-plan` | Ingest 90-Day Plan doc into business_context |
 | `GET /api/business-context` | Retrieve all business context documents |
 | `POST /api/business-context` | Upsert a business context document |
+| `GET /api/sheet-scan/inbox` | Returns AgentMail inbox email for scanned sheet returns |
+| `POST /api/sheet-scan/process` | Process scanned daily sheet photo → Claude Vision → update DB |
 
 ## Frontend Flow (Sequential)
 

@@ -105,7 +105,7 @@ type LinearItem = {
 
 async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: EmailFyi[]; promotions: EmailPromotion[] } | null> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const since = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000);
     const list = await gmail.users.messages.list({
       userId: "me",
@@ -191,7 +191,7 @@ Promotions shape: { "from": string, "subj": string, "why": string }`,
 
 async function fetchLiveCalendar(): Promise<CalItem[] | null> {
   try {
-    const cal = getCalendar();
+    const cal = await getCalendar();
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);

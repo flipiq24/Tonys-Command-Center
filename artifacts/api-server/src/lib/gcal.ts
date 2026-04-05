@@ -9,7 +9,7 @@ export async function listTodayEvents(): Promise<{
   description?: string;
 }[]> {
   try {
-    const calendar = getCalendar();
+    const calendar = await getCalendar();
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
@@ -51,7 +51,7 @@ export async function createEvent(params: {
   createMeetLink?: boolean;
 }): Promise<{ ok: boolean; eventId?: string; htmlLink?: string; meetLink?: string; error?: string }> {
   try {
-    const calendar = getCalendar();
+    const calendar = await getCalendar();
     const withMeet = params.createMeetLink || (params.attendees && params.attendees.length > 0);
     const event = await calendar.events.insert({
       calendarId: "primary",
@@ -93,7 +93,7 @@ export async function createReminder(params: {
   description?: string;
 }): Promise<{ ok: boolean; eventId?: string; htmlLink?: string }> {
   try {
-    const calendar = getCalendar();
+    const calendar = await getCalendar();
     const event = await calendar.events.insert({
       calendarId: "primary",
       requestBody: {
@@ -126,7 +126,7 @@ export async function listUpcomingEvents(days = 7): Promise<{
   attendees?: string[];
 }[]> {
   try {
-    const calendar = getCalendar();
+    const calendar = await getCalendar();
     const now = new Date();
     const endDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 

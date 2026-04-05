@@ -12,7 +12,7 @@ const router: IRouter = Router();
 // ─── Fetch Gmail signature ─────────────────────────────────────────────────
 async function getGmailSignature(): Promise<string> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const res = await gmail.users.settings.sendAs.list({ userId: "me" });
     const primary = (res.data.sendAs || []).find(s => s.isPrimary);
     const sig = primary?.signature || "";
@@ -51,7 +51,7 @@ router.post("/email/send", async (req, res): Promise<void> => {
   const { to, cc, bcc, subject, body, threadId, contactId, isHtml } = parsed.data;
 
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
 
     const contentType = isHtml ? "text/html" : "text/plain";
     const messageParts = [

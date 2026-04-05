@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { get, post, del, API_BASE as _API_BASE } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, inp } from "./constants";
 import { VoiceInput } from "./VoiceInput";
@@ -28,22 +28,42 @@ interface StreamEvent {
   error?: string;
 }
 
-function stripMd(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, m => m.replace(/```[^\n]*\n?/g, "").trim()) // fenced code blocks → keep content
-    .replace(/#{1,6}\s+(.+)/g, "$1")           // ## Heading → Heading
-    .replace(/\*\*\*(.+?)\*\*\*/g, "$1")       // ***bold italic*** → plain
-    .replace(/\*\*(.+?)\*\*/g, "$1")           // **bold** → plain
-    .replace(/\*(.+?)\*/g, "$1")               // *italic* → plain
-    .replace(/__(.+?)__/g, "$1")               // __bold__ → plain
-    .replace(/_(.+?)_/g, "$1")                 // _italic_ → plain
-    .replace(/`(.+?)`/g, "$1")                 // `code` → plain
-    .replace(/^\s*[-*+]\s+/gm, "• ")           // - item → • item
-    .replace(/^\s*\d+\.\s+/gm, "")             // 1. item → item
-    .replace(/\[(.+?)\]\(.+?\)/g, "$1")        // [link](url) → link
-    .replace(/^[-_*]{3,}$/gm, "─────────────") // --- → line
-    .replace(/\n{3,}/g, "\n\n")                // collapse excess blank lines
+function renderMessage(text: string): ReactNode {
+  const processed = text
+    .replace(/```[\s\S]*?```/g, m => m.replace(/```[^\n]*\n?/g, "").trim())
+    .replace(/#{1,6}\s+(.+)/g, "$1")
+    .replace(/\*\*\*(.+?)\*\*\*/g, "$1")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/\*(.+?)\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/_(.+?)_/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "• ")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^[-_*]{3,}$/gm, "─────────────")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  const parts: React.ReactNode[] = [];
+  const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/\S+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let k = 0;
+
+  while ((match = linkRegex.exec(processed)) !== null) {
+    if (match.index > lastIndex) parts.push(processed.slice(lastIndex, match.index));
+    if (match[1] && match[2]) {
+      parts.push(<a key={k++} href={match[2]} target="_blank" rel="noopener noreferrer" style={{ color: C.blu, textDecoration: "underline" }}>{match[1]}</a>);
+    } else if (match[3]) {
+      const url = match[3].replace(/[.,;:!?'")\]]+$/, "");
+      const trail = match[3].slice(url.length);
+      parts.push(<a key={k++} href={url} target="_blank" rel="noopener noreferrer" style={{ color: C.blu, textDecoration: "underline", wordBreak: "break-all" }}>{url}</a>);
+      if (trail) parts.push(trail);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < processed.length) parts.push(processed.slice(lastIndex));
+  return <>{parts}</>;
 }
 
 interface Props {
@@ -294,7 +314,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
                 border: msg.role === "user" ? "none" : `1px solid ${C.brd}`,
                 whiteSpace: "pre-wrap",
               }}>
-                {msg.role === "assistant" ? stripMd(msg.content) : msg.content}
+                {msg.role === "assistant" ? renderMessage(msg.content) : msg.content}
                 {msg.toolCalls && msg.toolCalls.length > 0 && (
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.brd}44`, fontSize: 11, color: C.mut }}>
                     Used: {msg.toolCalls.map(t => t.name.replace(/_/g, " ")).join(", ")}
@@ -323,7 +343,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
                     ⚙ {toolActivity}
                   </div>
                 )}
-                {stripMd(streamingText)}
+                {renderMessage(streamingText)}
                 <span style={{ display: "inline-block", width: 8, height: 14, background: C.blu, marginLeft: 2, animation: "pulse 1s infinite", verticalAlign: "middle" }} />
               </div>
             </div>

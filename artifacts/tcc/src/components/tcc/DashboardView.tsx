@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
-import { get, patch, post, del } from "@/lib/api";
+import { get, patch } from "@/lib/api";
 import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
 interface Contact { name: string; phone?: string; company?: string; status?: string; }
-interface ScratchNote { id: string; text: string; checked: boolean; position: number; }
-
 type NavView = "emails" | "schedule" | "sales" | "tasks";
 
 interface Props {
@@ -351,16 +349,20 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
-  // ── Scratch Notes state ─────────────────────────────────────────
-  const [scratchNotes, setScratchNotes] = useState<ScratchNote[]>([]);
-  const [scratchInput, setScratchInput] = useState("");
   const [hoveredLin, setHoveredLin] = useState<LinearItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const scratchInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Today's Wins — manual entries, persisted in localStorage per day ─
+  const _winsKey = `tcc_wins_${new Date().toISOString().slice(0, 10)}`;
+  const [wins, setWins] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(_winsKey) || '["","",""]'); } catch { return ["", "", ""]; }
+  });
+  const updateWin = (i: number, val: string) => {
+    setWins(prev => { const next = [...prev]; next[i] = val; localStorage.setItem(_winsKey, JSON.stringify(next)); return next; });
+  };
 
   useEffect(() => {
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
-    get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
   }, []);
 
   const toggle = useCallback((id: string) => {
@@ -375,39 +377,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     setLocalTasks(prev => prev.filter(t => t.id !== id));
   };
 
-  // ── Scratch Notes handlers ──────────────────────────────────────
-  const toggleScratchNote = useCallback(async (id: string) => {
-    const note = scratchNotes.find(n => n.id === id);
-    if (!note) return;
-    setScratchNotes(prev => prev.map(n => n.id === id ? { ...n, checked: !n.checked } : n));
-    try {
-      await patch(`/notes/scratch/${id}`, { checked: !note.checked });
-    } catch {
-      setScratchNotes(prev => prev.map(n => n.id === id ? { ...n, checked: note.checked } : n));
-    }
-  }, [scratchNotes]);
-
-  const addScratchNote = useCallback(async () => {
-    const text = scratchInput.trim();
-    if (!text) return;
-    setScratchInput("");
-    try {
-      const note = await post<ScratchNote>("/notes/scratch", { text });
-      setScratchNotes(prev => [...prev, note]);
-      scratchInputRef.current?.focus();
-    } catch {
-      setScratchInput(text);
-    }
-  }, [scratchInput]);
-
-  const deleteScratchNote = useCallback(async (id: string) => {
-    setScratchNotes(prev => prev.filter(n => n.id !== id));
-    try {
-      await del(`/notes/scratch/${id}`);
-    } catch {
-      get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
-    }
-  }, []);
 
   // Data with sample fallbacks
   const top3    = tasks.filter(t => !tDone[t.id]).slice(0, 3).length > 0 ? tasks.filter(t => !tDone[t.id]).slice(0, 3) : SAMPLE_TOP3;
@@ -416,7 +385,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const emails   = emailsImportant.length > 0 ? emailsImportant.slice(0, 5) : SAMPLE_EMAILS;
   const linItems = linearItems.length > 0 ? linearItems.slice(0, 13) : SAMPLE_LINEAR;
   const todayStr = new Date().toISOString().slice(0, 10);
-  const dueTodayCount = linItems.filter(l => l.dueDate === todayStr).length;
   const wb       = computeWorkBlocks(meetings);
 
   const trackStatus = (l: LinearItem): "overdue" | "due-today" | "at-risk" | "ok" => {
@@ -664,72 +632,65 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </tbody>
             </table>
 
-            {/* ── SCRATCH NOTES — dynamic height based on Linear items due today ── */}
-            <SL
-              text="📝 Scratch Notes"
-              color="#555"
-              time={dueTodayCount > 0 ? `${dueTodayCount} Linear item${dueTodayCount > 1 ? "s" : ""} due today` : undefined}
-            />
-            {/* minHeight grows with items due today: baseline 200px + 36px per due item */}
-            <div style={{ border: HEAVY, borderRadius: 3, background: "#FDFDFC", marginBottom: 12, overflow: "hidden", minHeight: Math.max(200, 200 + dueTodayCount * 36) }}>
-              {scratchNotes.length === 0 && (
-                <div style={{ padding: "16px 14px", fontSize: 11, color: "#ccc", fontStyle: "italic" }}>No notes yet — use this space for quick thoughts, action items, and follow-ups as you work through Linear.</div>
-              )}
-              {scratchNotes.map((note) => (
-                <div key={note.id} className="dash-row-hover" style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "9px 14px",
-                  borderBottom: "1px solid #EBEBEB", background: "#FDFDFC",
-                }}>
-                  <CB id={`sn-${note.id}`} checked={note.checked} onToggle={() => toggleScratchNote(note.id)} />
-                  <div style={{ flex: 1, fontSize: 13, fontWeight: 500,
-                    color: note.checked ? "#bbb" : BLK,
-                    textDecoration: note.checked ? "line-through" : "none",
-                    opacity: note.checked ? 0.5 : 1,
-                  }}>{note.text}</div>
-                  <button
-                    onClick={() => deleteScratchNote(note.id)}
-                    style={{
-                      background: "none", border: "none", cursor: "pointer", padding: "0 4px",
-                      fontSize: 12, color: "#ccc", lineHeight: 1, flexShrink: 0,
-                    }}
-                    title="Delete note"
-                  >✕</button>
-                </div>
-              ))}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderTop: scratchNotes.length > 0 ? "1px solid #EBEBEB" : "none" }}>
-                <input
-                  ref={scratchInputRef}
-                  value={scratchInput}
-                  onChange={e => setScratchInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") addScratchNote(); }}
-                  placeholder="Add a note, action item, or thought..."
-                  style={{
-                    flex: 1, border: "none", outline: "none", fontSize: 13,
-                    fontFamily: F, background: "transparent", color: BLK,
-                    padding: "2px 0",
-                  }}
-                />
-                <button
-                  onClick={addScratchNote}
-                  disabled={!scratchInput.trim()}
-                  style={{
-                    background: scratchInput.trim() ? BLK : "#EEE",
-                    color: scratchInput.trim() ? "#fff" : "#bbb",
-                    border: "none", borderRadius: 3, cursor: scratchInput.trim() ? "pointer" : "default",
-                    fontSize: 10, fontWeight: 700, padding: "3px 10px", flexShrink: 0,
-                    transition: "all 0.12s",
-                  }}
-                >Add</button>
-              </div>
-            </div>
+            {/* ── TODAY'S WINS ── */}
+            <SL text="🏆 Today's Wins" color="#B7791F" />
+            <div style={{ border: "2px solid #B7791F33", borderRadius: 4, background: "#FFFBF2", overflow: "hidden", marginBottom: 2 }}>
 
-            {/* ── 3 WINS ── */}
-            <SL text="🏆 3 Wins for Today" color="#B7791F" />
-            <div style={{ border: "2px solid #B7791F33", borderRadius: 4, background: "#FFFBF2", padding: "4px 10px" }}>
-              {[1, 2, 3].map(n => (
-                <div key={n} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: n < 3 ? "1px solid #EEE4CC" : "none" }}>
-                  <span style={{ fontSize: 14, fontWeight: 900, color: "#B7791F", width: 18, flexShrink: 0 }}>{n}.</span>
-                  <div style={{ flex: 1, height: 1, background: "#E8D5A3" }} />
+              {/* ── Auto-detected wins ── */}
+              {(() => {
+                const callsDone = callList.filter((_, i) => ck(`call-${i}`)).length;
+                const callWin = callsDone >= 10;
+                const apptWin = meetings.length >= 3;
+                const autoWins: { label: string; detail: string; done: boolean }[] = [
+                  {
+                    label: "10 Sales Calls",
+                    detail: callWin ? "All 10 done 🔥" : `${callsDone} / 10 calls checked off`,
+                    done: callWin,
+                  },
+                  {
+                    label: "3 Appointments Booked",
+                    detail: apptWin ? `${meetings.length} on the calendar ✓` : `${meetings.length} real event${meetings.length !== 1 ? "s" : ""} on calendar`,
+                    done: apptWin,
+                  },
+                ];
+                return autoWins.map((w, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 14px", borderBottom: "1px solid #EEE4CC",
+                    background: w.done ? "#F0FDF4" : "#FFFBF2",
+                  }}>
+                    <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1 }}>{w.done ? "✓" : "○"}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: w.done ? "#14532D" : "#78350F" }}>{w.label}</div>
+                      <div style={{ fontSize: 10, color: w.done ? "#15803D" : "#A16207", marginTop: 1 }}>{w.detail}</div>
+                    </div>
+                    {w.done && <span style={{ fontSize: 10, fontWeight: 800, color: "#16A34A", letterSpacing: 0.4 }}>WIN</span>}
+                  </div>
+                ));
+              })()}
+
+              {/* ── Manual win entries ── */}
+              {wins.map((val, i) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: i < wins.length - 1 ? "1px solid #EEE4CC" : "none",
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: "#B7791F", width: 18, flexShrink: 0, textAlign: "center" }}>
+                    {i + 3}.
+                  </span>
+                  <input
+                    value={val}
+                    onChange={e => updateWin(i, e.target.value)}
+                    placeholder={`Add win #${i + 3}…`}
+                    style={{
+                      flex: 1, border: "none", outline: "none",
+                      fontSize: 12, fontWeight: val ? 600 : 400,
+                      fontFamily: F, background: "transparent",
+                      color: val ? "#78350F" : "#C49A3A",
+                      padding: "2px 0",
+                    }}
+                  />
                 </div>
               ))}
             </div>

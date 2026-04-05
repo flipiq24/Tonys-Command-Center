@@ -357,8 +357,8 @@ async function fetchLiveLinear(): Promise<LinearItem[] | null> {
       url: n.url,
     });
 
-    const active = activeIssues.slice(0, 8).map((n, i) => mapIssue(n, i, false));
-    const completed = completedIssues.slice(0, 5).map((n, i) => mapIssue(n, i, true));
+    const active = activeIssues.slice(0, 20).map((n, i) => mapIssue(n, i, false));
+    const completed = completedIssues.slice(0, 8).map((n, i) => mapIssue(n, i, true));
     return [...active, ...completed];
   } catch (err) {
     console.warn("[brief] Linear live fetch failed:", err instanceof Error ? err.message : err);

@@ -607,7 +607,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     return l.stateType === "started" || l.dueDate === todayStr || (!!l.dueDate && l.dueDate < todayStr);
   };
   const allLinItems = linearItems
-    .filter(isActionable)
+    .filter(l => l.state === "In Progress" || l.state === "In QA")
     .sort((a, b) => priorityRank(a) - priorityRank(b));
   const ethanItems  = allLinItems.filter(l => l.who?.toLowerCase().includes("ethan"));
   const ramiItems   = allLinItems.filter(l => l.who?.toLowerCase().includes("rami") || l.who?.toLowerCase().includes("ramy") || l.who?.toLowerCase().includes("remy"));
@@ -794,6 +794,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   <TH w={22} center>✓</TH>
                   <TH w={22} center>#</TH>
                   <TH w={68}>ID</TH>
+                  <TH w={80}>STATUS</TH>
                   <TH>TASK</TH>
                   <TH w={64}>OWNER</TH>
                   <TH w={24} center>🚩</TH>
@@ -805,7 +806,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </thead>
               <tbody>
                 {linItems.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
+                  <tr><td colSpan={11} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
                 )}
                 {linItems.map((l, i) => {
                   const isCompleted = l.stateType === "completed" || l.stateType === "cancelled";
@@ -848,6 +849,15 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                           ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#E65100", textDecoration: "none" }}>{l.identifier || l.id}</a>
                           : <span style={{ color: "#E65100" }}>{l.identifier || l.id}</span>
                         }
+                      </TD>
+                      <TD small>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 10,
+                          background: l.state === "In Progress" ? "#EFF6FF" : l.state === "In QA" ? "#F0FDF4" : "#F5F5F5",
+                          color: l.state === "In Progress" ? "#1D4ED8" : l.state === "In QA" ? "#15803D" : "#777",
+                          border: `1px solid ${l.state === "In Progress" ? "#BFDBFE" : l.state === "In QA" ? "#BBF7D0" : "#E5E7EB"}`,
+                          whiteSpace: "nowrap",
+                        }}>{l.state || "—"}</span>
                       </TD>
                       <TD strike={isCompleted}>
                         <span style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -1069,31 +1079,37 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, color: "#93C5FD", letterSpacing: 0.6 }}>{hoveredLin.id}</span>
+            {hoveredLin.url
+              ? <a href={hoveredLin.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, fontWeight: 800, color: "#93C5FD", letterSpacing: 0.6, textDecoration: "none" }}>{hoveredLin.identifier || hoveredLin.id}</a>
+              : <span style={{ fontSize: 10, fontWeight: 800, color: "#93C5FD", letterSpacing: 0.6 }}>{hoveredLin.identifier || hoveredLin.id}</span>
+            }
             {hoveredLin.state && (
               <span style={{
                 fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 20,
-                background: hoveredLin.stateType === "completed" ? "#14532D44" : hoveredLin.stateType === "started" ? "#1E3A5F44" : "#33333366",
-                color: hoveredLin.stateType === "completed" ? "#86EFAC" : hoveredLin.stateType === "started" ? "#93C5FD" : "#AAA",
+                background: hoveredLin.state === "In Progress" ? "#1E3A5F44" : hoveredLin.state === "In QA" ? "#14532D44" : "#33333366",
+                color: hoveredLin.state === "In Progress" ? "#93C5FD" : hoveredLin.state === "In QA" ? "#86EFAC" : "#AAA",
                 border: "1px solid",
-                borderColor: hoveredLin.stateType === "completed" ? "#86EFAC44" : hoveredLin.stateType === "started" ? "#93C5FD44" : "#55555544",
+                borderColor: hoveredLin.state === "In Progress" ? "#93C5FD44" : hoveredLin.state === "In QA" ? "#86EFAC44" : "#55555544",
               }}>{hoveredLin.state}</span>
             )}
           </div>
           <div style={{ fontWeight: 700, fontSize: 13, color: "#FFFFFF", marginBottom: 8, lineHeight: 1.4 }}>{hoveredLin.task}</div>
-          {hoveredLin.description && (
-            <div style={{ fontSize: 10.5, color: "#C0C0C0", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #333", lineHeight: 1.5 }}>
-              {hoveredLin.description.length > 280 ? hoveredLin.description.slice(0, 280) + "…" : hoveredLin.description}
-            </div>
-          )}
-          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: "4px 8px", fontSize: 10.5 }}>
-            <span style={{ color: "#777" }}>Assignee</span>
+          {hoveredLin.description && (() => {
+            const cleanDesc = hoveredLin.description.replace(/https?:\/\/\S+/g, "").replace(/\s{2,}/g, " ").trim();
+            return cleanDesc ? (
+              <div style={{ fontSize: 10.5, color: "#C0C0C0", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #333", lineHeight: 1.5 }}>
+                {cleanDesc.length > 240 ? cleanDesc.slice(0, 240) + "…" : cleanDesc}
+              </div>
+            ) : null;
+          })()}
+          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "4px 8px", fontSize: 10.5 }}>
+            <span style={{ color: "#777" }}>Owner</span>
             <span style={{ color: "#F5F5F5" }}>{hoveredLin.who || "—"}</span>
             <span style={{ color: "#777" }}>Priority</span>
             <span style={{ color: hoveredLin.level === "high" ? "#FCA5A5" : hoveredLin.level === "mid" ? "#FCD34D" : "#AAA", fontWeight: 600 }}>
-              {hoveredLin.level === "high" ? "🔴 High" : hoveredLin.level === "mid" ? "⚠ Medium" : "Low"}
+              {hoveredLin.level === "high" ? "High" : hoveredLin.level === "mid" ? "Medium" : "Low"}
             </span>
-            <span style={{ color: "#777" }}>Due Date</span>
+            <span style={{ color: "#777" }}>Due</span>
             <span style={{ color: "#F5F5F5" }}>{fmtDue(hoveredLin.dueDate)}</span>
             <span style={{ color: "#777" }}>Size</span>
             <span style={{ color: "#F5F5F5", fontWeight: 700 }}>{hoveredLin.size || "—"}</span>
@@ -1105,8 +1121,10 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             )}
           </div>
           {hoveredLin.url && (
-            <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333", fontSize: 10, color: "#93C5FD" }}>
-              Click anywhere on the row to open in Linear ↗
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333" }}>
+              <a href={hoveredLin.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#93C5FD", textDecoration: "none", fontWeight: 600 }}>
+                Open in Linear ↗
+              </a>
             </div>
           )}
         </div>

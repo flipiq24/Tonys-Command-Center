@@ -25,7 +25,7 @@ type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales
 
 
 export default function App() {
-  const [view, setView] = useState<View>("checkin");
+  const [view, setView] = useState<View>("dashboard");
   const [prevView, setPrevView] = useState<View>("emails");
   const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
   const [loading, setLoading] = useState(true);
@@ -376,21 +376,6 @@ export default function App() {
     );
   }
 
-  // ═══ GATE: Check-in ═══
-  if (!ck.done) {
-    return <CheckinGate initial={ck} onComplete={(completed) => { setCk(completed); setView("journal"); }} />;
-  }
-
-  // ═══ VIEW: Check-in (re-open from hamburger menu) ═══
-  if (view === "checkin") {
-    return <CheckinGate initial={ck} onComplete={(completed) => { setCk(completed); setView(prevView || "emails"); }} />;
-  }
-
-  // ═══ GATE: Journal ═══
-  if (view === "journal") {
-    return <JournalGate onComplete={() => setView("dashboard")} />;
-  }
-
   // ═══ CHAT VIEW (full screen) ═══
   if (view === "chat") {
     return (
@@ -493,6 +478,26 @@ export default function App() {
       )}
       <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
+
+      {/* ═══ GATE OVERLAY: Check-in ═══ */}
+      {(!ck.done || view === "checkin") && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, overflowY: "auto", background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)" }}>
+          <CheckinGate
+            initial={ck}
+            onComplete={(completed) => {
+              setCk(completed);
+              setView(ck.done ? (prevView || "dashboard") : "journal");
+            }}
+          />
+        </div>
+      )}
+
+      {/* ═══ GATE OVERLAY: Journal ═══ */}
+      {view === "journal" && ck.done && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, overflowY: "auto", background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)" }}>
+          <JournalGate onComplete={() => setView("dashboard")} />
+        </div>
+      )}
       <EmailCompose
         open={!!emailCompose}
         onClose={() => setEmailCompose(null)}
@@ -515,8 +520,8 @@ export default function App() {
     </>
   );
 
-  // ═══ DASHBOARD VIEW ═══
-  if (view === "dashboard") return (
+  // ═══ DASHBOARD VIEW (also serves as background for gate overlays) ═══
+  if (view === "dashboard" || view === "checkin" || view === "journal") return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#fff", fontFamily: F }}>
       {sharedHeader}
       {sharedModals}

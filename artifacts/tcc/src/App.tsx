@@ -127,6 +127,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Live Linear data — fetch fresh on mount and every 5 minutes
+  const [liveLinear, setLiveLinear] = useState<LinearItem[]>([]);
+  useEffect(() => {
+    const fetchLinear = async () => {
+      try {
+        const data = await get<LinearItem[]>("/linear/live");
+        if (Array.isArray(data) && data.length > 0) setLiveLinear(data);
+      } catch { /* silent fail — brief fallback used */ }
+    };
+    fetchLinear();
+    const interval = setInterval(fetchLinear, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Auto-EOD at 4:30 PM Pacific — polls every minute, handles retroactive send
   useEffect(() => {
     let eodSentToday = false;
@@ -395,6 +409,9 @@ export default function App() {
   // Real calendar items only (matches what DashboardView shows)
   const realCalItems = (brief?.calendarData || []).filter(c => c.real);
 
+  // Live Linear data takes precedence over cached brief data
+  const activeLinearItems: LinearItem[] = liveLinear.length ? liveLinear : (brief?.linearItems || []);
+
   // ═══ SHARED UI ELEMENTS ═══
   const sharedHeader = (
     <Header
@@ -408,7 +425,7 @@ export default function App() {
       lastRefresh={lastRefresh}
       refreshing={refreshing}
       slackItems={(brief?.slackItems || []) as SlackItem[]}
-      linearItems={(brief?.linearItems || []) as LinearItem[]}
+      linearItems={activeLinearItems}
       meetingWarning={meetingWarning}
       onSetView={v => persistView(v as View)}
       onToggleCal={() => setCalSide(s => !s)}
@@ -468,7 +485,7 @@ export default function App() {
           calendarData={brief?.calendarData || []}
           emailsImportant={brief?.emailsImportant || []}
           slackItems={brief?.slackItems || []}
-          linearItems={brief?.linearItems || []}
+          linearItems={activeLinearItems}
           topCallContacts={contacts.map(c => ({ name: c.name, phone: c.phone, company: c.company, nextStep: c.nextStep }))}
           onClose={() => setPrintMode(false)}
           onRefresh={() => refreshBrief(["calendar", "emails"])}
@@ -508,7 +525,7 @@ export default function App() {
         tDone={tDone}
         calendarData={brief?.calendarData || []}
         emailsImportant={brief?.emailsImportant || []}
-        linearItems={(brief?.linearItems || []) as LinearItem[]}
+        linearItems={activeLinearItems}
         contacts={contacts}
         onComplete={handleTaskComplete}
         onNavigate={v => persistView(v as View)}

@@ -25,6 +25,12 @@ const server = app.listen(port, () => {
 
   // Start server-side EOD scheduler (checks every 60s if it's past 4:30 PM Pacific)
   startEodScheduler();
+
+  // Start business plan ingest scheduler (runs daily at 4 AM Pacific)
+  startBusinessPlanIngest();
+
+  // Start demo feedback scanner (runs hourly between 9 AM – 6 PM Pacific)
+  startDemoFeedbackScanner();
 });
 
 server.on("error", (err) => {
@@ -59,4 +65,62 @@ function startEodScheduler(): void {
       logger.warn({ err }, "EOD scheduler: error during check");
     }
   }, 60 * 1000);
+}
+
+// ── Business Plan ingest — runs daily at 4 AM Pacific ────────────────────────
+function startBusinessPlanIngest(): void {
+  let lastIngestDate = "";
+  logger.info("Business plan ingest scheduler started — checks every 5m for 4 AM Pacific trigger");
+  setInterval(async () => {
+    try {
+      const nowPacific = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+      const pacific = new Date(nowPacific);
+      const hour = pacific.getHours();
+      const minute = pacific.getMinutes();
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+      // Trigger between 4:00 and 4:30 AM Pacific, once per day
+      if (hour === 4 && minute < 30 && today !== lastIngestDate) {
+        lastIngestDate = today;
+        const { syncContextIngest } = await import("./routes/tcc/sheets-sync.js");
+        await syncContextIngest();
+        logger.info({ today }, "Business plan ingest: completed");
+      }
+    } catch (err) {
+      logger.warn({ err }, "Business plan ingest scheduler: error during check");
+    }
+  }, 5 * 60 * 1000); // check every 5 minutes
+}
+
+// ── Demo feedback scanner — runs hourly between 9 AM – 6 PM Pacific ──────────
+function startDemoFeedbackScanner(): void {
+  let lastScanHour = -1;
+  logger.info("Demo feedback scanner started — runs hourly 9 AM–6 PM Pacific");
+  setInterval(async () => {
+    try {
+      const nowPacific = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+      const pacific = new Date(nowPacific);
+      const hour = pacific.getHours();
+      // Scan once per hour, between 9 AM and 6 PM
+      if (hour >= 9 && hour < 18 && hour !== lastScanHour) {
+        lastScanHour = hour;
+        const { analyzeDemoRecording } = await import("./lib/demo-feedback.js");
+        // Pull today's events from calendar and analyze demo recordings
+        const { listTodayEvents } = await import("./lib/gcal.js");
+        const allEvents = await listTodayEvents();
+        const demoEvents = (allEvents || []).filter((e: { summary?: string }) =>
+          /demo|pitch|presentation/i.test(e.summary || "")
+        );
+        for (const evt of demoEvents.slice(0, 3)) {
+          if (!evt.summary || !evt.start) continue;
+          const eventDate = new Date(evt.start).toLocaleDateString("en-CA");
+          await analyzeDemoRecording(evt.summary, eventDate).catch(() => null);
+        }
+        if (demoEvents.length > 0) {
+          logger.info({ count: demoEvents.length, hour }, "Demo feedback scanner: processed demos");
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Demo feedback scanner: error during check");
+    }
+  }, 10 * 60 * 1000); // check every 10 minutes, runs at most once per hour
 }

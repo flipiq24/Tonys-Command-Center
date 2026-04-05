@@ -374,6 +374,65 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         </div>
 
+        {/* ── Focus Top-3 (always-visible pinned section) ── */}
+        {(() => {
+          const briefTop = activeTasks.filter(t => !t.sales).slice(0, 2);
+          const salesDone = tasks.some(t => t.sales && tDone[t.id]);
+          const top3: Array<{ label: string; done: boolean; onClick?: () => void; sub?: string }> = [
+            {
+              label: "10 Sales Calls",
+              done: salesDone,
+              onClick: onSwitchToSales,
+              sub: "Tap to open Sales tracker",
+            },
+            briefTop[0]
+              ? { label: briefTop[0].text, done: tDone[briefTop[0].id] ?? false, onClick: () => {} }
+              : { label: "—", done: false },
+            briefTop[1]
+              ? { label: briefTop[1].text, done: tDone[briefTop[1].id] ?? false, onClick: () => {} }
+              : { label: "—", done: false },
+          ];
+          return (
+            <div style={{ margin: "16px 0 8px" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 6 }}>
+                ★ Focus Top-3
+              </div>
+              {top3.map((item, idx) => (
+                <div
+                  key={idx}
+                  onClick={item.onClick}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
+                    background: idx === 0 ? "#F8F8F8" : "transparent",
+                    border: `1px solid ${idx === 0 ? C.tx + "22" : C.brd}`,
+                    borderRadius: 8, marginBottom: 6,
+                    cursor: item.onClick ? "pointer" : "default",
+                    opacity: item.done ? 0.45 : 1,
+                    transition: "opacity 0.15s",
+                  }}
+                  onMouseEnter={e => { if (item.onClick) e.currentTarget.style.background = "#F0F0F0"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = idx === 0 ? "#F8F8F8" : "transparent"; }}
+                >
+                  <span style={{
+                    fontFamily: "Georgia, serif", fontWeight: 800, fontSize: 13, color: C.sub,
+                    width: 18, textAlign: "center", flexShrink: 0,
+                  }}>{idx + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 13, fontWeight: 600, color: C.tx,
+                      textDecoration: item.done ? "line-through" : "none",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>{item.label}</div>
+                    {item.sub && <div style={{ fontSize: 11, color: C.sub, marginTop: 1 }}>{item.sub}</div>}
+                  </div>
+                  {item.done && <span style={{ fontSize: 11, color: C.grn, fontWeight: 700, flexShrink: 0 }}>✓</span>}
+                  {!item.done && item.onClick && idx === 0 && <span style={{ fontSize: 14, color: C.sub, flexShrink: 0 }}>›</span>}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* My Tasks (local) */}
         {activeLocals.length > 0 && (
           <div>

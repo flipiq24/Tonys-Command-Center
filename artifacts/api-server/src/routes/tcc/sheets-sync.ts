@@ -38,16 +38,48 @@ async function clearAndWriteTab(spreadsheetId: string, tabName: string, rows: (s
 export async function syncTasksTab(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
-    const { taskCompletionsTable } = await import("@workspace/db");
-    const tasks = await db.select().from(taskCompletionsTable).orderBy(desc(taskCompletionsTable.completedAt)).limit(500);
-    const header = ["Task ID", "Task Text", "Completed At"];
-    const rows: (string | null)[][] = tasks.map(t => [
-      t.taskId,
-      t.taskText,
-      t.completedAt ? new Date(t.completedAt).toISOString() : null,
-    ]);
+    const { taskCompletionsTable, localTasksTable } = await import("@workspace/db");
+    const { taskWorkNotesTable } = await import("../../lib/schema-v2.js");
+
+    // Pull all local tasks (active + recently completed)
+    const localTasks = await db.select().from(localTasksTable).limit(500);
+    // Pull completions for reference
+    const completions = await db.select().from(taskCompletionsTable)
+      .orderBy(desc(taskCompletionsTable.completedAt)).limit(500);
+    const completionMap = new Map(completions.map(c => [c.taskId, c]));
+    // Pull latest work note per task
+    const notes = await db.select().from(taskWorkNotesTable)
+      .orderBy(desc(taskWorkNotesTable.createdAt)).limit(2000);
+    const latestNote = new Map<string, typeof notes[0]>();
+    for (const n of notes) {
+      if (!latestNote.has(n.taskId)) latestNote.set(n.taskId, n);
+    }
+
+    const header = [
+      "Task", "Source", "Owner", "Priority", "Status",
+      "Start Date", "Completed Date", "Due Date", "Notes",
+      "90-Day Link", "Linear ID",
+    ];
+    const rows: (string | number | null)[][] = localTasks.map(t => {
+      const comp = completionMap.get(t.id);
+      const note = latestNote.get(t.id);
+      return [
+        t.text,
+        t.taskType || "Manual",
+        "Tony",
+        t.priority != null ? String(t.priority) : null,
+        comp ? "Completed" : (t.status || "Active"),
+        t.createdAt ? new Date(t.createdAt).toLocaleDateString("en-US") : null,
+        comp?.completedAt ? new Date(comp.completedAt).toLocaleDateString("en-US") : null,
+        t.dueDate || null,
+        note?.note || null,
+        null, // 90-day link — future
+        null, // Linear ID — future
+      ];
+    });
+
     await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
-    console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows`);
+    console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (11 columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncTasksTab failed:", (err as Error).message);
   }
@@ -96,6 +128,42 @@ export async function syncCommsTab(): Promise<void> {
     console.log(`[sheets-sync] Comms tab synced: ${rows.length} rows`);
   } catch (err) {
     console.warn("[sheets-sync] syncCommsTab failed:", (err as Error).message);
+  }
+}
+
+export async function syncContextIngest(): Promise<void> {
+  try {
+    const docText = await readGoogleDoc(PLAN_90_DAY_ID);
+    if (!docText || docText.length < 50) {
+      console.warn("[sheets-sync] syncContextIngest: 90-day plan document appears empty");
+      return;
+    }
+    let summary = docText.substring(0, 500);
+    try {
+      const msg = await anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 256,
+        messages: [{
+          role: "user",
+          content: `Summarize this 90-day business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, 3000)}`,
+        }],
+      });
+      const block = msg.content[0];
+      if (block.type === "text") summary = block.text;
+    } catch { /* use substring fallback */ }
+
+    await db.insert(businessContextTable).values({
+      documentType: "90_day_plan",
+      content: docText.substring(0, 10000),
+      summary,
+      lastUpdated: new Date(),
+    }).onConflictDoUpdate({
+      target: businessContextTable.documentType,
+      set: { content: docText.substring(0, 10000), summary, lastUpdated: new Date() },
+    });
+    console.log(`[sheets-sync] syncContextIngest: 90-day plan ingested (${docText.length} chars)`);
+  } catch (err) {
+    console.warn("[sheets-sync] syncContextIngest failed:", (err as Error).message);
   }
 }
 

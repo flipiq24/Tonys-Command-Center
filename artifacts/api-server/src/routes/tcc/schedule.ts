@@ -3,6 +3,7 @@ import { gte } from "drizzle-orm";
 import { db, callLogTable, ideasTable } from "@workspace/db";
 import { createEvent } from "../../lib/gcal.js";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { postSlackMessage } from "../../lib/slack.js";
 import z from "zod";
 
 const router: IRouter = Router();
@@ -17,9 +18,25 @@ function timeToMinutes(t: string): number | null {
   return parseInt(m[1]) * 60 + parseInt(m[2]);
 }
 
+function getPacificOffset(dateStr: string): string {
+  // Determine whether the given date falls in PDT (UTC-7) or PST (UTC-8)
+  // PDT: 2nd Sunday of March 2 AM → 1st Sunday of November 2 AM
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  // 2nd Sunday of March
+  const marchFirst = new Date(Date.UTC(year, 2, 1));
+  const marchSecondSun = new Date(Date.UTC(year, 2,
+    (marchFirst.getUTCDay() === 0 ? 8 : 15 - marchFirst.getUTCDay())));
+  // 1st Sunday of November
+  const novFirst = new Date(Date.UTC(year, 10, 1));
+  const novFirstSun = new Date(Date.UTC(year, 10,
+    (novFirst.getUTCDay() === 0 ? 1 : 8 - novFirst.getUTCDay())));
+  return d >= marchSecondSun && d < novFirstSun ? "-07:00" : "-08:00";
+}
+
 function buildISO(date: string, time: string): string {
   // date = YYYY-MM-DD, time = HH:MM (24h)
-  return `${date}T${time}:00-07:00`; // Pacific (PT) — handles DST offset
+  return `${date}T${time}:00${getPacificOffset(date)}`;
 }
 
 async function getTodayCallCount(): Promise<number> {
@@ -43,6 +60,47 @@ const CATEGORY_COLOR_ID: Record<string, string> = {
   "NEEDS PLANNING": "8",  // Blueberry (indigo)
   "SALES Tech":     "2",  // Sage (light green)
 };
+
+// ── Scope gatekeeper ─────────────────────────────────────────────────────────
+// Priority: Sales activities > Ramy (CSM ops) > Ethan (COO ops) > Other
+async function checkMeetingScope(title: string, description?: string): Promise<{
+  inScope: boolean;
+  category: "Sales" | "CSM" | "COO" | "Other";
+  warning?: string;
+}> {
+  try {
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 256,
+      messages: [{
+        role: "user",
+        content: `You are Tony Diaz's scheduling gatekeeper for FlipIQ, a real estate wholesale platform.
+Tony's daily priority: 10 Sales Calls first, then demos/follow-ups, then everything else.
+Classify this meeting and return ONLY valid JSON.
+
+Meeting: "${title}"${description ? `\nDescription: "${description}"` : ""}
+
+Categories (in priority order):
+- "Sales": Sales calls, demos, investor calls, buyer/seller conversations, acquisition calls
+- "CSM": Ramy-related ops, OMS, title company, compliance, customer success
+- "COO": Ethan-related ops, investor updates, legal, finance, hiring, Linear/engineering review
+- "Other": Everything else — could distract from core revenue activities
+
+Return: {"inScope": true/false, "category": "Sales|CSM|COO|Other", "warning": "optional one-line warning if Other"}
+inScope = false ONLY if category is "Other" AND it seems like a distraction from revenue.
+Return ONLY the JSON, no markdown.`
+      }]
+    });
+    const block = msg.content[0];
+    if (block.type !== "text") return { inScope: true, category: "Other" };
+    const parsed = JSON.parse(block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, ""));
+    return { inScope: parsed.inScope ?? true, category: parsed.category ?? "Other", warning: parsed.warning };
+  } catch {
+    return { inScope: true, category: "Other" }; // fail open
+  }
+}
+
+const ETHAN_SLACK_USER = "ethan"; // will DM via Slack if we can find his ID
 
 const AddEventBody = z.object({
   title: z.string().min(1),
@@ -88,6 +146,31 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
   if (guiltTrip && !forceOverride) {
     res.json({ ok: false, guiltTrip: true, guiltTripMsg, callsMade, quotaTarget: CALL_QUOTA });
     return;
+  }
+
+  // ── Scope gatekeeper (AI check — fires in parallel, non-blocking) ─────────
+  let scopeWarning: string | undefined;
+  let scopeCategory = "Other";
+  if (!allDay) {
+    const scope = await checkMeetingScope(title, description).catch(() => ({ inScope: true, category: "Other" as const }));
+    scopeCategory = scope.category;
+    if (!scope.inScope && !forceOverride) {
+      res.json({
+        ok: false, scopeBlock: true,
+        scopeMsg: scope.warning || `"${title}" doesn't look like a Sales or ops meeting. Your North Star is 10 calls/day. Force override?`,
+        scopeCategory: scope.category,
+        callsMade, quotaTarget: CALL_QUOTA,
+      });
+      return;
+    }
+    if (!scope.inScope && forceOverride) {
+      scopeWarning = scope.warning;
+      // Notify Ethan via Slack that Tony force-overrode an out-of-scope meeting
+      postSlackMessage({
+        channel: "#ethan-alerts",
+        text: `⚠️ Tony force-overrode a non-Sales meeting: *${title}* on ${date}${startTime ? ` at ${startTime}` : ""}\n_${scope.warning || "Flagged as out-of-scope by AI gatekeeper"}_`,
+      }).catch(() => { /* non-critical */ });
+    }
   }
 
   // ── Build Google Calendar event ──────────────────────────────────────────

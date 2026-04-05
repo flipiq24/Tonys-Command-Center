@@ -23,14 +23,6 @@ import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Id
 
 type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "tasks" | "chat";
 
-const DEFAULT_CONTACTS: Contact[] = [
-  { id: "1", name: "Mike Oyoque", company: "MR EXCELLENCE", status: "Warm", phone: "(555) 123-4567", nextStep: "Follow up demo", lastContactDate: "Mar 25" },
-  { id: "2", name: "Xander Clemens", company: "Family Office Club", status: "Hot", phone: "(555) 234-5678", nextStep: "Intro call — 10K investors", lastContactDate: "Mar 30" },
-  { id: "3", name: "Fernando Perez", company: "Park Ave Capital", status: "New", phone: "(555) 345-6789", nextStep: "Call re: Chino", lastContactDate: "Today" },
-  { id: "4", name: "Tony Fletcher", company: "LPT/FairClose", status: "Warm", phone: "(555) 456-7890", nextStep: "Broker Playbook", lastContactDate: "Apr 1" },
-  { id: "5", name: "Kyle Draper", company: "", status: "New", phone: "(555) 567-8901", nextStep: "Demo?", lastContactDate: "Mar 28" },
-  { id: "6", name: "Chris Craddock", company: "EXP Realty", status: "New", phone: "(555) 678-9012", nextStep: "#1 EXP recruiter", lastContactDate: "Never" },
-];
 
 export default function App() {
   const [view, setView] = useState<View>("checkin");
@@ -272,19 +264,17 @@ export default function App() {
     })();
   }, []);
 
-  // Load contacts lazily when entering sales
+  // Load contacts on mount so Dashboard call list is populated immediately
   useEffect(() => {
-    if (view === "sales" && !contactsLoaded) {
-      get<{ contacts: Contact[]; total: number } | Contact[]>("/contacts?limit=50").then(r => {
-        const list = Array.isArray(r) ? r : r.contacts;
-        setContacts(list.length > 0 ? list : DEFAULT_CONTACTS);
-        setContactsLoaded(true);
-      }).catch(() => {
-        setContacts(DEFAULT_CONTACTS);
-        setContactsLoaded(true);
-      });
-    }
-  }, [view, contactsLoaded]);
+    if (contactsLoaded) return;
+    get<{ contacts: Contact[]; total: number } | Contact[]>("/contacts?limit=50").then(r => {
+      const list = Array.isArray(r) ? r : r.contacts;
+      setContacts(list);
+      setContactsLoaded(true);
+    }).catch(() => {
+      setContactsLoaded(true);
+    });
+  }, [contactsLoaded]);
 
   const handleSnooze = useCallback((emailId: number, until: string) => {
     setSnoozed(prev => ({ ...prev, [emailId]: until }));
@@ -519,7 +509,7 @@ export default function App() {
         calendarData={brief?.calendarData || []}
         emailsImportant={brief?.emailsImportant || []}
         linearItems={(brief?.linearItems || []) as LinearItem[]}
-        contacts={contacts.map(c => ({ name: c.name, phone: c.phone, company: c.company, status: c.status }))}
+        contacts={contacts}
         onComplete={handleTaskComplete}
         onNavigate={v => persistView(v as View)}
         onOpenEmail={em => setEmailCompose({ threadId: em.gmailMessageId, subject: `Re: ${em.subj}` })}

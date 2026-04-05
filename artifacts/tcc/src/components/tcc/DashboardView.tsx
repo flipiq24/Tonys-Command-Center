@@ -625,7 +625,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
             {/* ── SALES CALLS ── */}
             <div style={{ marginBottom: 12 }}>
-              <SL text="📞 Sales Calls — 10 Today" color="#C62828" time={wb.salesCalls} view="sales" onNavigate={onNavigate} />
+              <SL text="📞 Sales Calls — 10 Today" color="#C62828" view="sales" onNavigate={onNavigate} />
               <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
                 <thead>
                   <tr><TH w={22} center>✓</TH><TH w={18} center>#</TH><TH>NAME / CO.</TH><TH w={80}>PHONE</TH><TH w={52}>STATUS</TH></tr>

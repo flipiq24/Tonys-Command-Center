@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
-import { get, patch } from "@/lib/api";
+import { get, patch, post, del } from "@/lib/api";
 import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
 interface Contact { name: string; phone?: string; company?: string; status?: string; }
+interface ScratchNote { id: string; text: string; checked: boolean; position: number; }
 
 type NavView = "emails" | "schedule" | "sales" | "tasks";
 
@@ -222,8 +223,14 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
+  // ── Scratch Notes state ─────────────────────────────────────────
+  const [scratchNotes, setScratchNotes] = useState<ScratchNote[]>([]);
+  const [scratchInput, setScratchInput] = useState("");
+  const scratchInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
+    get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
   }, []);
 
   const toggle = useCallback((id: string) => {
@@ -237,6 +244,40 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     await patch(`/tasks/local/${id}`, { status: "done" }).catch(() => {});
     setLocalTasks(prev => prev.filter(t => t.id !== id));
   };
+
+  // ── Scratch Notes handlers ──────────────────────────────────────
+  const toggleScratchNote = useCallback(async (id: string) => {
+    const note = scratchNotes.find(n => n.id === id);
+    if (!note) return;
+    setScratchNotes(prev => prev.map(n => n.id === id ? { ...n, checked: !n.checked } : n));
+    try {
+      await patch(`/notes/scratch/${id}`, { checked: !note.checked });
+    } catch {
+      setScratchNotes(prev => prev.map(n => n.id === id ? { ...n, checked: note.checked } : n));
+    }
+  }, [scratchNotes]);
+
+  const addScratchNote = useCallback(async () => {
+    const text = scratchInput.trim();
+    if (!text) return;
+    setScratchInput("");
+    try {
+      const note = await post<ScratchNote>("/notes/scratch", { text });
+      setScratchNotes(prev => [...prev, note]);
+      scratchInputRef.current?.focus();
+    } catch {
+      setScratchInput(text);
+    }
+  }, [scratchInput]);
+
+  const deleteScratchNote = useCallback(async (id: string) => {
+    setScratchNotes(prev => prev.filter(n => n.id !== id));
+    try {
+      await del(`/notes/scratch/${id}`);
+    } catch {
+      get<ScratchNote[]>("/notes/scratch").then(setScratchNotes).catch(() => {});
+    }
+  }, []);
 
   // Data with sample fallbacks
   const top3    = tasks.filter(t => !tDone[t.id]).slice(0, 3).length > 0 ? tasks.filter(t => !tDone[t.id]).slice(0, 3) : SAMPLE_TOP3;
@@ -494,12 +535,56 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
             {/* ── SCRATCH NOTES ── */}
             <SL text="📝 Scratch Notes" color="#555" />
-            <div style={{ border: HEAVY, borderRadius: 3, padding: "10px 14px", background: "#FDFDFC", marginBottom: 12 }}>
-              {Array.from({ length: 18 }).map((_, i) => (
-                <div key={i} style={{ height: 26, borderBottom: i < 17 ? "1px solid #EBEBEB" : "none", display: "flex", alignItems: "flex-end" }}>
-                  <span style={{ fontSize: 8, color: "#DDD", marginBottom: 2, width: 14, flexShrink: 0, userSelect: "none" }}>{i + 1}</span>
+            <div style={{ border: HEAVY, borderRadius: 3, background: "#FDFDFC", marginBottom: 12, overflow: "hidden" }}>
+              {scratchNotes.length === 0 && (
+                <div style={{ padding: "12px 14px", fontSize: 10, color: "#ccc", fontStyle: "italic" }}>No notes yet — add one below</div>
+              )}
+              {scratchNotes.map((note) => (
+                <div key={note.id} className="dash-row-hover" style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "7px 12px",
+                  borderBottom: "1px solid #EBEBEB", background: "#FDFDFC",
+                }}>
+                  <CB id={`sn-${note.id}`} checked={note.checked} onToggle={() => toggleScratchNote(note.id)} />
+                  <div style={{ flex: 1, fontSize: 12, fontWeight: 500,
+                    color: note.checked ? "#bbb" : BLK,
+                    textDecoration: note.checked ? "line-through" : "none",
+                    opacity: note.checked ? 0.5 : 1,
+                  }}>{note.text}</div>
+                  <button
+                    onClick={() => deleteScratchNote(note.id)}
+                    style={{
+                      background: "none", border: "none", cursor: "pointer", padding: "0 2px",
+                      fontSize: 11, color: "#ccc", lineHeight: 1, flexShrink: 0,
+                    }}
+                    title="Delete note"
+                  >✕</button>
                 </div>
               ))}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderTop: scratchNotes.length > 0 ? "1px solid #EBEBEB" : "none" }}>
+                <input
+                  ref={scratchInputRef}
+                  value={scratchInput}
+                  onChange={e => setScratchInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") addScratchNote(); }}
+                  placeholder="Add a note..."
+                  style={{
+                    flex: 1, border: "none", outline: "none", fontSize: 12,
+                    fontFamily: F, background: "transparent", color: BLK,
+                    padding: "2px 0",
+                  }}
+                />
+                <button
+                  onClick={addScratchNote}
+                  disabled={!scratchInput.trim()}
+                  style={{
+                    background: scratchInput.trim() ? BLK : "#EEE",
+                    color: scratchInput.trim() ? "#fff" : "#bbb",
+                    border: "none", borderRadius: 3, cursor: scratchInput.trim() ? "pointer" : "default",
+                    fontSize: 10, fontWeight: 700, padding: "3px 10px", flexShrink: 0,
+                    transition: "all 0.12s",
+                  }}
+                >Add</button>
+              </div>
             </div>
 
             {/* ── 3 WINS ── */}

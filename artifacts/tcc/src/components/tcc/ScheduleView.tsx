@@ -175,7 +175,7 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
   })();
 
   return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 20px 40px" }}>
+    <div style={{ width: "100%", padding: "0 20px 40px", boxSizing: "border-box" }}>
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
         padding: "16px 0 12px",

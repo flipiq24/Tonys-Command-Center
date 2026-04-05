@@ -248,9 +248,9 @@ export function PrintView({
   const callList = topCallContacts.slice(0, 10);
   const meetings = calendarData.filter(c => c.real);
   const emails = emailsImportant.slice(0, 8);
-  const linActive = linearItems.slice(0, 12);
+  const linActive = linearItems.slice(0, 30);
   const slackActive = slackItems.slice(0, 8);
-  const ramiItems = linActive.filter(l => (l.who || "").toLowerCase().includes("rami") || (l.who || "").toLowerCase().includes("ramy"));
+  const ramiItems = linActive.filter(l => (l.who || "").toLowerCase().includes("rami") || (l.who || "").toLowerCase().includes("ramy") || (l.who || "").toLowerCase().includes("remy"));
   const ethanItems = linActive.filter(l => (l.who || "").toLowerCase().includes("ethan"));
   const workBlocks = computeWorkBlocks(meetings);
 

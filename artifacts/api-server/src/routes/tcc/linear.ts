@@ -3,6 +3,56 @@ import { linear } from "@workspace/integrations-linear";
 
 const router = Router();
 
+function priorityToLevel(p: number): "high" | "mid" | "low" {
+  if (p === 1 || p === 2) return "high";
+  if (p === 3) return "mid";
+  return "low";
+}
+
+router.get("/linear/live", async (_req, res) => {
+  try {
+    const issues = await linear.issues({
+      filter: {
+        state: { type: { nin: ["completed", "cancelled"] } },
+      },
+      first: 100,
+    });
+
+    const nodes = await Promise.all(
+      issues.nodes.map(async (issue) => {
+        const state = await issue.state;
+        const assignee = await issue.assignee;
+        const labelsConn = await issue.labels();
+        const labelNodes = labelsConn?.nodes ?? [];
+        return {
+          id: issue.id,
+          identifier: issue.identifier,
+          who: assignee?.name ?? "Unassigned",
+          task: issue.title,
+          level: priorityToLevel(issue.priority ?? 4),
+          dueDate: issue.dueDate ?? null,
+          size: issue.estimate != null ? String(issue.estimate) : null,
+          state: state?.name ?? null,
+          stateType: state?.type ?? null,
+          description: issue.description ?? null,
+          labels: labelNodes.map((l: any) => l.name),
+          url: issue.url,
+          inSequence: false,
+        };
+      }),
+    );
+
+    nodes.sort((a, b) => {
+      const order = { high: 0, mid: 1, low: 2 };
+      return (order[a.level] ?? 2) - (order[b.level] ?? 2);
+    });
+
+    res.json(nodes);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch live issues" });
+  }
+});
+
 router.get("/linear/me", async (_req, res) => {
   try {
     const me = await linear.viewer;

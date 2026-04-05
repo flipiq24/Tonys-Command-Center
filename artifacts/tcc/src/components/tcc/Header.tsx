@@ -352,7 +352,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               {/* Navigate */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
               {menuItem("🏠", "Dashboard", null, () => onSetView("dashboard"))}
-              {menuItem("📞", "Sales", null, () => onSetView("sales-morning"))}
+              {menuItem("📞", "Sales Mode", null, () => onSetView("sales"))}
               {menuItem("📅", "Calendar", null, () => onSetView("schedule"))}
               {menuItem("✉️", `Emails${snoozedCount > 0 ? ` (${snoozedCount} snoozed)` : ""}`, unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
               {menuItem("✅", "Tasks", null, () => onSetView("tasks"))}

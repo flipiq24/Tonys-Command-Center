@@ -142,7 +142,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   const sep = <div style={{ height: 1, background: C.brd, margin: "6px 0" }} />;
 
   const menuItem = (
-    icon: string,
+    icon: React.ReactNode,
     label: string,
     badge: string | number | null,
     onClick: () => void,
@@ -152,17 +152,17 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
       onClick={() => { onClick(); setOpen(false); }}
       style={{
         display: "flex", alignItems: "center", gap: 10, width: "100%",
-        padding: "9px 14px", background: "none", border: "none",
-        textAlign: "left", cursor: "pointer", fontFamily: F, borderRadius: 8,
+        padding: "8px 12px", background: "none", border: "none",
+        textAlign: "left", cursor: "pointer", fontFamily: F, borderRadius: 6,
         transition: "background 0.1s",
       }}
-      onMouseEnter={e => (e.currentTarget.style.background = "#F5F4F1")}
+      onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
       onMouseLeave={e => (e.currentTarget.style.background = "none")}
     >
-      <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>{icon}</span>
-      <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: accent || C.tx }}>{label}</span>
+      <span style={{ width: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.mut }}>{icon}</span>
+      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: accent || C.tx }}>{label}</span>
       {badge !== null && badge !== undefined && Number(badge) > 0 && (
-        <span style={{ fontSize: 11, fontWeight: 700, background: accent ? `${accent}22` : C.bluBg, color: accent || C.blu, borderRadius: 10, padding: "1px 7px", minWidth: 20, textAlign: "center" }}>{badge}</span>
+        <span style={{ fontSize: 10, fontWeight: 700, background: accent ? `${accent}22` : "#FFF7ED", color: accent || "#F97316", borderRadius: 999, padding: "1px 7px", minWidth: 18, textAlign: "center" }}>{badge}</span>
       )}
     </button>
   );
@@ -215,8 +215,8 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               title={`${slackItems.length} Slack mention${slackItems.length > 1 ? "s" : ""} — click to view`}
               style={{
                 width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
-                background: showSlackPopover ? C.bluBg : "none",
-                border: `1.5px solid ${showSlackPopover ? C.blu : C.brd}`,
+                background: showSlackPopover ? "#FFF7ED" : "none",
+                border: `1.5px solid ${showSlackPopover ? "#F97316" : C.brd}`,
                 borderRadius: 10, cursor: "pointer", position: "relative", flexShrink: 0,
               }}
             >
@@ -278,15 +278,15 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
             style={{
               display: "flex", flexDirection: "column", justifyContent: "center",
               alignItems: "center", gap: 4, width: 40, height: 40,
-              background: open ? C.bluBg : "none",
-              border: `1.5px solid ${open ? C.blu : C.brd}`,
+              background: open ? "#FFF7ED" : "none",
+              border: `1.5px solid ${open ? "#F97316" : C.brd}`,
               borderRadius: 10, cursor: "pointer", padding: 0,
               position: "relative",
             }}
           >
-            <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
-            <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
-            <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
+            <span style={{ display: "block", width: 18, height: 1.5, background: open ? "#F97316" : C.sub, borderRadius: 2, transition: "all 0.2s" }} />
+            <span style={{ display: "block", width: 14, height: 1.5, background: open ? "#F97316" : C.sub, borderRadius: 2, transition: "all 0.2s" }} />
+            <span style={{ display: "block", width: 18, height: 1.5, background: open ? "#F97316" : C.sub, borderRadius: 2, transition: "all 0.2s" }} />
             {!open && slackItems.length > 0 && (
               <span style={{
                 position: "absolute", top: -6, left: -6,
@@ -322,7 +322,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px 10px", borderBottom: `1px solid ${C.brd}`, marginBottom: 4 }}>
                 <span style={{ fontSize: 12, color: C.mut }}>
                   {refreshing
-                    ? <span style={{ color: C.blu, fontWeight: 600 }}>⟳ Refreshing…</span>
+                    ? <span style={{ color: "#F97316", fontWeight: 600 }}>⟳ Refreshing…</span>
                     : lastRefresh ? `Updated ${lastRefresh}` : "Not yet refreshed"}
                 </span>
                 <button
@@ -331,7 +331,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
                   title="Refresh all"
                   style={{
                     background: "none", border: `1px solid ${C.brd}`, borderRadius: 6,
-                    padding: "3px 10px", fontSize: 13, color: refreshing ? C.mut : C.blu,
+                    padding: "3px 10px", fontSize: 13, color: refreshing ? C.mut : C.tx,
                     cursor: refreshing ? "default" : "pointer", fontFamily: F,
                     opacity: refreshing ? 0.5 : 1,
                   }}
@@ -340,20 +340,20 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
 
               {/* Navigate */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
-              {menuItem("🏠", "Dashboard", null, () => onSetView("dashboard"))}
-              {menuItem("📞", "Sales Mode", null, () => onSetView("sales"))}
-              {menuItem("📅", "Calendar", null, () => onSetView("schedule"))}
-              {menuItem("✉️", `Emails${snoozedCount > 0 ? ` (${snoozedCount} snoozed)` : ""}`, unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
-              {menuItem("✅", "Tasks", null, () => onSetView("tasks"))}
-              {menuItem("💬", "AI Chat", null, () => onShowChat())}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, "Dashboard", null, () => onSetView("dashboard"))}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.18 1.2 2 2 0 012.18 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.91 7.09a16 16 0 006 6l1.45-1.45a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 13.92z"/></svg>, "Sales Mode", null, () => onSetView("sales"))}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>, "Calendar", null, () => onSetView("schedule"))}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>, `Emails${snoozedCount > 0 ? ` (${snoozedCount} snoozed)` : ""}`, unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>, "Tasks", null, () => onSetView("tasks"))}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>, "AI Chat", null, () => onShowChat())}
 
               {sep}
 
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
-              {menuItem("💡", "Ideas", null, () => onShowIdea())}
-              {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
-              {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>, "Morning Check-in", null, () => onShowCheckin())}
+              {menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>, "Ideas", null, () => onShowIdea())}
+              {onPrint && menuItem(<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>, "Print Daily Sheet", null, () => onPrint())}
               {sep}
 
               {/* EOD Report — always available, shows sent status if already sent */}
@@ -363,11 +363,13 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
                   display: "flex", alignItems: "center", gap: 10,
                   padding: "9px 14px", fontFamily: F, cursor: "pointer",
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#F5F5F5")}
+                onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
               >
-                <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>📊</span>
-                <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: eod ? C.grn : C.tx }}>
+                <span style={{ width: 20, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.mut }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                </span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: eod ? C.grn : C.tx }}>
                   {eod ? "EOD Sent ✓ — Resend" : "Send EOD Report"}
                 </span>
               </div>

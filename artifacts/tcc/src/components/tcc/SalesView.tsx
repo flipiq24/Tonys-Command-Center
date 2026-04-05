@@ -280,22 +280,11 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                   </button>
                 )}
                 <Tip tip={TIPS.attempt}>
-                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "6px 10px", fontSize: 11 }}>📋 Log Attempt</button>
+                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "6px 10px", fontSize: 11 }}>📋 Note</button>
                 </Tip>
-                <Tip tip={TIPS.connected}>
-                  <button
-                    onClick={() => {
-                      if (onConnectedCall) {
-                        onConnectedCall({ contactId: String(c.id), contactName: c.name, contactEmail: c.email });
-                      } else {
-                        onConnected(c.name);
-                      }
-                    }}
-                    style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.grn, borderColor: C.grn }}
-                  >
-                    ✓ Connected
-                  </button>
-                </Tip>
+                <span style={{ background: "#ECFDF5", color: "#065F46", borderRadius: 999, fontSize: 10, padding: "2px 8px", pointerEvents: "none", fontWeight: 500 }}>
+                  ✓ Connected
+                </span>
               </div>
             </div>
           );

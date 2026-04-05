@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -66,7 +67,23 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* LIGHT MODE */
+/* ── App Design Tokens ── */
+:root {
+  --primary:       #F97316;
+  --primary-dark:  #C2560A;
+  --bg:            #F9FAFB;
+  --surface:       #FFFFFF;
+  --border:        #E5E7EB;
+  --ink:           #1A1A1A;
+  --ink2:          #4B5563;
+  --ink3:          #9CA3AF;
+}
+
+*, body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── LIGHT MODE ── */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);

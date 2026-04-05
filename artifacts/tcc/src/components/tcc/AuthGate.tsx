@@ -88,7 +88,7 @@ export function AuthGate({ children }: Props) {
             disabled={loading || !token.trim()}
             style={{
               width: "100%",
-              background: C.blu,
+              background: "#F97316",
               color: "#fff",
               border: "none",
               borderRadius: 8,

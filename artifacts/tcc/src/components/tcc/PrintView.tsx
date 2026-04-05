@@ -19,9 +19,6 @@ interface Props {
 
 const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-// ─────────────────────────────────────────────────────────────────
-// TIME SCHEDULING — compute free work blocks from today's meetings
-// ─────────────────────────────────────────────────────────────────
 function parseTimeMins(t: string): number | null {
   const m = t?.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!m) return null;
@@ -41,22 +38,18 @@ function fmtMins(mins: number): string {
   return `${dh}:${m.toString().padStart(2, "0")} ${p}`;
 }
 
-interface WorkBlocks { salesCalls?: string; tasks?: string; emails?: string; }
-
-function computeWorkBlocks(meetingList: CalItem[]): WorkBlocks {
-  const WORK_START = 7 * 60;  // 7:00 AM
-  const WORK_END   = 18 * 60; // 6:00 PM
+function computeWorkBlocks(meetingList: CalItem[]) {
+  const WORK_START = 7 * 60;
+  const WORK_END = 18 * 60;
   const MIN_USEFUL = 30;
-
   const busy = meetingList
     .map(m => {
       const start = parseTimeMins(m.t);
-      const end   = m.tEnd ? parseTimeMins(m.tEnd) : (start !== null ? start + 30 : null);
+      const end = m.tEnd ? parseTimeMins(m.tEnd) : (start !== null ? start + 30 : null);
       return start !== null && end !== null ? { start, end } : null;
     })
     .filter(Boolean)
     .sort((a, b) => a!.start - b!.start) as { start: number; end: number }[];
-
   const free: { start: number; end: number }[] = [];
   let cursor = WORK_START;
   for (const b of busy) {
@@ -64,59 +57,51 @@ function computeWorkBlocks(meetingList: CalItem[]): WorkBlocks {
     cursor = Math.max(cursor, b.end);
   }
   if (cursor < WORK_END - MIN_USEFUL) free.push({ start: cursor, end: WORK_END });
-
   const fmt = (b: { start: number; end: number }) => `${fmtMins(b.start)} – ${fmtMins(b.end)}`;
-  const morning   = free.filter(b => b.start < 12 * 60 && (b.end - b.start) >= MIN_USEFUL);
-  const afternoon = free.filter(b => b.start >= 11 * 60 && (b.end - b.start) >= MIN_USEFUL);
-
+  const morning = free.filter(b => b.start < 12 * 60 && b.end - b.start >= MIN_USEFUL);
+  const afternoon = free.filter(b => b.start >= 11 * 60 && b.end - b.start >= MIN_USEFUL);
   return {
-    salesCalls: morning[0]   ? fmt(morning[0])   : free[0] ? fmt(free[0]) : undefined,
-    tasks:      morning[1]   ? fmt(morning[1])   : afternoon[0] ? fmt(afternoon[0]) : undefined,
-    emails:     afternoon[0] ? fmt(afternoon[0]) : free[2]  ? fmt(free[2])  : undefined,
+    salesCalls: morning[0] ? fmt(morning[0]) : free[0] ? fmt(free[0]) : undefined,
+    tasks: morning[1] ? fmt(morning[1]) : afternoon[0] ? fmt(afternoon[0]) : undefined,
+    emails: afternoon[0] ? fmt(afternoon[0]) : free[2] ? fmt(free[2]) : undefined,
   };
 }
 
-// ── Shared palette ──
+// ── Palette ──────────────────────────────────────────────────────────────────
 const BLK = "#111";
 const BORDER = "1px solid #bbb";
 const HEAVY = "2px solid #222";
 const HDR_BG = "#F2F2F2";
-const PAGE_W = 760;
+const PAGE_W = 780;
 
-// ── Checkbox ──
+// ── Checkbox ─────────────────────────────────────────────────────────────────
 function CB({ id, done, onToggle }: { id: string; done: boolean; onToggle: (id: string) => void }) {
   return (
-    <div
-      onClick={() => onToggle(id)}
-      title="Click to check off"
-      style={{
-        width: 14, height: 14, border: done ? "2px solid #111" : "1.5px solid #888",
-        borderRadius: 2, background: done ? "#111" : "#fff", cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        transition: "all 0.1s",
-      }}
-    >
+    <div onClick={() => onToggle(id)} style={{
+      width: 14, height: 14, border: done ? "2px solid #111" : "1.5px solid #888",
+      borderRadius: 2, background: done ? "#111" : "#fff", cursor: "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+    }}>
       {done && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1, fontWeight: 900 }}>✓</span>}
     </div>
   );
 }
 
-// ── Table header cell ──
+// ── Table helpers ─────────────────────────────────────────────────────────────
 function TH({ children, w, center }: { children: React.ReactNode; w?: number | string; center?: boolean }) {
   return (
     <th style={{
       fontSize: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.8,
       color: "#444", padding: "4px 6px", textAlign: center ? "center" : "left",
       background: HDR_BG, borderBottom: HEAVY, whiteSpace: "nowrap",
-      width: w !== undefined ? (typeof w === "number" ? w : w) : undefined,
+      width: w !== undefined ? w : undefined,
     }}>{children}</th>
   );
 }
 
-// ── Table data cell ──
-function TD({ children, center, bold, small, dim, strike }: {
+function TD({ children, center, bold, small, dim, strike, noWrap }: {
   children?: React.ReactNode; center?: boolean; bold?: boolean;
-  small?: boolean; dim?: boolean; strike?: boolean;
+  small?: boolean; dim?: boolean; strike?: boolean; noWrap?: boolean;
 }) {
   return (
     <td style={{
@@ -125,20 +110,16 @@ function TD({ children, center, bold, small, dim, strike }: {
       textAlign: center ? "center" : "left",
       textDecoration: strike ? "line-through" : "none",
       borderBottom: "1px solid #E8E8E8", verticalAlign: "top",
+      whiteSpace: noWrap ? "nowrap" : undefined,
     }}>{children}</td>
   );
 }
 
-// ── Section label ──
+// ── Section label ─────────────────────────────────────────────────────────────
 function SL({ text, color = "#444", time }: { text: string; color?: string; time?: string }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 8,
-      marginBottom: 4, marginTop: 14,
-    }}>
-      <div style={{
-        fontSize: 9, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.5, color,
-      }}>{text}</div>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, marginTop: 12 }}>
+      <div style={{ fontSize: 9, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1.5, color }}>{text}</div>
       {time && (
         <div style={{
           fontSize: 9, fontWeight: 700, color: "#888",
@@ -150,30 +131,36 @@ function SL({ text, color = "#444", time }: { text: string; color?: string; time
   );
 }
 
-// ── Page wrapper (both screen + print) ──
+// ── Page wrapper ──────────────────────────────────────────────────────────────
+// isPrint: skips fixed width / shadow so @page fills the paper
 function Page({ children, className }: { children: React.ReactNode; className?: string }) {
+  const isPrint = className?.includes("print-page");
   return (
     <div className={className} style={{
       background: "#fff",
-      width: PAGE_W, minHeight: 980,
-      boxShadow: "0 6px 32px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.2)",
-      borderRadius: 3, overflow: "hidden", flexShrink: 0, fontFamily: F,
-      fontSize: 11, color: BLK,
+      width: isPrint ? "100%" : PAGE_W,
+      minHeight: isPrint ? undefined : 980,
+      boxShadow: isPrint ? "none" : "0 6px 32px rgba(0,0,0,0.4)",
+      borderRadius: isPrint ? 0 : 3,
+      overflow: "hidden",
+      flexShrink: 0,
+      fontFamily: F,
+      fontSize: 11,
+      color: BLK,
     }}>
       {children}
     </div>
   );
 }
 
-// ── Page header ──
 function PageHeader({ title, sub }: { title: string; sub: string }) {
   return (
     <div style={{
-      padding: "12px 18px 10px", borderBottom: HEAVY,
+      padding: "10px 18px 8px", borderBottom: HEAVY,
       display: "flex", alignItems: "center", justifyContent: "space-between",
     }}>
       <div>
-        <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 900, letterSpacing: 1, color: BLK }}>{title}</div>
+        <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 900, letterSpacing: 1, color: BLK }}>{title}</div>
         <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>{DATE_STR}</div>
       </div>
       <div style={{ fontSize: 9, color: "#888", fontStyle: "italic", textAlign: "right", maxWidth: 280 }}>
@@ -183,8 +170,30 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
   );
 }
 
+// ── Toolbar button ────────────────────────────────────────────────────────────
+function Btn({ label, onClick, disabled, primary, dim }: {
+  label: string; onClick: () => void; disabled?: boolean; primary?: boolean; dim?: boolean;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8,
+      cursor: disabled ? "default" : "pointer",
+      border: primary ? "none" : "1px solid #333",
+      background: primary ? "#fff" : "none",
+      color: disabled ? "#555" : primary ? "#111" : dim ? "#999" : "#eee",
+      fontFamily: F, opacity: disabled ? 0.5 : 1, flexShrink: 0,
+    }}>{label}</button>
+  );
+}
 
-export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackItems = [], linearItems = [], topCallContacts = [], onClose, onRefresh }: Props) {
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+export function PrintView({
+  tasks, tDone, calendarData, emailsImportant,
+  slackItems = [], linearItems = [], topCallContacts = [],
+  onClose, onRefresh,
+}: Props) {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const [inboxEmail, setInboxEmail] = useState<string>("");
@@ -229,22 +238,20 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    try {
-      if (onRefresh) await onRefresh();
-    } catch { /* ok */ } finally { setRefreshing(false); }
+    try { if (onRefresh) await onRefresh(); } catch { /* ok */ } finally { setRefreshing(false); }
   };
 
   const ck = (id: string) => done.has(id);
 
-  // Data — real sources only
+  // Data
   const top3 = tasks.filter(t => !tDone[t.id] && !t.sales).slice(0, 3);
   const callList = topCallContacts.slice(0, 10);
   const meetings = calendarData.filter(c => c.real);
-  const emails = emailsImportant.slice(0, 6);
-  const linActive = linearItems.slice(0, 8);
-  const slackActive = slackItems.slice(0, 6);
-
-  // Compute free-window schedule from meeting times
+  const emails = emailsImportant.slice(0, 8);
+  const linActive = linearItems.slice(0, 12);
+  const slackActive = slackItems.slice(0, 8);
+  const ramiItems = linActive.filter(l => (l.who || "").toLowerCase().includes("rami") || (l.who || "").toLowerCase().includes("ramy"));
+  const ethanItems = linActive.filter(l => (l.who || "").toLowerCase().includes("ethan"));
   const workBlocks = computeWorkBlocks(meetings);
 
   return (
@@ -252,8 +259,8 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
       position: "fixed", inset: 0, zIndex: 20000, background: "#1C1C1E",
       display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
-      {/* ── Toolbar ── */}
-      <div style={{
+      {/* ── Toolbar (hidden when printing) ── */}
+      <div className="no-print" style={{
         display: "flex", alignItems: "center", gap: 12,
         padding: "12px 24px", background: "#111", borderBottom: "1px solid #2a2a2a", flexShrink: 0,
       }}>
@@ -269,8 +276,9 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
         <Btn label="✕ Close" onClick={onClose} dim />
       </div>
       {processResult && (
-        <div style={{
-          padding: "8px 24px", background: processResult.startsWith("✅") ? "#1A3A1A" : "#3A1A1A",
+        <div className="no-print" style={{
+          padding: "8px 24px",
+          background: processResult.startsWith("✅") ? "#1A3A1A" : "#3A1A1A",
           color: processResult.startsWith("✅") ? "#86efac" : "#fca5a5",
           fontSize: 12, fontFamily: F, fontWeight: 600, borderBottom: "1px solid #2a2a2a",
           display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -280,34 +288,138 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
         </div>
       )}
 
-      {/* ── Scrollable sheets area ── */}
-      <div style={{
+      {/* ── Scrollable preview area ── */}
+      <div className="no-print" style={{
         flex: 1, overflow: "auto",
         display: "flex", flexDirection: "column", alignItems: "center",
         padding: "32px 24px 48px", gap: 40,
-      }} className="no-print">
-
-        {/* ════ FRONT ════ */}
+      }}>
         <label style={{ fontSize: 9, color: "#666", letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", fontFamily: F, alignSelf: "flex-start", marginLeft: `calc(50% - ${PAGE_W / 2}px)` }}>PAGE 1 — FRONT</label>
-        <Page className="print-front">
-          <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
-          <div style={{ padding: "14px 18px" }}>
+        <FrontPage callList={callList} top3={top3} meetings={meetings} workBlocks={workBlocks} inboxEmail={inboxEmail} ck={ck} toggle={toggle} className="no-print-shadow" />
+        <label style={{ fontSize: 9, color: "#666", letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", fontFamily: F, alignSelf: "flex-start", marginLeft: `calc(50% - ${PAGE_W / 2}px)` }}>PAGE 2 — BACK</label>
+        <BackPage linActive={linActive} ramiItems={ramiItems} ethanItems={ethanItems} emails={emails} slackActive={slackActive} workBlocks={workBlocks} ck={ck} toggle={toggle} className="no-print-shadow" />
+        <div style={{ fontSize: 10, color: "#555", fontFamily: F, textAlign: "center", paddingBottom: 8 }}>
+          Print → Portrait · Letter · 2 pages (front &amp; back of one sheet)
+        </div>
+      </div>
 
-            {/* ══ TOP 3 — DO THESE FIRST (full width, no sales calls) ══ */}
-            <SL text="★ Top 3 — Do These First" color="#B7791F" />
-            <div style={{ marginBottom: 12, border: "1.5px solid #E8D5A3", borderRadius: 4, overflow: "hidden" }}>
+      {/* ── Actual print pages (only visible when printing) ── */}
+      <div className="print-only" style={{ display: "none" }}>
+        <FrontPage callList={callList} top3={top3} meetings={meetings} workBlocks={workBlocks} inboxEmail={inboxEmail} ck={ck} toggle={toggle} className="print-page" />
+        <BackPage linActive={linActive} ramiItems={ramiItems} ethanItems={ethanItems} emails={emails} slackActive={slackActive} workBlocks={workBlocks} ck={ck} toggle={toggle} className="print-page" />
+      </div>
+
+      <style>{`
+        @media print {
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body > * { display: none !important; }
+          .print-only { display: block !important; }
+          .print-page {
+            width: 100%;
+            font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+            font-size: 11px;
+            color: #111;
+            background: #fff;
+            padding: 0;
+            margin: 0;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+          }
+          .print-page + .print-page {
+            page-break-before: always;
+            break-before: page;
+          }
+        }
+        @page { size: letter portrait; margin: 0.35in; }
+      `}</style>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE 1 — FRONT
+// Layout: [Calls — FULL WIDTH] then [Top 3 | Calendar 50/50]
+// ─────────────────────────────────────────────────────────────────────────────
+function FrontPage({ callList, top3, meetings, workBlocks, inboxEmail, ck, toggle, className }: {
+  callList: Contact[];
+  top3: TaskItem[];
+  meetings: CalItem[];
+  workBlocks: { salesCalls?: string; tasks?: string; emails?: string };
+  inboxEmail: string;
+  ck: (id: string) => boolean;
+  toggle: (id: string) => void;
+  className?: string;
+}) {
+  return (
+    <Page className={className}>
+      <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
+      <div style={{ padding: "12px 18px" }}>
+
+        {/* ══ CALLS — FULL WIDTH ══ */}
+        <SL text="📞 Sales Calls — 10 Today" color="#C62828" time={workBlocks.salesCalls} />
+        <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 16 }}>
+          <thead>
+            <tr>
+              <TH w={20} center>✓</TH>
+              <TH w={16} center>#</TH>
+              <TH w={160}>NAME / COMPANY</TH>
+              <TH w={60} center>STATUS</TH>
+              <TH w={85}>PHONE</TH>
+              <TH>OUTCOME / NEXT STEP</TH>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 10 }).map((_, i) => {
+              const c = callList[i];
+              const id = `call-${i}`;
+              const isDone = ck(id);
+              return (
+                <tr key={id} style={{ height: 30, background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                  <TD center><CB id={id} done={isDone} onToggle={toggle} /></TD>
+                  <TD center small dim>{i + 1}</TD>
+                  {c ? (
+                    <>
+                      <td style={{ fontSize: 10, fontWeight: 700, color: isDone ? "#bbb" : BLK, padding: "4px 6px", borderBottom: "1px solid #E8E8E8", verticalAlign: "middle", textDecoration: isDone ? "line-through" : "none" }}>
+                        {c.name}
+                        {c.company && <div style={{ fontSize: 8, color: "#888", fontWeight: 400, lineHeight: 1.2 }}>{c.company}</div>}
+                      </td>
+                      <TD center small bold>
+                        <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : "#555" }}>{c.status || "—"}</span>
+                      </TD>
+                      <TD small dim noWrap>{c.phone || "—"}</TD>
+                    </>
+                  ) : (
+                    <><td style={{ padding: "4px 6px", borderBottom: "1px solid #E8E8E8", width: 160 }} /><TD center /><TD /></>
+                  )}
+                  <td style={{ borderBottom: "1px solid #E8E8E8", verticalAlign: "bottom", padding: "0 6px 4px" }}>
+                    <div style={{ borderBottom: "1px solid #CCC", width: "100%", marginBottom: 2 }} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {/* ══ 50/50: TOP 3 | CALENDAR ══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+          {/* LEFT — Top 3 */}
+          <div>
+            <SL text="★ Top 3 — Do These First" color="#B7791F" time={workBlocks.tasks} />
+            <div style={{ border: "1.5px solid #E8D5A3", borderRadius: 4, overflow: "hidden" }}>
               {Array.from({ length: 3 }).map((_, i) => {
                 const t = top3[i];
                 const id = t ? `top3-${t.id}` : `top3-blank-${i}`;
+                const isDone = ck(id);
                 return (
                   <div key={id} style={{
                     display: "flex", gap: 8, alignItems: "flex-start",
-                    padding: "8px 10px",
+                    padding: "9px 10px",
                     borderBottom: i < 2 ? "1px solid #EEE4CC" : "none",
                     background: i === 0 ? "#FFFBF2" : "#fff",
-                    minHeight: 34,
+                    minHeight: 38,
                   }}>
-                    <CB id={id} done={ck(id)} onToggle={toggle} />
+                    <CB id={id} done={isDone} onToggle={toggle} />
                     <div style={{
                       width: 16, height: 16, background: i === 0 ? BLK : "#E0E0E0",
                       color: i === 0 ? "#fff" : "#888", borderRadius: 3,
@@ -318,354 +430,276 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
                       {t ? (
                         <div style={{
                           fontSize: 11, fontWeight: i === 0 ? 700 : 600,
-                          color: ck(id) ? "#bbb" : BLK,
-                          textDecoration: ck(id) ? "line-through" : "none",
+                          color: isDone ? "#bbb" : BLK,
+                          textDecoration: isDone ? "line-through" : "none",
                           lineHeight: 1.4,
                         }}>{t.text}</div>
                       ) : (
-                        <div style={{ borderBottom: "1px solid #DDD", width: "100%", marginTop: 8 }} />
+                        <div style={{ borderBottom: "1px solid #DDD", marginTop: 10 }} />
                       )}
                     </div>
-                    <div style={{ width: 220, borderBottom: "1px solid #DDD", marginTop: 10, flexShrink: 0 }} />
                   </div>
                 );
               })}
             </div>
 
-            {/* ══ 2-COL: CALLS (left) | CALENDAR (right) ══ */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 6 }}>
-
-              {/* LEFT — Sales Calls */}
-              <div>
-                <SL text="📞 Sales Calls — 10 Today" color="#C62828" time={workBlocks.salesCalls} />
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                  <thead>
-                    <tr>
-                      <TH w={18} center>✓</TH>
-                      <TH w={14} center>#</TH>
-                      <TH>NAME / CO.</TH>
-                      <TH w={50}>STATUS</TH>
-                      <TH>OUTCOME</TH>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: 10 }).map((_, i) => {
-                      const c = callList[i];
-                      const id = `call-${i}`;
-                      const done2 = ck(id);
-                      return (
-                        <tr key={id} style={{ height: 26, background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                          <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
-                          <TD center small dim>{i + 1}</TD>
-                          {c ? (
-                            <>
-                              <td style={{ fontSize: 9, fontWeight: 700, color: done2 ? "#bbb" : BLK, padding: "4px 6px", borderBottom: "1px solid #E8E8E8", verticalAlign: "top", textDecoration: done2 ? "line-through" : "none" }}>
-                                {c.name}
-                                {c.company && <div style={{ fontSize: 7, color: "#888", fontWeight: 400 }}>{c.company}</div>}
-                              </td>
-                              <TD center small bold>
-                                <span style={{ color: c.status === "Hot" ? "#C62828" : c.status === "Warm" ? "#E65100" : "#555" }}>
-                                  {c.status || "—"}
-                                </span>
-                              </TD>
-                            </>
-                          ) : (
-                            <><TD /><TD /></>
-                          )}
-                          <td style={{ borderBottom: "1px solid #E8E8E8", verticalAlign: "bottom", padding: "0 4px 3px" }}>
-                            <div style={{ borderBottom: "1px solid #CCC", width: "100%", height: 1, marginBottom: 2 }} />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* RIGHT — Calendar */}
-              <div>
-                <SL text="📅 Today's Calendar" color="#1565C0" />
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                  <thead>
-                    <tr>
-                      <TH w={18} center>✓</TH>
-                      <TH w={68}>TIME</TH>
-                      <TH>MEETING</TH>
-                      <TH w={60}>PREP</TH>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {meetings.length === 0 && (
-                      <tr><td colSpan={4} style={{ padding: "8px 6px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No meetings today</td></tr>
-                    )}
-                    {meetings.map((m, i) => {
-                      const id = `meet-${i}`;
-                      const done2 = ck(id);
-                      return (
-                        <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                          <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
-                          <TD small bold>{m.t}{m.tEnd ? `–${m.tEnd}` : ""}</TD>
-                          <TD strike={done2} small>{m.n}</TD>
-                          <TD small dim>{m.loc || m.note || ""}</TD>
-                        </tr>
-                      );
-                    })}
-                    {Array.from({ length: Math.max(0, 10 - meetings.length) }).map((_, i) => (
-                      <tr key={`meetblank-${i}`} style={{ background: (meetings.length + i) % 2 === 0 ? "#fff" : "#FAFAFA", height: 26 }}>
-                        <TD center><CB id={`meetblank-${i}`} done={ck(`meetblank-${i}`)} onToggle={toggle} /></TD>
-                        <TD /><TD /><TD />
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* ══ SCAN FOOTER ══ */}
+            {/* Scan footer inside left col */}
             <div style={{
-              marginTop: 8, padding: "7px 12px",
-              border: "1.5px dashed #BBB", borderRadius: 4,
-              background: "#FAFAFA",
-              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              marginTop: 12, padding: "7px 12px",
+              border: "1.5px dashed #BBB", borderRadius: 4, background: "#FAFAFA",
             }}>
-              <div style={{ fontSize: 8, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "#888" }}>
+              <div style={{ fontSize: 8, fontWeight: 900, textTransform: "uppercase", letterSpacing: 1, color: "#888", marginBottom: 3 }}>
                 📷 Fill &amp; scan — email photo to TCC
               </div>
               <div style={{ fontSize: 9, fontWeight: 700, color: "#444", fontFamily: "monospace" }}>
                 {inboxEmail || "loading inbox…"}
               </div>
-              <div style={{ fontSize: 8, color: "#888" }}>TCC reads it automatically &amp; updates your system</div>
+              <div style={{ fontSize: 8, color: "#888", marginTop: 2 }}>TCC reads it automatically &amp; updates your system</div>
             </div>
-
           </div>
-        </Page>
 
-        {/* ════ BACK ════ */}
-        <label style={{ fontSize: 9, color: "#666", letterSpacing: 1.5, fontWeight: 700, textTransform: "uppercase", fontFamily: F, alignSelf: "flex-start", marginLeft: `calc(50% - ${PAGE_W / 2}px)` }}>PAGE 2 — BACK</label>
-        <Page className="print-back">
-          <PageHeader title="OPERATIONS & AWARENESS" sub="North Star: 2 deals/month/AA @ $2,500 per acquisition. Everything else is noise." />
-          <div style={{ padding: "14px 18px" }}>
-
-            {/* Linear — Engineering in Progress */}
-            <SL text="⚡ Linear — Engineering in Progress" color="#2563EB" />
-            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 14 }}>
+          {/* RIGHT — Calendar */}
+          <div>
+            <SL text="📅 Today's Calendar" color="#1565C0" />
+            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
               <thead>
                 <tr>
-                  <TH w={22} center>✓</TH>
-                  <TH w={70}>ID</TH>
-                  <TH>TASK</TH>
-                  <TH w={80}>OWNER</TH>
-                  <TH w={80}>STATUS</TH>
+                  <TH w={20} center>✓</TH>
+                  <TH w={80}>TIME</TH>
+                  <TH>MEETING</TH>
+                  <TH w={60}>PREP</TH>
                 </tr>
               </thead>
               <tbody>
-                {linActive.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: "8px 6px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active Linear issues</td></tr>
+                {meetings.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: "8px 6px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No meetings today</td></tr>
                 )}
-                {linActive.map((l, i) => {
-                  const id = `linear-${i}`;
-                  const done2 = ck(id);
-                  const isHigh = l.level === "high";
+                {meetings.map((m, i) => {
+                  const id = `meet-${i}`;
+                  const isDone = ck(id);
                   return (
                     <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                      <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
-                      <TD small bold><span style={{ color: "#2563EB" }}>{l.id}</span></TD>
-                      <TD strike={done2}>{l.task}</TD>
-                      <TD small>{l.who || "—"}</TD>
-                      <TD small><span style={{ color: isHigh ? "#C62828" : l.level === "mid" ? "#E65100" : "#555", fontWeight: isHigh ? 700 : 400 }}>{isHigh ? "🔴 High" : l.level === "mid" ? "⚠ Mid" : "Low"}</span></TD>
+                      <TD center><CB id={id} done={isDone} onToggle={toggle} /></TD>
+                      <TD small bold noWrap>{m.t}{m.tEnd ? `–${m.tEnd}` : ""}</TD>
+                      <TD strike={isDone} small>{m.n}</TD>
+                      <TD small dim>{m.loc || m.note || ""}</TD>
                     </tr>
                   );
                 })}
+                {Array.from({ length: Math.max(0, 9 - meetings.length) }).map((_, i) => (
+                  <tr key={`meetblank-${i}`} style={{ background: (meetings.length + i) % 2 === 0 ? "#fff" : "#FAFAFA", height: 28 }}>
+                    <TD center><CB id={`meetblank-${i}`} done={ck(`meetblank-${i}`)} onToggle={toggle} /></TD>
+                    <TD /><TD /><TD />
+                  </tr>
+                ))}
               </tbody>
             </table>
-
-            {/* ── Rami Tasks | Ethan Tasks side by side ── */}
-            {(() => {
-              const ramiItems = linActive.filter(l => (l.who || "").toLowerCase().includes("rami") || (l.who || "").toLowerCase().includes("ramy"));
-              const ethanItems = linActive.filter(l => (l.who || "").toLowerCase().includes("ethan"));
-              const renderPersonRows = (items: LinearItem[], prefix: string) => {
-                const rows = items.slice(0, 5);
-                const blanks = Math.max(0, 5 - rows.length);
-                return (
-                  <>
-                    {rows.map((l, i) => {
-                      const id = `${prefix}-${i}`;
-                      const done2 = ck(id);
-                      return (
-                        <div key={id} style={{ display: "flex", gap: 7, alignItems: "flex-start", padding: "6px 8px", borderBottom: i < rows.length - 1 || blanks > 0 ? "1px solid #E8E8E8" : "none", background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                          <CB id={id} done={done2} onToggle={toggle} />
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 8, color: "#2563EB", fontWeight: 700 }}>{l.id}</div>
-                            <div style={{ fontSize: 10, fontWeight: 500, color: done2 ? "#bbb" : BLK, textDecoration: done2 ? "line-through" : "none", lineHeight: 1.3 }}>{l.task}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {Array.from({ length: blanks }).map((_, i) => (
-                      <div key={`${prefix}-blank-${i}`} style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 8px", borderBottom: i < blanks - 1 ? "1px solid #E8E8E8" : "none", background: (rows.length + i) % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                        <CB id={`${prefix}-blank-${i}`} done={false} onToggle={toggle} />
-                        <div style={{ flex: 1, height: 1, background: "#E8E8E8" }} />
-                      </div>
-                    ))}
-                  </>
-                );
-              };
-              return (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 10 }}>
-                  <div>
-                    <SL text="👤 Rami — Tasks" color="#555" />
-                    <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
-                      {renderPersonRows(ramiItems, "rami")}
-                    </div>
-                  </div>
-                  <div>
-                    <SL text="👤 Ethan — Tasks" color="#555" />
-                    <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
-                      {renderPersonRows(ethanItems, "ethan")}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* ── Priority Emails + Slack side by side ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 10 }}>
-
-              {/* Priority Emails */}
-              <div>
-                <SL text="📧 Priority Emails" color="#E65100" time={workBlocks.emails} />
-                <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-                  <thead>
-                    <tr>
-                      <TH w={22} center>✓</TH>
-                      <TH w={110}>FROM</TH>
-                      <TH>SUBJECT</TH>
-                      <TH w={70}>ACTION</TH>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {emails.map((e, i) => {
-                      const id = `email-${i}`;
-                      const done2 = ck(id);
-                      return (
-                        <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                          <TD center><CB id={id} done={done2} onToggle={toggle} /></TD>
-                          <TD bold strike={done2}>{e.from}</TD>
-                          <TD strike={done2} small>{e.subj}</TD>
-                          <TD small bold><span style={{ color: "#1565C0" }}>{e.p || "—"}</span></TD>
-                        </tr>
-                      );
-                    })}
-                    {Array.from({ length: Math.max(0, 4 - emails.length) }).map((_, i) => (
-                      <tr key={`emailblank-${i}`} style={{ background: (emails.length + i) % 2 === 0 ? "#fff" : "#FAFAFA" }}>
-                        <TD center><CB id={`emailblank-${i}`} done={ck(`emailblank-${i}`)} onToggle={toggle} /></TD>
-                        <TD /><TD /><TD />
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Slack Items */}
-              <div>
-                <SL text="💬 Slack — Needs Attention" color="#611f69" />
-                <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
-                  {slackActive.map((s, i) => {
-                    const levelC = s.level === "high" ? "#C62828" : s.level === "mid" ? "#E65100" : "#555";
-                    return (
-                      <div key={i} style={{ padding: "7px 10px", borderBottom: i < slackActive.length - 1 ? "1px solid #E8E8E8" : "none", background: s.level === "high" ? "#FFF5F5" : "#fff" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-                          <span style={{ fontSize: 9, fontWeight: 700, color: levelC, textTransform: "uppercase" }}>{s.level}</span>
-                          <span style={{ fontSize: 8, color: "#888" }}>{s.channel}</span>
-                        </div>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: "#333" }}>{s.from}</div>
-                        <div style={{ fontSize: 9, color: "#666", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.message}</div>
-                      </div>
-                    );
-                  })}
-                  {slackActive.length === 0 && (
-                    <div style={{ padding: "8px 10px", fontSize: 10, color: "#bbb", fontStyle: "italic" }}>No Slack items today 🎉</div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Scratch Notes — HUGE ── */}
-            <SL text="📝 Scratch Notes" color="#555" />
-            <div style={{
-              border: HEAVY, borderRadius: 2, padding: "10px 14px",
-              background: "#FDFDFC", marginBottom: 10,
-            }}>
-              {Array.from({ length: 22 }).map((_, i) => (
-                <div key={i} style={{
-                  height: 26,
-                  borderBottom: i < 21 ? "1px solid #E4E4E4" : "none",
-                  display: "flex", alignItems: "flex-end",
-                }}>
-                  <span style={{ fontSize: 8, color: "#DDD", marginBottom: 2, width: 14, flexShrink: 0, userSelect: "none" }}>{i + 1}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* ── 3 Wins for Today — bottom strip ── */}
-            <SL text="🏆 3 Wins for Today" color="#B7791F" />
-            <div style={{
-              border: "2px solid #B7791F33", borderRadius: 4,
-              background: "#FFFBF2", padding: "4px 10px",
-            }}>
-              {[1, 2, 3].map(n => (
-                <div key={n} style={{
-                  display: "flex", gap: 10, alignItems: "center",
-                  padding: "9px 0",
-                  borderBottom: n < 3 ? "1px solid #EEE4CC" : "none",
-                }}>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: "#B7791F", width: 18, flexShrink: 0 }}>{n}.</span>
-                  <div style={{ flex: 1, height: 1, background: "#E8D5A3" }} />
-                </div>
-              ))}
-            </div>
-
           </div>
-        </Page>
-
-        <div style={{ fontSize: 10, color: "#555", fontFamily: F, textAlign: "center", paddingBottom: 8 }}>
-          Print → Portrait · Letter · 2 pages (front &amp; back of one sheet)
         </div>
-      </div>
 
-      {/* ── Print CSS ── */}
-      <style>{`
-        @media print {
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          body > * { display: none !important; }
-          .print-front, .print-back { display: block !important; }
-          .print-front {
-            position: fixed; top: 0; left: 0; width: 100vw; min-height: 100vh;
-            box-shadow: none !important; border-radius: 0 !important;
-            page-break-after: always;
-          }
-          .print-back {
-            position: fixed; top: 0; left: 0; width: 100vw; min-height: 100vh;
-            box-shadow: none !important; border-radius: 0 !important;
-          }
-        }
-        @page { size: letter portrait; margin: 0.4in; }
-      `}</style>
-    </div>
+      </div>
+    </Page>
   );
 }
 
-// ── Toolbar button ──
-function Btn({ label, onClick, disabled, primary, dim }: {
-  label: string; onClick: () => void; disabled?: boolean; primary?: boolean; dim?: boolean;
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE 2 — BACK
+// Layout: [Linear full] → [Rami | Ethan 50/50] → [Emails full] → [Slack full]
+// ─────────────────────────────────────────────────────────────────────────────
+function BackPage({ linActive, ramiItems, ethanItems, emails, slackActive, workBlocks, ck, toggle, className }: {
+  linActive: LinearItem[];
+  ramiItems: LinearItem[];
+  ethanItems: LinearItem[];
+  emails: EmailItem[];
+  slackActive: SlackItem[];
+  workBlocks: { salesCalls?: string; tasks?: string; emails?: string };
+  ck: (id: string) => boolean;
+  toggle: (id: string) => void;
+  className?: string;
 }) {
+  const renderPersonRows = (items: LinearItem[], prefix: string, max = 4) => {
+    const rows = items.slice(0, max);
+    const blanks = Math.max(0, max - rows.length);
+    return (
+      <>
+        {rows.map((l, i) => {
+          const id = `${prefix}-${i}`;
+          const isDone = ck(id);
+          return (
+            <div key={id} style={{
+              display: "flex", gap: 7, alignItems: "flex-start",
+              padding: "6px 8px",
+              borderBottom: (i < rows.length - 1 || blanks > 0) ? "1px solid #E8E8E8" : "none",
+              background: i % 2 === 0 ? "#fff" : "#FAFAFA",
+            }}>
+              <CB id={id} done={isDone} onToggle={toggle} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 8, color: "#2563EB", fontWeight: 700 }}>{l.id}</div>
+                <div style={{ fontSize: 10, fontWeight: 500, color: isDone ? "#bbb" : BLK, textDecoration: isDone ? "line-through" : "none", lineHeight: 1.3 }}>{l.task}</div>
+              </div>
+            </div>
+          );
+        })}
+        {Array.from({ length: blanks }).map((_, i) => (
+          <div key={`${prefix}-blank-${i}`} style={{
+            display: "flex", gap: 7, alignItems: "center",
+            padding: "7px 8px",
+            borderBottom: i < blanks - 1 ? "1px solid #E8E8E8" : "none",
+            background: (rows.length + i) % 2 === 0 ? "#fff" : "#FAFAFA",
+          }}>
+            <CB id={`${prefix}-blank-${i}`} done={false} onToggle={toggle} />
+            <div style={{ flex: 1, height: 1, background: "#E8E8E8" }} />
+          </div>
+        ))}
+      </>
+    );
+  };
+
   return (
-    <button onClick={onClick} disabled={disabled} style={{
-      padding: "7px 16px", fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: disabled ? "default" : "pointer",
-      border: primary ? "none" : "1px solid #333",
-      background: primary ? "#fff" : "none",
-      color: disabled ? "#555" : primary ? "#111" : dim ? "#999" : "#eee",
-      fontFamily: F, opacity: disabled ? 0.5 : 1, flexShrink: 0,
-    }}>{label}</button>
+    <Page className={className}>
+      <PageHeader title="OPERATIONS & AWARENESS" sub="North Star: 2 deals/month/AA @ $2,500 per acquisition. Everything else is noise." />
+      <div style={{ padding: "10px 18px" }}>
+
+        {/* ══ LINEAR — FULL WIDTH ══ */}
+        <SL text="⚡ Linear — Engineering in Progress" color="#2563EB" />
+        <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 10 }}>
+          <thead>
+            <tr>
+              <TH w={20} center>✓</TH>
+              <TH w={70}>ID</TH>
+              <TH>TASK</TH>
+              <TH w={90}>OWNER</TH>
+              <TH w={80}>STATUS</TH>
+            </tr>
+          </thead>
+          <tbody>
+            {linActive.length === 0 && (
+              <tr><td colSpan={5} style={{ padding: "8px 6px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active Linear issues</td></tr>
+            )}
+            {linActive.map((l, i) => {
+              const id = `linear-${i}`;
+              const isDone = ck(id);
+              const isHigh = l.level === "high";
+              return (
+                <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                  <TD center><CB id={id} done={isDone} onToggle={toggle} /></TD>
+                  <TD small bold><span style={{ color: "#2563EB" }}>{l.id}</span></TD>
+                  <TD strike={isDone} small>{l.task}</TD>
+                  <TD small>{l.who || "—"}</TD>
+                  <TD small>
+                    <span style={{ color: isHigh ? "#C62828" : l.level === "mid" ? "#E65100" : "#555", fontWeight: isHigh ? 700 : 400 }}>
+                      {isHigh ? "🔴 High" : l.level === "mid" ? "⚠ Mid" : "Low"}
+                    </span>
+                  </TD>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {/* ══ RAMI | ETHAN — 50/50 ══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 10 }}>
+          <div>
+            <SL text="👤 Rami — Tasks" color="#555" />
+            <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
+              {renderPersonRows(ramiItems, "rami")}
+            </div>
+          </div>
+          <div>
+            <SL text="👤 Ethan — Tasks" color="#555" />
+            <div style={{ border: BORDER, borderRadius: 2, overflow: "hidden" }}>
+              {renderPersonRows(ethanItems, "ethan")}
+            </div>
+          </div>
+        </div>
+
+        {/* ══ EMAILS — FULL WIDTH ══ */}
+        <SL text="📧 Priority Emails" color="#E65100" time={workBlocks.emails} />
+        <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 10 }}>
+          <thead>
+            <tr>
+              <TH w={20} center>✓</TH>
+              <TH w={140}>FROM</TH>
+              <TH>SUBJECT</TH>
+              <TH w={50} center>PRI</TH>
+              <TH w={160}>ACTION / REPLY NOTES</TH>
+            </tr>
+          </thead>
+          <tbody>
+            {emails.map((e, i) => {
+              const id = `email-${i}`;
+              const isDone = ck(id);
+              return (
+                <tr key={id} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                  <TD center><CB id={id} done={isDone} onToggle={toggle} /></TD>
+                  <TD bold strike={isDone} small>{e.from}</TD>
+                  <TD strike={isDone} small>{e.subj}</TD>
+                  <TD center small bold>
+                    <span style={{ color: e.p === "high" ? "#C62828" : e.p === "med" ? "#E65100" : "#555" }}>{e.p || "—"}</span>
+                  </TD>
+                  <td style={{ borderBottom: "1px solid #E8E8E8", verticalAlign: "bottom", padding: "0 6px 4px" }}>
+                    <div style={{ borderBottom: "1px solid #CCC", width: "100%", marginBottom: 2 }} />
+                  </td>
+                </tr>
+              );
+            })}
+            {Array.from({ length: Math.max(0, 5 - emails.length) }).map((_, i) => (
+              <tr key={`emailblank-${i}`} style={{ background: (emails.length + i) % 2 === 0 ? "#fff" : "#FAFAFA", height: 28 }}>
+                <TD center><CB id={`emailblank-${i}`} done={ck(`emailblank-${i}`)} onToggle={toggle} /></TD>
+                <TD /><TD /><TD />
+                <td style={{ borderBottom: "1px solid #E8E8E8" }} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* ══ SLACK — FULL WIDTH ══ */}
+        <SL text="💬 Slack — Tasks & Mentions" color="#611f69" />
+        <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
+          <thead>
+            <tr>
+              <TH w={20} center>✓</TH>
+              <TH w={80} center>LEVEL</TH>
+              <TH w={100}>CHANNEL</TH>
+              <TH w={120}>FROM</TH>
+              <TH>MESSAGE</TH>
+              <TH w={140}>NOTES</TH>
+            </tr>
+          </thead>
+          <tbody>
+            {slackActive.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: "8px 6px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No Slack items today 🎉</td></tr>
+            )}
+            {slackActive.map((s, i) => {
+              const id = `slack-${i}`;
+              const isDone = ck(id);
+              const levelC = s.level === "high" ? "#C62828" : s.level === "mid" ? "#E65100" : "#555";
+              return (
+                <tr key={id} style={{ background: s.level === "high" ? "#FFF5F5" : i % 2 === 0 ? "#fff" : "#FAFAFA" }}>
+                  <TD center><CB id={id} done={isDone} onToggle={toggle} /></TD>
+                  <TD center small bold><span style={{ color: levelC, textTransform: "uppercase" }}>{s.level}</span></TD>
+                  <TD small dim>{s.channel}</TD>
+                  <TD small bold>{s.from}</TD>
+                  <td style={{ fontSize: 9, color: isDone ? "#bbb" : "#444", padding: "5px 6px", borderBottom: "1px solid #E8E8E8", textDecoration: isDone ? "line-through" : "none", overflow: "hidden", maxWidth: 200 }}>
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.message}</div>
+                  </td>
+                  <td style={{ borderBottom: "1px solid #E8E8E8", verticalAlign: "bottom", padding: "0 6px 4px" }}>
+                    <div style={{ borderBottom: "1px solid #CCC", width: "100%", marginBottom: 2 }} />
+                  </td>
+                </tr>
+              );
+            })}
+            {Array.from({ length: Math.max(0, 4 - slackActive.length) }).map((_, i) => (
+              <tr key={`slackblank-${i}`} style={{ background: (slackActive.length + i) % 2 === 0 ? "#fff" : "#FAFAFA", height: 28 }}>
+                <TD center><CB id={`slackblank-${i}`} done={ck(`slackblank-${i}`)} onToggle={toggle} /></TD>
+                <TD /><TD /><TD /><TD />
+                <td style={{ borderBottom: "1px solid #E8E8E8" }} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+      </div>
+    </Page>
   );
 }

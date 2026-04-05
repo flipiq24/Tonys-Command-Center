@@ -177,16 +177,19 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
         boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
       }}>
 
-        {/* ── Left: Title + Date ── */}
-        <div style={{ cursor: "pointer" }} onClick={() => onSetView("dashboard")}>
-          <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 700, color: C.tx, lineHeight: 1.1 }}>
-            Tony's Command Center
-          </div>
-          <div style={{ fontSize: 12, color: C.mut, marginTop: 2, fontFamily: F }}>
-            {TODAY_STR} · {clock}
-            {refreshing && (
-              <span style={{ marginLeft: 8, color: C.blu, fontWeight: 600 }}>⟳ Refreshing…</span>
-            )}
+        {/* ── Left: Logo + Title + Date ── */}
+        <div style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }} onClick={() => onSetView("dashboard")}>
+          <img src="/flipiq-logo.png" alt="FlipIQ" style={{ height: 40, width: "auto", flexShrink: 0 }} />
+          <div>
+            <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 700, color: C.tx, lineHeight: 1.1 }}>
+              COO Dashboard
+            </div>
+            <div style={{ fontSize: 12, color: C.mut, marginTop: 2, fontFamily: F }}>
+              {TODAY_STR} · {clock}
+              {refreshing && (
+                <span style={{ marginLeft: 8, color: C.blu, fontWeight: 600 }}>⟳ Refreshing…</span>
+              )}
+            </div>
           </div>
         </div>
 

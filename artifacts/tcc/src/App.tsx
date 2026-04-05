@@ -566,7 +566,6 @@ export default function App() {
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} onCompose={opts => setEmailCompose({ to: opts.to, contactId: opts.contactId, contactName: opts.contactName, body: opts.body, subject: opts.subject })} />
       <SalesMorning
         calls={calls}
-        briefTasks={brief?.tasks}
         onAttempt={c => setAttempt(c)}
         onConnectedCall={c => setConnectedCall(c)}
         onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}

@@ -262,8 +262,8 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
             </div>
 
             {/* AI reasoning */}
-            <div style={{ padding: "12px 14px", background: C.bluBg, border: `1px solid ${C.blu}20`, borderRadius: 10, marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+            <div style={{ padding: "12px 14px", background: "#F8F8F6", border: `1px solid ${C.brd}`, borderRadius: 10, marginBottom: 16 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
                 AI Analysis
               </div>
               <div style={{ fontSize: 13, color: C.tx, marginBottom: 4 }}>
@@ -374,10 +374,9 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
                   <button key={c} onClick={() => setOverrides(o => ({ ...o, category: c }))}
                     style={{
                       padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-                      border: `2px solid ${finalCat === c ? C.tx : C.brd}`,
-                      background: finalCat === c ? C.tx : C.card,
+                      border: `1px solid ${finalCat === c ? "#F97316" : C.brd}`,
+                      background: finalCat === c ? "#F97316" : C.card,
                       color: finalCat === c ? "#fff" : C.sub,
-                      boxShadow: c === classification.category && finalCat !== c ? `inset 0 0 0 1px ${C.blu}40` : "none",
                     }}>
                     {c === classification.category && finalCat !== c ? `✓ ${c}` : c}
                   </button>
@@ -393,8 +392,8 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
                   <button key={u} onClick={() => setOverrides(o => ({ ...o, urgency: u }))}
                     style={{
                       padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-                      border: `2px solid ${finalUrg === u ? (u === "Now" ? C.red : C.tx) : C.brd}`,
-                      background: finalUrg === u ? (u === "Now" ? C.red : C.tx) : C.card,
+                      border: `1px solid ${finalUrg === u ? "#F97316" : C.brd}`,
+                      background: finalUrg === u ? "#F97316" : C.card,
                       color: finalUrg === u ? "#fff" : C.sub,
                     }}>
                     {u}
@@ -411,9 +410,9 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
                   <button key={t} onClick={() => setOverrides(o => ({ ...o, techType: t }))}
                     style={{
                       padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-                      border: `2px solid ${finalTt === t ? C.blu : C.brd}`,
-                      background: finalTt === t ? C.bluBg : C.card,
-                      color: finalTt === t ? C.blu : C.sub,
+                      border: `1px solid ${finalTt === t ? "#F97316" : C.brd}`,
+                      background: finalTt === t ? "#F97316" : C.card,
+                      color: finalTt === t ? "#fff" : C.sub,
                     }}>
                     {t}
                   </button>
@@ -426,8 +425,8 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
 
             {/* ── ASSIGN SECTION (only for Now / This Week / This Month) ── */}
             {showAssign && !pushback && !override && assign && (
-              <div style={{ padding: "14px 16px", background: "#F0F4FF", border: `1px solid ${C.blu}30`, borderRadius: 12, marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
+              <div style={{ padding: "14px 16px", background: "#F9FAFB", border: `1px solid ${C.brd}`, borderRadius: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
                   Assign (optional)
                 </div>
 

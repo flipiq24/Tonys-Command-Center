@@ -274,7 +274,7 @@ export function CheckinGate({ initial, onComplete }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
           {([["bible", "Bible"], ["workout", "Workout"], ["journal", "Journal"], ["unplug", "Unplug 6PM"]] as [keyof CheckinState, string][]).map(([k, l]) => (
             <button key={k} onClick={() => upCk(k, !ck[k])}
-              style={{ padding: 13, borderRadius: 12, border: `2px solid ${ck[k] ? C.grn : C.brd}`, background: ck[k] ? C.grnBg : C.card, color: ck[k] ? C.grn : C.sub, cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F }}>
+              style={{ padding: 13, borderRadius: 8, border: `1px solid ${ck[k] ? "#F97316" : C.brd}`, background: ck[k] ? "#F97316" : C.card, color: ck[k] ? "#fff" : C.sub, cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F }}>
               {ck[k] ? "✓ " : ""}{l}
             </button>
           ))}
@@ -284,7 +284,7 @@ export function CheckinGate({ initial, onComplete }: Props) {
           <div style={{ display: "flex", gap: 8 }}>
             {["Good", "OK", "Bad"].map(n => (
               <button key={n} onClick={() => upCk("nut", n)}
-                style={{ flex: 1, padding: 12, borderRadius: 10, border: `2px solid ${ck.nut === n ? (n === "Good" ? C.grn : n === "OK" ? C.amb : C.red) : C.brd}`, background: ck.nut === n ? (n === "Good" ? C.grnBg : n === "OK" ? C.ambBg : C.redBg) : C.card, color: ck.nut === n ? (n === "Good" ? C.grn : n === "OK" ? C.amb : C.red) : C.sub, cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F }}>
+                style={{ flex: 1, padding: 12, borderRadius: 8, border: `1px solid ${ck.nut === n ? "#F97316" : C.brd}`, background: ck.nut === n ? "#F97316" : C.card, color: ck.nut === n ? "#fff" : C.sub, cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F }}>
                 {n}
               </button>
             ))}

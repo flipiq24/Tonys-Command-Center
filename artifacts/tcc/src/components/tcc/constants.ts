@@ -1,10 +1,10 @@
-export const F = "'Instrument Sans','DM Sans',-apple-system,sans-serif";
-export const FS = "'Instrument Serif','DM Serif Display',Georgia,serif";
+export const F = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+export const FS = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
 export const C = {
-  bg: "#F7F6F3", card: "#FFF", brd: "#E8E6E1", tx: "#1A1A1A",
-  sub: "#6B6B6B", mut: "#A3A3A3", red: "#C62828", grn: "#2E7D32",
-  amb: "#E65100", blu: "#1565C0", redBg: "#FFEBEE", grnBg: "#E8F5E9",
-  ambBg: "#FFF3E0", bluBg: "#E3F2FD",
+  bg: "#F9FAFB", card: "#FFFFFF", brd: "#E5E7EB", tx: "#1A1A1A",
+  sub: "#4B5563", mut: "#9CA3AF", red: "#C62828", grn: "#2E7D32",
+  amb: "#E65100", blu: "#1565C0", redBg: "#FEF2F2", grnBg: "#ECFDF5",
+  ambBg: "#FFF3EB", bluBg: "#EFF6FF",
 };
 export const SC: Record<string, string> = { Hot: C.red, Warm: C.amb, New: C.blu, Cold: C.mut };
 
@@ -59,8 +59,18 @@ export const TIPS: Record<string, string> = {
 
 export const TODAY_STR = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Los_Angeles" });
 
-export const card: React.CSSProperties = { background: C.card, borderRadius: 14, padding: "20px 24px", border: `1px solid ${C.brd}` };
-export const inp: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 10, border: `2px solid ${C.brd}`, fontSize: 15, fontFamily: F, boxSizing: "border-box", outline: "none" };
-export const btn1: React.CSSProperties = { padding: "14px 28px", background: C.tx, color: "#fff", border: "none", borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: F };
-export const btn2: React.CSSProperties = { padding: "10px 18px", background: C.card, color: C.tx, border: `2px solid ${C.brd}`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: F };
-export const lbl: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 };
+export function fmtDate(d: string | Date | null | undefined): string {
+  if (!d) return "";
+  const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  if (diff < 7) return `${diff} days ago`;
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+import type React from "react";
+export const card: React.CSSProperties = { background: C.card, borderRadius: 12, padding: "20px 24px", border: `1px solid ${C.brd}` };
+export const inp: React.CSSProperties = { width: "100%", padding: "10px 14px", borderRadius: 8, border: `1px solid ${C.brd}`, fontSize: 14, fontFamily: F, boxSizing: "border-box", outline: "none" };
+export const btn1: React.CSSProperties = { padding: "14px 28px", background: "#F97316", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: F };
+export const btn2: React.CSSProperties = { padding: "10px 18px", background: C.card, color: C.tx, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: F };
+export const lbl: React.CSSProperties = { display: "block", fontSize: 10, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 };

@@ -600,11 +600,18 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const callList = contacts.slice(0, 10);
   const meetings = calendarData.filter(c => c.real);
   const emails   = emailsImportant.slice(0, 5);
-  const allLinItems = linearItems.slice(0, 50);
+  const todayStr    = new Date().toISOString().slice(0, 10);
+  const priorityRank = (l: LinearItem) => l.level === "high" ? 0 : l.level === "mid" ? 1 : 2;
+  const isActionable = (l: LinearItem) => {
+    if (l.stateType === "completed" || l.stateType === "cancelled") return false;
+    return l.stateType === "started" || l.dueDate === todayStr || (!!l.dueDate && l.dueDate < todayStr);
+  };
+  const allLinItems = linearItems
+    .filter(isActionable)
+    .sort((a, b) => priorityRank(a) - priorityRank(b));
   const ethanItems  = allLinItems.filter(l => l.who?.toLowerCase().includes("ethan"));
   const ramiItems   = allLinItems.filter(l => l.who?.toLowerCase().includes("rami") || l.who?.toLowerCase().includes("ramy") || l.who?.toLowerCase().includes("remy"));
   const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));
-  const todayStr    = new Date().toISOString().slice(0, 10);
   const wb       = computeWorkBlocks(meetings);
 
   const trackStatus = (l: LinearItem): "overdue" | "due-today" | "at-risk" | "ok" => {

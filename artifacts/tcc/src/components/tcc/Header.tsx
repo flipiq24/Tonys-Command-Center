@@ -346,8 +346,16 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
 
               {sep}
 
-              {/* EOD */}
-              {menuItem("📊", eod ? "EOD Sent ✓" : "Send EOD Report", null, () => onEod(), eod ? C.grn : undefined)}
+              {/* EOD — read-only indicator, only shown after EOD is sent */}
+              {eod && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 14px", fontFamily: F,
+                }}>
+                  <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>📊</span>
+                  <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: C.grn }}>EOD Sent ✓</span>
+                </div>
+              )}
             </div>
           )}
         </div>

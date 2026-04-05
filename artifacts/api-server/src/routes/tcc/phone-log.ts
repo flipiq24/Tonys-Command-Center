@@ -36,10 +36,11 @@ function normalizePhone(p: string): string {
   return p.replace(/\D/g, "");
 }
 
-// ─── Webhook: MacroDroid → POST /phone-log?key=secret ────────────────────────
-router.post("/phone-log", async (req, res): Promise<void> => {
-  if (!checkSecret(req, res)) return;
-
+// ─── Shared handler for MacroDroid webhook body ───────────────────────────────
+async function handlePhoneLogWebhook(
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
   const parsed = PhoneLogBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -61,19 +62,11 @@ router.post("/phone-log", async (req, res): Promise<void> => {
     const autoName = `Unknown — (${phone_number})`;
     const [newContact] = await db
       .insert(contactsTable)
-      .values({
-        name: autoName,
-        phone: phone_number,
-        source: "phone",
-        status: "New",
-      })
+      .values({ name: autoName, phone: phone_number, source: "phone", status: "New" })
       .returning({ id: contactsTable.id, name: contactsTable.name });
     if (newContact) {
       match = newContact;
-      await db
-        .insert(contactIntelligenceTable)
-        .values({ contactId: newContact.id })
-        .onConflictDoNothing();
+      await db.insert(contactIntelligenceTable).values({ contactId: newContact.id }).onConflictDoNothing();
     }
   }
 
@@ -122,11 +115,19 @@ router.post("/phone-log", async (req, res): Promise<void> => {
     updateContactComms(match.id, channel, sms_body || type).catch(() => {});
   }
 
-  res.status(201).json({
-    logged: true,
-    matched: entry.matched,
-    contact_name: entry.contactName ?? null,
-  });
+  res.status(201).json({ logged: true, matched: entry.matched, contact_name: entry.contactName ?? null });
+}
+
+// ─── Webhook: MacroDroid → POST /phone-log?key=secret ────────────────────────
+router.post("/phone-log", async (req, res): Promise<void> => {
+  if (!checkSecret(req, res)) return;
+  await handlePhoneLogWebhook(req, res);
+});
+
+// ─── Alias: POST /phone-log/incoming?key=secret (same webhook, alternate path) ─
+router.post("/phone-log/incoming", async (req, res): Promise<void> => {
+  if (!checkSecret(req, res)) return;
+  await handlePhoneLogWebhook(req, res);
 });
 
 // ─── GET /phone-log?contactId=xxx — for contact activity feed ────────────────

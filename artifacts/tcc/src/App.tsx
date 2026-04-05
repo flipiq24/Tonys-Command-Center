@@ -148,9 +148,9 @@ export default function App() {
 
       if ((hour === 16 && minute >= 30) || hour >= 17) {
         try {
-          const result = await post<{ ok: boolean; alreadySent: boolean }>("/eod-report/auto", {});
+          await post<{ ok: boolean; alreadySent: boolean }>("/eod-report/auto", {});
           eodSentToday = true;
-          if (!result.alreadySent) setEod(true);
+          setEod(true);
         } catch {
           /* silent — Tony can say "send EOD" in Claude Chat */
         }
@@ -384,7 +384,7 @@ export default function App() {
 
   // ═══ GATE: Journal ═══
   if (view === "journal") {
-    return <JournalGate onComplete={() => setView("emails")} />;
+    return <JournalGate onComplete={() => setView("dashboard")} />;
   }
 
   // ═══ CHAT VIEW (full screen) ═══

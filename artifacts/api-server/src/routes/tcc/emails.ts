@@ -159,6 +159,60 @@ router.post("/emails/action", async (req, res): Promise<void> => {
     return;
   }
 
+  if (action === "fetch_thread") {
+    const { gmailMessageId } = parsed.data;
+    if (!gmailMessageId) {
+      res.json({ ok: true, snippet: null, body: null, threadId: null });
+      return;
+    }
+    try {
+      const gmail = getGmail();
+      const msg = await gmail.users.messages.get({ userId: "me", id: gmailMessageId, format: "full" });
+      const data = msg.data;
+      const threadId = data.threadId || null;
+      const snippet = data.snippet || null;
+
+      // Decode the email body (text/plain preferred, fallback to text/html stripped)
+      function decodeBase64Url(str: string): string {
+        return Buffer.from(str.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+      }
+      function extractBody(payload: typeof data.payload): string {
+        if (!payload) return "";
+        if (payload.mimeType === "text/plain" && payload.body?.data) {
+          return decodeBase64Url(payload.body.data);
+        }
+        if (payload.parts) {
+          for (const part of payload.parts) {
+            if (part.mimeType === "text/plain" && part.body?.data) {
+              return decodeBase64Url(part.body.data);
+            }
+          }
+          for (const part of payload.parts) {
+            const sub = extractBody(part as typeof payload);
+            if (sub) return sub;
+          }
+        }
+        if (payload.body?.data) return decodeBase64Url(payload.body.data);
+        return "";
+      }
+
+      const rawBody = extractBody(data.payload);
+      // Trim to first 1500 chars and strip quoted lines (lines starting with >)
+      const body = rawBody
+        .split("\n")
+        .filter(l => !l.trimStart().startsWith(">"))
+        .join("\n")
+        .trim()
+        .substring(0, 1500);
+
+      res.json({ ok: true, snippet, body: body || snippet, threadId });
+    } catch (err) {
+      req.log.warn({ err }, "fetch_thread failed");
+      res.json({ ok: true, snippet: null, body: null, threadId: null });
+    }
+    return;
+  }
+
   if (action === "suggest_reply") {
     // Load the email brain to inform the reply
     const [brainRow] = await db

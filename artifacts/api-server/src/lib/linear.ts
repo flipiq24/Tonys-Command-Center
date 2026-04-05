@@ -21,15 +21,55 @@ export async function linearGraphQL<T = unknown>(query: string, variables?: Reco
   return (res as unknown as { data: T }).data;
 }
 
-export async function getLinearIssues(teamId?: string): Promise<{ id: string; title: string; state: { name: string }; priority: number; identifier: string; dueDate?: string | null }[]> {
+export type LinearIssueRaw = {
+  id: string;
+  title: string;
+  identifier: string;
+  priority: number;
+  dueDate?: string | null;
+  description?: string | null;
+  url?: string;
+  estimate?: number | null;
+  completedAt?: string | null;
+  canceledAt?: string | null;
+  state: { name: string; type: string };
+  assignee?: { name: string; displayName: string } | null;
+  labels?: { nodes: { name: string }[] };
+};
+
+const LINEAR_ISSUE_FIELDS = `
+  id title identifier priority dueDate description url estimate completedAt canceledAt
+  state { name type }
+  assignee { name displayName }
+  labels { nodes { name } }
+`;
+
+export async function getLinearIssues(teamId?: string): Promise<LinearIssueRaw[]> {
   try {
-    const data = await linearGraphQL<{ issues?: { nodes: { id: string; title: string; state: { name: string }; priority: number; identifier: string; dueDate?: string | null }[] } }>(
+    const data = await linearGraphQL<{ issues?: { nodes: LinearIssueRaw[] } }>(
       `query Issues($teamId: ID) {
-        issues(filter: { team: { id: { eq: $teamId } }, state: { name: { nin: ["Done", "Cancelled"] } } }, first: 50) {
-          nodes { id title identifier priority dueDate state { name } }
+        issues(filter: { team: { id: { eq: $teamId } }, state: { type: { nin: ["completed", "cancelled"] } } }, first: 25) {
+          nodes { ${LINEAR_ISSUE_FIELDS} }
         }
       }`,
       teamId ? { teamId } : {}
+    );
+    return data?.issues?.nodes ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getRecentlyCompletedLinearIssues(teamId?: string, sinceDaysAgo = 3): Promise<LinearIssueRaw[]> {
+  try {
+    const since = new Date(Date.now() - sinceDaysAgo * 86400000).toISOString();
+    const data = await linearGraphQL<{ issues?: { nodes: LinearIssueRaw[] } }>(
+      `query CompletedIssues($teamId: ID, $since: DateTime) {
+        issues(filter: { team: { id: { eq: $teamId } }, state: { type: { in: ["completed", "cancelled"] } }, updatedAt: { gt: $since } }, first: 8) {
+          nodes { ${LINEAR_ISSUE_FIELDS} }
+        }
+      }`,
+      { ...(teamId ? { teamId } : {}), since }
     );
     return data?.issues?.nodes ?? [];
   } catch {

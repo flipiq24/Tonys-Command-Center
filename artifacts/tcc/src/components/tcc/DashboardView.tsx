@@ -54,14 +54,14 @@ const SAMPLE_EMAILS: EmailItem[] = [
   { id: 5, from: "Ana Gutierrez", subj: "Seller Direct Phase 3 interest", why: "New pipeline opp", p: "Schedule call" },
 ];
 const SAMPLE_LINEAR: LinearItem[] = [
-  { id: "COM-221", task: "Command 1.5 — contact merge fix", who: "Faisal", level: "high", size: "L", dueDate: new Date().toISOString().slice(0,10), inSequence: true },
-  { id: "COM-230", task: "DispoPro integration endpoint", who: "Haris", level: "high", size: "XL", dueDate: new Date().toISOString().slice(0,10), inSequence: true },
-  { id: "COM-219", task: "Acceptance criteria audit — deployed unchecked", who: "Faisal", level: "high", size: "M", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), inSequence: false },
-  { id: "COM-224", task: "Dashboard filter persistence", who: "Faisal", level: "mid", size: "S", dueDate: new Date(Date.now()+2*86400000).toISOString().slice(0,10), inSequence: true },
-  { id: "FND-118", task: "MLS accuracy pipeline v2", who: "Haris", level: "mid", size: "XL", dueDate: new Date(Date.now()+5*86400000).toISOString().slice(0,10), inSequence: true },
-  { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid", size: "M", dueDate: null, inSequence: true },
-  { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low", size: "L", dueDate: null, inSequence: true },
-  { id: "OMS-045", task: "OMS auto-sequence triggers", who: "Anas", level: "low", size: "M", dueDate: null, inSequence: true },
+  { id: "COM-221", task: "Command 1.5 — contact merge fix", who: "Faisal", level: "high", size: "L", dueDate: new Date().toISOString().slice(0,10), inSequence: true, state: "In Progress", stateType: "started", description: "Fix the contact merge duplicates showing in Command 1.5. Root cause: ID collision on re-import.", labels: ["bug", "command"] },
+  { id: "COM-230", task: "DispoPro integration endpoint", who: "Haris", level: "high", size: "XL", dueDate: new Date().toISOString().slice(0,10), inSequence: true, state: "In Progress", stateType: "started", description: "Build and expose the REST endpoint for DispoPro to push deal data into FlipIQ.", labels: ["integration"] },
+  { id: "COM-219", task: "Acceptance criteria audit — deployed unchecked", who: "Faisal", level: "high", size: "M", dueDate: new Date(Date.now()+86400000).toISOString().slice(0,10), inSequence: false, state: "In Review", stateType: "started", description: "Several ACs were marked complete but not verified in production. Audit and document.", labels: ["qa"] },
+  { id: "COM-224", task: "Dashboard filter persistence", who: "Faisal", level: "mid", size: "S", dueDate: new Date(Date.now()+2*86400000).toISOString().slice(0,10), inSequence: true, state: "Todo", stateType: "unstarted", description: "User's selected filters should persist across page navigation and browser refresh.", labels: ["ux"] },
+  { id: "FND-118", task: "MLS accuracy pipeline v2", who: "Haris", level: "mid", size: "XL", dueDate: new Date(Date.now()+5*86400000).toISOString().slice(0,10), inSequence: true, state: "Todo", stateType: "unstarted", description: "Rebuild MLS ingestion pipeline to handle county-level accuracy improvements.", labels: ["data", "mls"] },
+  { id: "MKT-089", task: "Marketplace listing photo upload", who: "Bishal", level: "mid", size: "M", dueDate: null, inSequence: true, state: "In Progress", stateType: "started", labels: ["marketplace"] },
+  { id: "FND-122", task: "Agent data dedup engine", who: "Haris", level: "low", size: "L", dueDate: null, inSequence: true, state: "Backlog", stateType: "backlog", labels: ["data"] },
+  { id: "COM-218", task: "CSV export — contact bulk download", who: "Faisal", level: "low", size: "S", dueDate: null, inSequence: true, state: "Done", stateType: "completed", description: "Bulk CSV download of contacts with all standard fields. Completed and deployed.", labels: ["feature"] },
 ];
 
 // ── Time scheduling ─────────────────────────────────────────────────
@@ -354,6 +354,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   // ── Scratch Notes state ─────────────────────────────────────────
   const [scratchNotes, setScratchNotes] = useState<ScratchNote[]>([]);
   const [scratchInput, setScratchInput] = useState("");
+  const [hoveredLin, setHoveredLin] = useState<LinearItem | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const scratchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -412,7 +414,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const callList = contacts.length > 0 ? contacts.slice(0, 10) : SAMPLE_CALLS;
   const meetings = calendarData.filter(c => c.real).length > 0 ? calendarData.filter(c => c.real) : SAMPLE_MEETINGS;
   const emails   = emailsImportant.length > 0 ? emailsImportant.slice(0, 5) : SAMPLE_EMAILS;
-  const linItems = linearItems.length > 0 ? linearItems.slice(0, 8) : SAMPLE_LINEAR;
+  const linItems = linearItems.length > 0 ? linearItems.slice(0, 13) : SAMPLE_LINEAR;
   const todayStr = new Date().toISOString().slice(0, 10);
   const dueTodayCount = linItems.filter(l => l.dueDate === todayStr).length;
   const wb       = computeWorkBlocks(meetings);
@@ -600,22 +602,46 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   <tr><td colSpan={10} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
                 )}
                 {linItems.map((l, i) => {
-                  const id = `lin-${i}`;
-                  const done = ck(id);
+                  const isCompleted = l.stateType === "completed" || l.stateType === "cancelled";
                   const ts = trackStatus(l);
-                  const rowBg = l.level === "high" ? "#FFF5F5" : "#fff";
-                  const trackColor = ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
-                  const trackLabel = ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
-                  const flagIcon = l.level === "high" ? "🚩" : l.level === "mid" ? "⚠" : "";
+                  const rowBg = isCompleted ? "#F9F9F9" : l.level === "high" ? "#FFF5F5" : "#fff";
+                  const rowOpacity = isCompleted ? 0.55 : 1;
+                  const trackColor = isCompleted ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
+                  const trackLabel = isCompleted ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
+                  const flagIcon = isCompleted ? "" : l.level === "high" ? "🚩" : l.level === "mid" ? "⚠" : "";
                   const seqColor = l.inSequence === false ? "#C62828" : "#2E7D32";
-                  const seqLabel = l.inSequence === false ? "✗" : l.inSequence === true ? "✓" : "—";
+                  const seqLabel = isCompleted ? "—" : l.inSequence === false ? "✗" : l.inSequence === true ? "✓" : "—";
                   const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
+                  // State indicator glyph
+                  const stateGlyph = isCompleted && l.stateType === "completed" ? "✓"
+                    : isCompleted ? "✕"
+                    : l.stateType === "started" ? "▷"
+                    : l.stateType === "backlog" ? "·"
+                    : "○";
+                  const stateGlyphColor = isCompleted && l.stateType === "completed" ? "#2E7D32"
+                    : isCompleted ? "#999"
+                    : l.stateType === "started" ? "#2563EB"
+                    : "#aaa";
                   return (
-                    <tr key={id} className="dash-row-hover" style={{ background: rowBg }}>
-                      <TD center><CB id={id} checked={done} onToggle={toggle} /></TD>
-                      <TD center small dim>{i + 1}</TD>
-                      <TD small bold><span style={{ color: "#2563EB" }}>{l.id}</span></TD>
-                      <TD strike={done}>{l.task}</TD>
+                    <tr
+                      key={`lin-${i}`}
+                      className="dash-row-hover"
+                      style={{ background: rowBg, opacity: rowOpacity, cursor: "default" }}
+                      onMouseEnter={e => { setHoveredLin(l); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
+                      onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
+                      onMouseLeave={() => setHoveredLin(null)}
+                    >
+                      <TD center>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: stateGlyphColor, lineHeight: 1 }}>{stateGlyph}</span>
+                      </TD>
+                      <TD center small dim>{isCompleted ? "" : i + 1}</TD>
+                      <TD small bold>
+                        {l.url
+                          ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "none" }}>{l.id}</a>
+                          : <span style={{ color: "#2563EB" }}>{l.id}</span>
+                        }
+                      </TD>
+                      <TD strike={isCompleted}>{l.task}</TD>
                       <TD small>{l.who || "—"}</TD>
                       <TD center><span style={{ fontSize: 11 }}>{flagIcon}</span></TD>
                       <TD small center>
@@ -711,6 +737,70 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
           </div>
 
       </div>
+
+      {/* ── LINEAR HOVER TOOLTIP ── */}
+      {hoveredLin && (
+        <div
+          style={{
+            position: "fixed",
+            left: Math.min(tooltipPos.x + 18, (typeof window !== "undefined" ? window.innerWidth : 1200) - 360),
+            top: Math.max(tooltipPos.y - 20, 8),
+            zIndex: 9999,
+            background: "#1C1C1E",
+            color: "#F5F5F5",
+            borderRadius: 8,
+            padding: "14px 16px",
+            width: 340,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.45)",
+            fontSize: 11,
+            lineHeight: 1.55,
+            pointerEvents: "none",
+            fontFamily: F,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: "#93C5FD", letterSpacing: 0.6 }}>{hoveredLin.id}</span>
+            {hoveredLin.state && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 20,
+                background: hoveredLin.stateType === "completed" ? "#14532D44" : hoveredLin.stateType === "started" ? "#1E3A5F44" : "#33333366",
+                color: hoveredLin.stateType === "completed" ? "#86EFAC" : hoveredLin.stateType === "started" ? "#93C5FD" : "#AAA",
+                border: "1px solid",
+                borderColor: hoveredLin.stateType === "completed" ? "#86EFAC44" : hoveredLin.stateType === "started" ? "#93C5FD44" : "#55555544",
+              }}>{hoveredLin.state}</span>
+            )}
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "#FFFFFF", marginBottom: 8, lineHeight: 1.4 }}>{hoveredLin.task}</div>
+          {hoveredLin.description && (
+            <div style={{ fontSize: 10.5, color: "#C0C0C0", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #333", lineHeight: 1.5 }}>
+              {hoveredLin.description.length > 280 ? hoveredLin.description.slice(0, 280) + "…" : hoveredLin.description}
+            </div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: "4px 8px", fontSize: 10.5 }}>
+            <span style={{ color: "#777" }}>Assignee</span>
+            <span style={{ color: "#F5F5F5" }}>{hoveredLin.who || "—"}</span>
+            <span style={{ color: "#777" }}>Priority</span>
+            <span style={{ color: hoveredLin.level === "high" ? "#FCA5A5" : hoveredLin.level === "mid" ? "#FCD34D" : "#AAA", fontWeight: 600 }}>
+              {hoveredLin.level === "high" ? "🔴 High" : hoveredLin.level === "mid" ? "⚠ Medium" : "Low"}
+            </span>
+            <span style={{ color: "#777" }}>Due Date</span>
+            <span style={{ color: "#F5F5F5" }}>{fmtDue(hoveredLin.dueDate)}</span>
+            <span style={{ color: "#777" }}>Size</span>
+            <span style={{ color: "#F5F5F5", fontWeight: 700 }}>{hoveredLin.size || "—"}</span>
+            {hoveredLin.labels && hoveredLin.labels.length > 0 && (
+              <>
+                <span style={{ color: "#777" }}>Labels</span>
+                <span style={{ color: "#F5F5F5" }}>{hoveredLin.labels.join(", ")}</span>
+              </>
+            )}
+          </div>
+          {hoveredLin.url && (
+            <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid #333", fontSize: 10, color: "#93C5FD" }}>
+              Open in Linear ↗ — click the ID to navigate
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

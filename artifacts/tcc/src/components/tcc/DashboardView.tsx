@@ -129,52 +129,76 @@ const TL_W     = TL_TOTAL * PPM;     // 1800px
 
 function getCurrentMins() {
   const n = new Date();
-  return n.getHours() * 60 + n.getMinutes();
+  return n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60 + n.getMilliseconds() / 60000;
 }
 
 function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]; autoBlocks: WorkBlock[]; onNavigate?: (v: NavView) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [nowMins, setNowMins] = useState<number>(getCurrentMins);
+  const containerWidthRef = useRef<number>(0);
+  const pausedUntilRef = useRef<number>(0);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const centerOnNow = useCallback(() => {
+  const centerOnNow = useCallback((force = false, smooth = false) => {
+    if (!force && Date.now() < pausedUntilRef.current) return;
     const el = containerRef.current;
     if (!el) return;
+    const w = containerWidthRef.current || el.clientWidth || el.offsetWidth;
+    if (!w) return;
     const mins = getCurrentMins();
     const clamped = Math.max(TL_START, Math.min(mins, TL_END));
     const nx = (clamped - TL_START) * PPM;
-    const w = el.clientWidth || el.offsetWidth || 400;
-    el.scrollLeft = Math.max(0, nx - w / 2);
+    const target = Math.max(0, nx - w / 2);
+    if (smooth) {
+      el.scrollTo({ left: target, behavior: 'smooth' });
+    } else {
+      el.scrollLeft = target;
+    }
   }, []);
 
-  // Auto-recenter on mount (triple-try for slow flex layouts)
+  // ResizeObserver — cache width and fire initial center once measured
   useEffect(() => {
-    let raf1: number, raf2: number;
-    raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(centerOnNow);
+    const el = containerRef.current;
+    if (!el) return;
+    let initialCentered = false;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        containerWidthRef.current = entry.contentRect.width;
+      }
+      if (!initialCentered && containerWidthRef.current > 0) {
+        initialCentered = true;
+        centerOnNow(true);
+      }
     });
-    const t1 = setTimeout(centerOnNow, 200);
-    const t2 = setTimeout(centerOnNow, 600);
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [centerOnNow]);
 
-  // Tick every minute — update the time and re-center so the line stays in view
+  // Tick every second — keep nowMins fresh and re-center continuously
   useEffect(() => {
     const interval = setInterval(() => {
       setNowMins(getCurrentMins());
       centerOnNow();
-    }, 60_000);
+    }, 1_000);
     return () => clearInterval(interval);
   }, [centerOnNow]);
 
+  // Clean up resume timer on unmount
+  useEffect(() => {
+    return () => {
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    };
+  }, []);
 
   const pan = (delta: number) => {
     if (!containerRef.current) return;
     containerRef.current.scrollLeft = Math.max(0, Math.min(containerRef.current.scrollLeft + delta, TL_W));
+    pausedUntilRef.current = Date.now() + 5_000;
+    if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    resumeTimerRef.current = setTimeout(() => {
+      pausedUntilRef.current = 0;
+      centerOnNow(true, true);
+    }, 5_000);
   };
 
   const nowX  = (nowMins - TL_START) * PPM;

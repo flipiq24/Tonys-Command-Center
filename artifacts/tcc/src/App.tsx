@@ -401,6 +401,9 @@ export default function App() {
     );
   }
 
+  // Real calendar items only (matches what DashboardView shows)
+  const realCalItems = (brief?.calendarData || []).filter(c => c.real);
+
   // ═══ SHARED UI ELEMENTS ═══
   const sharedHeader = (
     <Header
@@ -544,7 +547,7 @@ export default function App() {
   if (view === "sales") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
+      {calSide && <CalendarSidebar items={realCalItems} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
       <SalesView
@@ -565,7 +568,7 @@ export default function App() {
   if (view === "tasks") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
+      {calSide && <CalendarSidebar items={realCalItems} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
       <TasksView
         tasks={brief?.tasks || []}
@@ -583,7 +586,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
+      {calSide && <CalendarSidebar items={realCalItems} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
       <ScheduleView
         items={brief?.calendarData || []}

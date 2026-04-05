@@ -38,12 +38,14 @@ interface BriefModalData {
 
 interface Props {
   calls: { contactName: string; type: string }[];
+  briefTasks?: { id: string; text: string; cat: string; sales?: boolean; priority?: number }[];
   onAttempt: (c: { id: string | number; name: string }) => void;
   onConnectedCall: (c: { contactId: string; contactName: string; contactEmail?: string }) => void;
   onCompose: (c: Contact) => void;
   onOpenChat: (contextType: string, contextId: string, contextLabel: string) => void;
   onSwitchToTasks: () => void;
   onBackToSchedule: () => void;
+  onSwitchToFullSales?: () => void;
 }
 
 const VALID_STAGES = ["new", "outreach", "engaged", "meeting_scheduled", "negotiating", "closed", "dormant"] as const;
@@ -74,7 +76,7 @@ function CommTag({ channel }: { channel?: string }) {
   return <span style={{ fontSize: 10, color: C.mut, background: C.brd + "88", borderRadius: 3, padding: "1px 4px" }}>{labels[channel] || channel}</span>;
 }
 
-export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onOpenChat, onSwitchToTasks, onBackToSchedule }: Props) {
+export function SalesMorning({ calls, briefTasks = [], onAttempt, onConnectedCall, onCompose, onOpenChat, onSwitchToTasks, onBackToSchedule, onSwitchToFullSales }: Props) {
   const [data, setData] = useState<MorningData | null>(null);
   const [loading, setLoading] = useState(true);
   const [demoCount, setDemoCount] = useState(0);
@@ -318,16 +320,21 @@ export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onO
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[
-              { label: `1 — Make ${Math.max(0, 10 - todayCallCount)} More Sales Calls (${todayCallCount}/10 today)`, primary: true, action: null },
-              { label: `2 — ${(d?.pipelineSummary.overdue || 0) > 0 ? `Follow Up: ${d?.pipelineSummary.overdue} Overdue` : "Schedule a Demo"}`, primary: false, action: null },
-              { label: "3 — Update CRM for top contacts", primary: false, action: null },
-            ].map((t, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.primary ? C.red : C.blu, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: C.tx, fontWeight: t.primary ? 700 : 400 }}>{t.label}</span>
-              </div>
-            ))}
+            {(() => {
+              const nonSalesTasks = briefTasks.filter(t => !t.sales).sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999)).slice(0, 2);
+              const task2 = nonSalesTasks[0]?.text || ((d?.pipelineSummary.overdue || 0) > 0 ? `Follow Up: ${d?.pipelineSummary.overdue} Overdue` : "Schedule a Demo");
+              const task3 = nonSalesTasks[1]?.text || "Update CRM for top contacts";
+              return [
+                { label: `1 — Make ${Math.max(0, 10 - todayCallCount)} More Sales Calls (${todayCallCount}/10 today)`, primary: true },
+                { label: `2 — ${task2}`, primary: false },
+                { label: `3 — ${task3}`, primary: false },
+              ].map((t, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: t.primary ? C.red : C.blu, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: C.tx, fontWeight: t.primary ? 700 : 400 }}>{t.label}</span>
+                </div>
+              ));
+            })()}
           </div>
         </div>
 
@@ -459,6 +466,9 @@ export function SalesMorning({ calls, onAttempt, onConnectedCall, onCompose, onO
         <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 20, paddingBottom: 40 }}>
           <button onClick={onBackToSchedule} style={btn2}>← Schedule</button>
           <button onClick={onSwitchToTasks} style={btn2}>Tasks →</button>
+          {onSwitchToFullSales && (
+            <button onClick={onSwitchToFullSales} style={btn2}>Full Pipeline →</button>
+          )}
         </div>
       </div>
     </div>

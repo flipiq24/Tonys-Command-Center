@@ -13,6 +13,7 @@ import { ConnectedCallModal } from "@/components/tcc/ConnectedCallModal";
 import { EmailsView } from "@/components/tcc/EmailsView";
 import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
+import { SalesMorning } from "@/components/tcc/SalesMorning";
 import { TasksView } from "@/components/tcc/TasksView";
 import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
@@ -20,7 +21,7 @@ import { DashboardView } from "@/components/tcc/DashboardView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "tasks" | "chat";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "tasks" | "chat";
 
 const DEFAULT_CONTACTS: Contact[] = [
   { id: "1", name: "Mike Oyoque", company: "MR EXCELLENCE", status: "Warm", phone: "(555) 123-4567", nextStep: "Follow up demo", lastContactDate: "Mar 25" },
@@ -53,7 +54,7 @@ export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoaded, setContactsLoaded] = useState(false);
   const [calls, setCalls] = useState<CallEntry[]>([]);
-  const [attempt, setAttempt] = useState<{ id: string | number; name: string } | null>(null);
+  const [attempt, setAttempt] = useState<{ id: string | number; name: string; email?: string } | null>(null);
   const [calSide, setCalSide] = useState(false);
 
   // Ideas state
@@ -239,7 +240,7 @@ export default function App() {
           setCk(loaded);
 
           if (journal?.formattedText || journal?.rawText) {
-            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "tasks"];
+            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "sales-morning", "tasks"];
             const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
             const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "dashboard";
             setView(restoredView);
@@ -410,6 +411,7 @@ export default function App() {
       clock={clock}
       ideas={ideas}
       unresolved={unresolved}
+      snoozedCount={Object.keys(snoozed).length}
       calSide={calSide}
       eod={eod}
       customTips={customTips}
@@ -549,7 +551,7 @@ export default function App() {
       {sharedHeader}
       {calSide && <CalendarSidebar items={realCalItems} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
       {sharedModals}
-      <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} />
+      <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} onCompose={opts => setEmailCompose({ to: opts.to, contactId: opts.contactId, contactName: opts.contactName, body: opts.body, subject: opts.subject })} />
       <SalesView
         contacts={contacts}
         calls={calls}
@@ -560,6 +562,27 @@ export default function App() {
         onBackToSchedule={() => persistView("schedule")}
         onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
         onConnectedCall={c => setConnectedCall(c)}
+      />
+    </div>
+  );
+
+  // ═══ SALES MORNING VIEW ═══
+  if (view === "sales-morning") return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
+      {sharedHeader}
+      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
+      {sharedModals}
+      <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} onCompose={opts => setEmailCompose({ to: opts.to, contactId: opts.contactId, contactName: opts.contactName, body: opts.body, subject: opts.subject })} />
+      <SalesMorning
+        calls={calls}
+        briefTasks={brief?.tasks}
+        onAttempt={c => setAttempt(c)}
+        onConnectedCall={c => setConnectedCall(c)}
+        onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
+        onOpenChat={openChatWithContext}
+        onSwitchToTasks={() => persistView("tasks")}
+        onBackToSchedule={() => persistView("schedule")}
+        onSwitchToFullSales={() => persistView("sales")}
       />
     </div>
   );

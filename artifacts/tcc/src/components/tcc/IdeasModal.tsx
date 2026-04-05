@@ -392,7 +392,7 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
             <div style={{ marginBottom: 12 }}>
               <label style={lbl}>Type (Manual Override)</label>
               <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                {["Bug", "Feature", "Idea", "Task", "Strategic"].map(t => (
+                {["Bug", "Feature", "Note", "Task", "Strategic"].map(t => (
                   <button key={t} onClick={() => setOverrides(o => ({ ...o, techType: t }))}
                     style={{
                       padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
@@ -405,7 +405,7 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>
-                {finalTt === "Task" ? "Task ideas check against the 90-day plan." : finalTt === "Strategic" ? "Strategic ideas are flagged for Ethan review." : finalCat === "Tech" ? "Tech ideas auto-create a Linear issue." : "Override the AI-detected type if needed."}
+                {finalTt === "Task" ? "Task ideas check against the 90-day plan." : finalTt === "Strategic" ? "Strategic ideas are flagged for Ethan review." : finalTt === "Note" ? "Notes are parked for reference — not tied to a project." : finalCat === "Tech" ? "Tech ideas auto-create a Linear issue." : "Override the AI-detected type if needed."}
               </div>
             </div>
 

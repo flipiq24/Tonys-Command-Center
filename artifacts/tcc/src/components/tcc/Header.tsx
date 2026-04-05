@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { FontLink } from "./FontLink";
 import { C, F, FS, TODAY_STR } from "./constants";
 import type { Idea, SlackItem, LinearItem } from "./types";
@@ -33,6 +33,7 @@ interface Props {
   clock: string;
   ideas: Idea[];
   unresolved: number;
+  snoozedCount?: number;
   calSide: boolean;
   eod: boolean;
   customTips: Record<string, string>;
@@ -65,10 +66,26 @@ const topLevel = (items: { level: string }[]) => {
   return "low";
 };
 
-export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onShowCheckin, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning, onPrint }: Props) {
+export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eod, customTips: _customTips, lastRefresh, refreshing, slackItems = [], linearItems = [], meetingWarning, onSetView, onToggleCal, onShowIdea, onShowChat, onShowCheckin, onEod, onTipSaved: _onTipSaved, onRefresh, onDismissWarning, onPrint }: Props) {
   const [open, setOpen] = useState(false);
   const [dismissedHighUrgency, setDismissedHighUrgency] = useState(false);
+  const [showSlackPopover, setShowSlackPopover] = useState(false);
+  const [attendeeBriefExpanded, setAttendeeBriefExpanded] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const slackPopoverRef = useRef<HTMLDivElement>(null);
+
+  const handleDismissSlackPopover = useCallback(() => setShowSlackPopover(false), []);
+
+  useEffect(() => {
+    if (!showSlackPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (slackPopoverRef.current && !slackPopoverRef.current.contains(e.target as Node)) {
+        setShowSlackPopover(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showSlackPopover]);
 
   useEffect(() => {
     if (!open) return;
@@ -160,16 +177,28 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
             <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
             <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
             <span style={{ display: "block", width: 18, height: 2, background: open ? C.blu : C.tx, borderRadius: 2, transition: "all 0.2s" }} />
-            {!open && (slackItems.length > 0 || linearItems.length > 0) && (
+            {!open && slackItems.length > 0 && (
               <span style={{
-                position: "absolute", top: -6, right: -6,
+                position: "absolute", top: -6, left: -6,
                 minWidth: 16, height: 16, borderRadius: 8,
-                background: slackLevel === "high" || linearLevel === "high" ? C.red : C.amb,
+                background: slackLevel === "high" ? C.red : C.amb,
                 border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px",
                 lineHeight: 1,
               }}>
-                {slackItems.length + linearItems.length}
+                {slackItems.length}
+              </span>
+            )}
+            {!open && linearItems.length > 0 && (
+              <span style={{
+                position: "absolute", top: -6, right: -6,
+                minWidth: 16, height: 16, borderRadius: 8,
+                background: linearLevel === "high" ? C.red : "#7B1FA2",
+                border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px",
+                lineHeight: 1,
+              }}>
+                {linearItems.length}
               </span>
             )}
             {!open && unresolved > 0 && slackItems.length === 0 && linearItems.length === 0 && (
@@ -214,9 +243,9 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
               {/* Navigate */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Navigate</div>
               {menuItem("🏠", "Dashboard", null, () => onSetView("dashboard"))}
-              {menuItem("📞", "Sales", null, () => onSetView("sales"))}
+              {menuItem("📞", "Sales", null, () => onSetView("sales-morning"))}
               {menuItem("📅", "Calendar", null, () => onToggleCal(), calSide ? C.blu : undefined)}
-              {menuItem("✉️", "Emails", unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
+              {menuItem("✉️", `Emails${snoozedCount > 0 ? ` (${snoozedCount} snoozed)` : ""}`, unresolved || null, () => onSetView("emails"), unresolved > 0 ? C.red : undefined)}
               {menuItem("✅", "Tasks", null, () => onSetView("tasks"))}
               {menuItem("💬", "AI Chat", null, () => onShowChat())}
 
@@ -225,7 +254,67 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
               {menuItem("💡", "Ideas", null, () => onShowIdea())}
-              {slackItems.length > 0 && menuItem("💬", "Slack", slackItems.length, () => {}, levelColor(slackLevel || undefined))}
+              {slackItems.length > 0 && (
+                <div style={{ position: "relative" }} ref={slackPopoverRef}>
+                  <button
+                    onClick={() => setShowSlackPopover(p => !p)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, width: "100%",
+                      padding: "9px 14px", background: showSlackPopover ? "#F5F4F1" : "none", border: "none",
+                      textAlign: "left", cursor: "pointer", fontFamily: F, borderRadius: 8,
+                      transition: "background 0.1s",
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#F5F4F1")}
+                    onMouseLeave={e => (e.currentTarget.style.background = showSlackPopover ? "#F5F4F1" : "none")}
+                  >
+                    <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>💬</span>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: levelColor(slackLevel || undefined) }}>Slack</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, background: `${levelColor(slackLevel || undefined)}22`, color: levelColor(slackLevel || undefined), borderRadius: 10, padding: "1px 7px", minWidth: 20, textAlign: "center" }}>{slackItems.length}</span>
+                  </button>
+                  {showSlackPopover && (
+                    <div style={{
+                      position: "absolute", left: "calc(100% + 8px)", top: 0,
+                      background: C.card, border: `1px solid ${C.brd}`,
+                      borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.13)",
+                      width: 280, zIndex: 300, fontFamily: F, padding: "10px 0",
+                      animation: "fadeIn 0.12s ease-out",
+                    }}>
+                      <div style={{ padding: "0 14px 8px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                        Slack Messages
+                      </div>
+                      {slackItems.map((item, i) => {
+                        const slackDeepLink = item.url
+                          ? item.url
+                          : item.channel
+                            ? `slack://channel?team=&id=${item.channel}`
+                            : "slack://open";
+                        return (
+                        <div key={i} style={{
+                          padding: "8px 14px", borderBottom: i < slackItems.length - 1 ? `1px solid ${C.brd}` : "none",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: item.level === "high" ? C.red : item.level === "mid" ? C.amb : C.mut, borderRadius: 3, padding: "1px 5px", textTransform: "uppercase" }}>{item.level || "low"}</span>
+                            {item.channel && <span style={{ fontSize: 11, color: C.mut }}>#{item.channel}</span>}
+                            <a
+                              href={slackDeepLink}
+                              target={item.url && item.url.startsWith("http") ? "_blank" : "_self"}
+                              rel="noopener noreferrer"
+                              style={{ marginLeft: "auto", fontSize: 10, color: C.blu, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap" }}
+                            >
+                              Open ↗
+                            </a>
+                          </div>
+                          <div style={{ fontSize: 12, color: C.tx, lineHeight: 1.4 }}>
+                            {item.from && <span style={{ fontWeight: 700 }}>{item.from}: </span>}
+                            {(item.message || "").substring(0, 120)}
+                          </div>
+                        </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               {linearItems.length > 0 && (
                 <div>
                   {menuItem("📋", "Linear", linearItems.length, () => {}, levelColor(linearLevel || undefined))}
@@ -273,20 +362,37 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
       {meetingWarning && (
         <div style={{
           background: "#1565C0", color: "#fff", padding: "10px 20px",
-          display: "flex", justifyContent: "space-between", alignItems: "center",
           boxShadow: "0 2px 8px rgba(0,0,0,0.15)", fontFamily: F, zIndex: 49,
         }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>⏰ Meeting in 5 min: {meetingWarning.title} at {meetingWarning.time}</div>
-            {meetingWarning.location && <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>📍 {meetingWarning.location}</div>}
-            {meetingWarning.attendeeBrief && <div style={{ fontSize: 11, opacity: 0.8, marginTop: 3, fontStyle: "italic" }}>{meetingWarning.attendeeBrief}</div>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14 }}>⏰ Meeting in 5 min: {meetingWarning.title} at {meetingWarning.time}</div>
+              {meetingWarning.location && <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>📍 {meetingWarning.location}</div>}
+              {meetingWarning.attendeeBrief && (
+                <button
+                  onClick={() => setAttendeeBriefExpanded(p => !p)}
+                  style={{ marginTop: 4, background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", fontFamily: F }}
+                >
+                  {attendeeBriefExpanded ? "▴ Hide Brief" : "▾ View Full Brief"}
+                </button>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexShrink: 0, marginLeft: 12 }}>
+              {meetingWarning.location?.startsWith("http") && (
+                <a href={meetingWarning.location} target="_blank" rel="noreferrer" style={{ padding: "5px 12px", background: "#fff", color: "#1565C0", borderRadius: 7, fontWeight: 700, fontSize: 12, textDecoration: "none" }}>Join</a>
+              )}
+              <button onClick={onDismissWarning} style={{ padding: "5px 12px", background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, cursor: "pointer", fontFamily: F }}>Dismiss</button>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {meetingWarning.location?.startsWith("http") && (
-              <a href={meetingWarning.location} target="_blank" rel="noreferrer" style={{ padding: "5px 12px", background: "#fff", color: "#1565C0", borderRadius: 7, fontWeight: 700, fontSize: 12, textDecoration: "none" }}>Join</a>
-            )}
-            <button onClick={onDismissWarning} style={{ padding: "5px 12px", background: "rgba(255,255,255,0.2)", color: "#fff", border: "none", borderRadius: 7, fontSize: 12, cursor: "pointer", fontFamily: F }}>Dismiss</button>
-          </div>
+          {meetingWarning.attendeeBrief && attendeeBriefExpanded && (
+            <div style={{
+              marginTop: 10, padding: "10px 14px", background: "rgba(255,255,255,0.12)",
+              borderRadius: 8, fontSize: 12, lineHeight: 1.6, fontStyle: "italic",
+              whiteSpace: "pre-wrap",
+            }}>
+              {meetingWarning.attendeeBrief}
+            </div>
+          )}
         </div>
       )}
 

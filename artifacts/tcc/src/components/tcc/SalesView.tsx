@@ -5,6 +5,7 @@ import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
 import { ContactDrawer } from "./ContactDrawer";
 import { AddContactModal } from "./AddContactModal";
+import { HoverCard } from "./HoverCard";
 import type { Contact, CallEntry } from "./types";
 
 interface Props {
@@ -308,12 +309,19 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
           <div style={{ ...card, marginTop: 12, background: C.grnBg, padding: "14px 20px" }}>
             <h3 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 8px", color: C.grn }}>Today's Calls ({calls.length})</h3>
             {calls.map((cl, i) => (
-              <div key={i} style={{ fontSize: 13, padding: "3px 0", color: C.grn, display: "flex", gap: 8 }}>
+              <HoverCard key={i} rows={[
+                { label: "Contact", value: cl.contactName },
+                { label: "Type", value: cl.type === "connected" ? "Connected" : "Attempt", color: cl.type === "connected" ? C.grn : C.amb },
+                ...(cl.notes ? [{ label: "Notes", value: cl.notes }] : []),
+                ...(cl.createdAt ? [{ label: "Time", value: new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) }] : []),
+              ]}>
+              <div style={{ fontSize: 13, padding: "3px 0", color: C.grn, display: "flex", gap: 8, cursor: "default" }}>
                 <span>{cl.type === "connected" ? "✓" : "📞"}</span>
                 <span style={{ fontWeight: 600 }}>{cl.contactName}</span>
                 <span style={{ color: C.sub }}>— {cl.type}</span>
                 {cl.createdAt && <span style={{ color: C.mut, marginLeft: "auto" }}>{new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}
               </div>
+              </HoverCard>
             ))}
           </div>
         )}

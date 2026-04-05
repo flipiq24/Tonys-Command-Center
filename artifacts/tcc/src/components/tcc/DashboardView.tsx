@@ -5,7 +5,7 @@ import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
-interface Contact { name: string; phone?: string; company?: string; status?: string; }
+interface Contact { name: string; phone?: string; company?: string; status?: string; nextStep?: string; lastContactDate?: string; email?: string; }
 type NavView = "emails" | "schedule" | "sales" | "tasks";
 
 interface Props {
@@ -26,16 +26,16 @@ const SAMPLE_TOP3: TaskItem[] = [
   { id: "s3", text: "Review & approve Ramy's OMS user adaptation report", cat: "Operations" },
 ];
 const SAMPLE_CALLS: Contact[] = [
-  { name: "Mike Torres", company: "Coko Acq.", phone: "(951) 555-0142", status: "Hot" },
-  { name: "Sarah Chen", company: "Investor Lead", phone: "(626) 555-0198", status: "Warm" },
-  { name: "David Park", company: "Broker-Inv.", phone: "(714) 555-0233", status: "New" },
-  { name: "Lisa Rodriguez", company: "STJ", phone: "(909) 555-0317", status: "Hot" },
-  { name: "James Wu", company: "PropertyRadar", phone: "(415) 555-0421", status: "Warm" },
-  { name: "Rachel Kim", company: "DCP", phone: "(310) 555-0544", status: "New" },
-  { name: "Tom Bradley", company: "Hegemark", phone: "(818) 555-0619", status: "Warm" },
-  { name: "Ana Gutierrez", company: "Acq. Homes", phone: "(562) 555-0788", status: "Cold" },
-  { name: "Kevin O'Brien", company: "New Lead", phone: "(949) 555-0855", status: "New" },
-  { name: "Maria Espinoza", company: "DispoPro", phone: "(213) 555-0961", status: "Warm" },
+  { name: "Mike Torres", company: "Coko Acq.", phone: "(951) 555-0142", status: "Hot", nextStep: "Send LOI + follow up on deal terms", lastContactDate: "Today" },
+  { name: "Sarah Chen", company: "Investor Lead", phone: "(626) 555-0198", status: "Warm", nextStep: "Schedule intro call — 10K investors", lastContactDate: "Yesterday" },
+  { name: "David Park", company: "Broker-Inv.", phone: "(714) 555-0233", status: "New", nextStep: "Intro pitch — Chino portfolio", lastContactDate: "Mar 30" },
+  { name: "Lisa Rodriguez", company: "STJ", phone: "(909) 555-0317", status: "Hot", nextStep: "Close on Phase 3 Seller Direct", lastContactDate: "Today" },
+  { name: "James Wu", company: "PropertyRadar", phone: "(415) 555-0421", status: "Warm", nextStep: "Demo FlipIQ data layer", lastContactDate: "Apr 1" },
+  { name: "Rachel Kim", company: "DCP", phone: "(310) 555-0544", status: "New", nextStep: "Qualify budget & timeline", lastContactDate: "Mar 28" },
+  { name: "Tom Bradley", company: "Hegemark", phone: "(818) 555-0619", status: "Warm", nextStep: "Send Broker Playbook PDF", lastContactDate: "Apr 2" },
+  { name: "Ana Gutierrez", company: "Acq. Homes", phone: "(562) 555-0788", status: "Cold", nextStep: "Re-engage — check on deal status", lastContactDate: "Mar 20" },
+  { name: "Kevin O'Brien", company: "New Lead", phone: "(949) 555-0855", status: "New", nextStep: "First touch — introduce FlipIQ", lastContactDate: "Never" },
+  { name: "Maria Espinoza", company: "DispoPro", phone: "(213) 555-0961", status: "Warm", nextStep: "Integration call — API timeline", lastContactDate: "Apr 3" },
 ];
 const SAMPLE_MEETINGS: CalItem[] = [
   { t: "9:00 AM", tEnd: "9:30 AM", n: "Sales Team Standup", loc: "Zoom", note: "Review pipeline #s", real: true },
@@ -163,18 +163,18 @@ const HDR_BG = "#F0F0EE";
 const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
 // ── Day Timeline ─────────────────────────────────────────────────────
-const TL_START = 8 * 60;              // 8:00 AM in minutes from midnight
-const TL_END   = 18 * 60;            // 6:00 PM
-const TL_TOTAL = TL_END - TL_START;  // 600 minutes
-const PPM      = 2;                   // pixels per minute → 1200px total
-const TL_W     = TL_TOTAL * PPM;     // 1200px
+const TL_START = 6 * 60;              // 6:00 AM in minutes from midnight
+const TL_END   = 21 * 60;            // 9:00 PM
+const TL_TOTAL = TL_END - TL_START;  // 900 minutes
+const PPM      = 2;                   // pixels per minute → 1800px total
+const TL_W     = TL_TOTAL * PPM;     // 1800px
 
 function getCurrentMins() {
   const n = new Date();
   return n.getHours() * 60 + n.getMinutes();
 }
 
-function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks: WorkBlock[] }) {
+function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]; autoBlocks: WorkBlock[]; onNavigate?: (v: NavView) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [nowMins, setNowMins] = useState<number>(getCurrentMins);
 
@@ -184,9 +184,19 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const nx = Math.max(0, Math.min((getCurrentMins() - TL_START) * PPM, TL_W));
-    containerRef.current.scrollLeft = nx - containerRef.current.clientWidth / 2;
+    // Double rAF: first frame commits layout, second frame reads correct clientWidth
+    let raf1: number, raf2: number;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (!containerRef.current) return;
+        const mins = getCurrentMins();
+        const clamped = Math.max(TL_START, Math.min(mins, TL_END));
+        const nx = (clamped - TL_START) * PPM;
+        const half = containerRef.current.clientWidth / 2;
+        containerRef.current.scrollLeft = Math.max(0, nx - half);
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -197,13 +207,15 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
 
   const goToNow = () => {
     if (!containerRef.current) return;
-    const nx = Math.max(0, Math.min((nowMins - TL_START) * PPM, TL_W));
-    containerRef.current.scrollLeft = nx - containerRef.current.clientWidth / 2;
+    const clamped = Math.max(TL_START, Math.min(nowMins, TL_END));
+    const nx = (clamped - TL_START) * PPM;
+    const half = containerRef.current.clientWidth / 2;
+    containerRef.current.scrollLeft = Math.max(0, nx - half);
   };
 
   const nowX  = (nowMins - TL_START) * PPM;
   const inDay = nowMins >= TL_START && nowMins <= TL_END;
-  const hours = Array.from({ length: 11 }, (_, i) => i + 8); // 8..18
+  const hours = Array.from({ length: 16 }, (_, i) => i + 6); // 6 AM..9 PM
 
   const arrowBtn: React.CSSProperties = {
     flexShrink: 0, width: 30, alignSelf: "stretch",
@@ -253,19 +265,25 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
             const x = Math.max(0, (startMin - TL_START) * PPM);
             const w = Math.max(6, (endMin - startMin) * PPM - 2);
             const wide = w > 100;
-            // Compact time range for narrow blocks (e.g. "9:00" instead of "9:00 AM – 9:30 AM")
             const timeRange = wide
               ? `${m.t}${m.tEnd ? ` – ${m.tEnd}` : ""}`
               : m.t.replace(/ (AM|PM)$/i, "");
             return (
-              <div key={i} style={{
+              <div key={i}
+                onClick={() => onNavigate?.("schedule")}
+                title={`${m.n}${m.t ? ` · ${m.t}` : ""}${m.loc ? ` · ${m.loc}` : ""}${m.note ? ` — ${m.note}` : ""} — Click to open Calendar`}
+                style={{
                 position: "absolute", left: x, top: 6,
                 width: w, height: 58,
                 background: "#fff", border: "1.5px solid #222",
                 borderRadius: 3, padding: "4px 5px",
                 overflow: "hidden", boxSizing: "border-box",
-                cursor: "default",
-              }}>
+                cursor: onNavigate ? "pointer" : "default",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+              onMouseEnter={e => { if (onNavigate) { e.currentTarget.style.borderColor = "#2563EB"; e.currentTarget.style.background = "#F0F6FF"; }}}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#222"; e.currentTarget.style.background = "#fff"; }}
+              >
                 <div style={{
                   fontSize: 9, fontWeight: 900, color: "#111",
                   lineHeight: 1.2, whiteSpace: "nowrap",
@@ -320,19 +338,27 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
             );
           })}
 
-          {/* Now line — green */}
+          {/* Now line — green vertical line only, dot sits below meetings */}
           {inDay && (
             <>
+              {/* vertical line — behind meetings */}
               <div style={{
                 position: "absolute", left: nowX, top: 0, bottom: 22,
-                width: 2, background: "#16A34A", borderRadius: 1, zIndex: 10,
+                width: 2, background: "#16A34A", borderRadius: 1, zIndex: 1,
               }} />
+              {/* dot at the bottom of the line, below meeting blocks */}
               <div style={{
-                position: "absolute", left: nowX + 4, top: 4,
+                position: "absolute", left: nowX - 4, bottom: 24,
+                width: 10, height: 10,
+                background: "#16A34A", borderRadius: "50%",
+                zIndex: 2,
+              }} />
+              {/* time label below the dot */}
+              <div style={{
+                position: "absolute", left: nowX - 12, bottom: 4,
                 fontSize: 9, fontWeight: 900, color: "#16A34A",
                 letterSpacing: 0.3, whiteSpace: "nowrap",
-                background: "#fff", padding: "1px 3px",
-                border: "1px solid #16A34A", borderRadius: 3, zIndex: 11,
+                zIndex: 2,
               }}>
                 {fmtMins(nowMins)}
               </div>
@@ -341,14 +367,6 @@ function DayTimeline({ meetings, autoBlocks }: { meetings: CalItem[]; autoBlocks
 
         </div>
       </div>
-      {/* Center-on-now pill */}
-      <button
-        onClick={goToNow}
-        title="Back to now"
-        style={{ flexShrink: 0, alignSelf: "stretch", width: 28, background: "#F8F8F8", border: "none", borderLeft: "1px solid #E8E8E8", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-      >
-        <span style={{ fontSize: 10, color: "#16A34A", fontWeight: 900, lineHeight: 1 }}>●</span>
-      </button>
       <button style={{ ...arrowBtn, borderLeft: "1px solid #E8E8E8" }} onClick={() => pan(240)} title="Later">›</button>
     </div>
   );
@@ -615,11 +633,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
       <div style={{ width: "100%" }}>
 
-        {/* ══ FRONT ════════════════════════════════════════════════ */}
-        <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
-
         {/* ── Day Timeline ── real calendar data only (no sample fallback) */}
-        <DayTimeline meetings={calendarData.filter(c => c.real)} autoBlocks={wb.autoBlocks} />
+        <DayTimeline meetings={calendarData.filter(c => c.real)} autoBlocks={wb.autoBlocks} onNavigate={onNavigate} />
 
         <div style={{ padding: "12px 20px 18px" }}>
 

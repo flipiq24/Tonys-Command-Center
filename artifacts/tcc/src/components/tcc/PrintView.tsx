@@ -242,10 +242,14 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
   );
 }
 
+interface TaskAlertItem { id: string; identifier: string; title: string; state: string; priority: number; }
+interface TaskAlerts { outOfSequence: TaskAlertItem[]; missingDueDates: TaskAlertItem[]; }
+
 export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackItems = [], linearItems = [], topCallContacts = [], onClose, onRefresh }: Props) {
   const [done, setDone] = useState<Set<string>>(new Set());
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [taskAlerts, setTaskAlerts] = useState<TaskAlerts>({ outOfSequence: [], missingDueDates: [] });
 
   const toggle = useCallback((id: string) => {
     setDone(prev => {
@@ -257,6 +261,7 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
 
   useEffect(() => {
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
+    get<TaskAlerts>("/tasks/alerts").then(setTaskAlerts).catch(() => {});
   }, []);
 
   const handleRefresh = async () => {
@@ -488,6 +493,28 @@ export function PrintView({ tasks, tDone, calendarData, emailsImportant, slackIt
                 })}
               </tbody>
             </table>
+
+            {/* ── Out-of-Sequence Linear Alerts (from tasks/alerts) ── */}
+            {taskAlerts.outOfSequence.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <SL text="⚡ Out-of-Sequence — Blocked Higher Priority" color="#C62828" />
+                <div style={{ border: "1px solid #C6282844", borderRadius: 2, overflow: "hidden", background: "#FFF5F5" }}>
+                  {taskAlerts.outOfSequence.slice(0, 5).map((item, i) => (
+                    <div key={item.id} style={{
+                      display: "flex", gap: 8, alignItems: "center",
+                      padding: "6px 10px",
+                      borderBottom: i < taskAlerts.outOfSequence.length - 1 ? "1px solid #E8E8E8" : "none",
+                    }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: "#C62828", background: "#C6282822", padding: "1px 5px", borderRadius: 3, flexShrink: 0 }}>
+                        {item.identifier}
+                      </span>
+                      <div style={{ flex: 1, fontSize: 11, color: "#C62828", fontWeight: 600 }}>{item.title}</div>
+                      <div style={{ fontSize: 9, color: "#999", flexShrink: 0 }}>{item.state}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── Flags & Blockers + Soft Sequence side by side ── */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 10 }}>

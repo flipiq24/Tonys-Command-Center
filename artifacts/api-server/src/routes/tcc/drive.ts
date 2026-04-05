@@ -4,9 +4,17 @@ import { createFolderIfNotExists } from "../../lib/google-drive.js";
 
 const router: IRouter = Router();
 
+// ── Sanitize Drive IDs to prevent query injection ─────────────────────────────
+function sanitizeDriveId(id: string): string {
+  if (id === "root") return "root";
+  // Drive file IDs are alphanumeric + hyphens + underscores only
+  return id.replace(/[^a-zA-Z0-9_\-]/g, "");
+}
+
 // ── Folder browse ─────────────────────────────────────────────────────────────
 router.get("/drive/folder", async (req, res): Promise<void> => {
-  const folderId = String(req.query.folderId || "root");
+  const rawId = String(req.query.folderId || "root");
+  const folderId = sanitizeDriveId(rawId);
 
   try {
     const drive = getDrive();

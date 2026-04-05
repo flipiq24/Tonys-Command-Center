@@ -47,7 +47,7 @@ async function classifyIdea(text: string, recentIdeas: typeof ideasTable.$inferS
       content: `You are Tony Diaz's AI classifier for FlipIQ ideas. Analyze this idea and return ONLY valid JSON.
 
 BUSINESS CONTEXT:
-${BUSINESS_PLAN}${liveContext ? `\n\nLIVE BUSINESS DOCUMENTS:\n${liveContext}` : ""}
+${liveContext ? `LIVE BUSINESS DOCUMENTS (primary source):\n${liveContext}` : BUSINESS_PLAN}
 
 RECENT IDEAS (for context):
 ${recentList}

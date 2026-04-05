@@ -88,6 +88,7 @@ export interface LinearItem {
   who: string;
   task: string;
   id: string;
+  identifier?: string;
   level: "high" | "mid" | "low";
   dueDate?: string | null;
   size?: string | null;

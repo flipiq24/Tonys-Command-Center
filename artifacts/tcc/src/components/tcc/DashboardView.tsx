@@ -478,8 +478,8 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
               </TD>
               <TD small bold>
                 {l.url
-                  ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "none" }}>{l.id}</a>
-                  : <span style={{ color: "#2563EB" }}>{l.id}</span>
+                  ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563EB", textDecoration: "none" }}>{l.identifier || l.id}</a>
+                  : <span style={{ color: "#2563EB" }}>{l.identifier || l.id}</span>
                 }
               </TD>
               <TD strike={isDone}>
@@ -829,8 +829,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       <TD center small dim>{isCompleted ? "" : i + 1}</TD>
                       <TD small bold>
                         {l.url
-                          ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#E65100", textDecoration: "none" }}>{l.id}</a>
-                          : <span style={{ color: "#E65100" }}>{l.id}</span>
+                          ? <a href={l.url} target="_blank" rel="noopener noreferrer" style={{ color: "#E65100", textDecoration: "none" }}>{l.identifier || l.id}</a>
+                          : <span style={{ color: "#E65100" }}>{l.identifier || l.id}</span>
                         }
                       </TD>
                       <TD strike={isCompleted}>

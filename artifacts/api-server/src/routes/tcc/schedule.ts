@@ -167,7 +167,7 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
       scopeWarning = scope.warning;
       // Notify Ethan via Slack that Tony force-overrode an out-of-scope meeting
       postSlackMessage({
-        channel: "#ethan-alerts",
+        channel: "U0991BD321Y",
         text: `⚠️ Tony force-overrode a non-Sales meeting: *${title}* on ${date}${startTime ? ` at ${startTime}` : ""}\n_${scope.warning || "Flagged as out-of-scope by AI gatekeeper"}_`,
       }).catch(() => { /* non-critical */ });
     }

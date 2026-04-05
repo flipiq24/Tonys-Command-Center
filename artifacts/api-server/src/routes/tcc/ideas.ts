@@ -216,7 +216,7 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
           action: null,
         };
         postSlackMessage({
-          channel: "#engineering",
+          channel: "C0A3CS15MPT",
           text: `*Bug Report (auto-filed from TCC)*\n\n> ${text}\n\n*Severity:* ${classification.urgency || "Unknown"}\n*Priority Recommendation:* ${classification.urgency === "Now" ? "P1" : classification.urgency === "This Week" ? "P2" : "P3"}`,
         }).catch(() => {});
       } else {
@@ -281,11 +281,11 @@ router.post("/ideas/notify-override", async (req, res): Promise<void> => {
   const { text, justification } = req.body as { text?: string; justification?: string };
   try {
     await postSlackMessage({
-      channel: "#leadership",
+      channel: "C0A3CS15MPT",
       text: `*Priority Override Alert*\n\nTony overrode the 90-day plan to prioritize:\n> ${text || "Unknown idea"}\n\n*Justification:* ${justification || "No justification provided"}`,
     });
     postSlackMessage({
-      channel: "@ethan",
+      channel: "U0991BD321Y",
       text: `Tony overrode the plan. New priority: "${text || ""}". Justification: ${justification || "None"}`,
     }).catch(() => {});
     res.json({ ok: true });
@@ -298,7 +298,7 @@ router.post("/ideas/escalate-to-ethan", async (req, res): Promise<void> => {
   const { text, rank, reasoning } = req.body as { text?: string; rank?: number; reasoning?: string };
   try {
     await postSlackMessage({
-      channel: "@ethan",
+      channel: "U0991BD321Y",
       text: `*Idea Parked + Meeting Requested*\n\nTony submitted an idea that was flagged as out-of-scope and auto-parked:\n> ${text || ""}\n\nPlease schedule a meeting to discuss if this should be prioritized.`,
     });
 

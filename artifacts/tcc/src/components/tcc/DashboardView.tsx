@@ -136,31 +136,23 @@ function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]
   const containerRef = useRef<HTMLDivElement>(null);
   const [nowMins, setNowMins] = useState<number>(getCurrentMins);
 
-  useEffect(() => {
-    const interval = setInterval(() => setNowMins(getCurrentMins()), 60_000);
-    return () => clearInterval(interval);
-  }, []);
-
   const centerOnNow = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
     const mins = getCurrentMins();
     const clamped = Math.max(TL_START, Math.min(mins, TL_END));
     const nx = (clamped - TL_START) * PPM;
-    // Use offsetWidth as a fallback if clientWidth is 0 (flex layout not settled)
     const w = el.clientWidth || el.offsetWidth || 400;
     el.scrollLeft = Math.max(0, nx - w / 2);
   }, []);
 
+  // Auto-recenter on mount (triple-try for slow flex layouts)
   useEffect(() => {
-    // Attempt 1: double rAF (commits layout first)
     let raf1: number, raf2: number;
     raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(centerOnNow);
     });
-    // Attempt 2: 200 ms fallback for slow flex layouts
     const t1 = setTimeout(centerOnNow, 200);
-    // Attempt 3: 600 ms failsafe
     const t2 = setTimeout(centerOnNow, 600);
     return () => {
       cancelAnimationFrame(raf1);
@@ -168,16 +160,22 @@ function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only on mount — "Now" button handles manual re-center
+  }, [centerOnNow]);
+
+  // Tick every minute — update the time and re-center so the line stays in view
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowMins(getCurrentMins());
+      centerOnNow();
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [centerOnNow]);
 
 
   const pan = (delta: number) => {
     if (!containerRef.current) return;
     containerRef.current.scrollLeft = Math.max(0, Math.min(containerRef.current.scrollLeft + delta, TL_W));
   };
-
-  const goToNow = centerOnNow;
 
   const nowX  = (nowMins - TL_START) * PPM;
   const inDay = nowMins >= TL_START && nowMins <= TL_END;
@@ -194,21 +192,6 @@ function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]
   return (
     <div style={{ borderBottom: "1px solid #EBEBEB", display: "flex", alignItems: "stretch", userSelect: "none" }}>
       <button style={{ ...arrowBtn, borderRight: "1px solid #E8E8E8" }} onClick={() => pan(-240)} title="Earlier">‹</button>
-      <button
-        onClick={centerOnNow}
-        title="Jump to now"
-        style={{
-          ...arrowBtn,
-          borderRight: "1px solid #E8E8E8",
-          width: "auto",
-          padding: "0 8px",
-          fontSize: 9, fontWeight: 800, color: "#16A34A",
-          letterSpacing: 0.5, textTransform: "uppercase",
-          background: "#F0FDF4",
-        }}
-      >
-        Now
-      </button>
       <div
         ref={containerRef}
         style={{ flex: 1, overflowX: "hidden", overflowY: "hidden", padding: "8px 0 0" } as React.CSSProperties}

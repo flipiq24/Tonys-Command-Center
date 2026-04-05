@@ -184,35 +184,30 @@ function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]
     return () => clearInterval(interval);
   }, []);
 
+  const centerOnNow = useCallback(() => {
+    if (!containerRef.current) return;
+    const mins = getCurrentMins();
+    const clamped = Math.max(TL_START, Math.min(mins, TL_END));
+    const nx = (clamped - TL_START) * PPM;
+    const half = containerRef.current.clientWidth / 2;
+    containerRef.current.scrollLeft = Math.max(0, nx - half);
+  }, []);
+
   useEffect(() => {
     // Double rAF: first frame commits layout, second frame reads correct clientWidth
     let raf1: number, raf2: number;
     raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        if (!containerRef.current) return;
-        const mins = getCurrentMins();
-        const clamped = Math.max(TL_START, Math.min(mins, TL_END));
-        const nx = (clamped - TL_START) * PPM;
-        const half = containerRef.current.clientWidth / 2;
-        containerRef.current.scrollLeft = Math.max(0, nx - half);
-      });
+      raf2 = requestAnimationFrame(centerOnNow);
     });
     return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [centerOnNow, nowMins]);
 
   const pan = (delta: number) => {
     if (!containerRef.current) return;
     containerRef.current.scrollLeft = Math.max(0, Math.min(containerRef.current.scrollLeft + delta, TL_W));
   };
 
-  const goToNow = () => {
-    if (!containerRef.current) return;
-    const clamped = Math.max(TL_START, Math.min(nowMins, TL_END));
-    const nx = (clamped - TL_START) * PPM;
-    const half = containerRef.current.clientWidth / 2;
-    containerRef.current.scrollLeft = Math.max(0, nx - half);
-  };
+  const goToNow = centerOnNow;
 
   const nowX  = (nowMins - TL_START) * PPM;
   const inDay = nowMins >= TL_START && nowMins <= TL_END;

@@ -88,6 +88,7 @@ export interface LinearItem {
   task: string;
   id: string;
   level: "high" | "mid" | "low";
+  dueDate?: string | null;
 }
 
 export interface DailyBrief {
@@ -95,6 +96,7 @@ export interface DailyBrief {
   calendarData: CalItem[];
   emailsImportant: EmailItem[];
   emailsFyi: EmailItem[];
+  emailsPromotions?: EmailItem[];
   slackItems?: SlackItem[];
   linearItems?: LinearItem[];
   tasks: TaskItem[];

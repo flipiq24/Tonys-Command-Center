@@ -6,6 +6,13 @@ import type { Idea, SlackItem, LinearItem } from "./types";
 // ─── High-urgency Slack banner ────────────────────────────────────────────────
 function HighUrgencyBanner({ items, onDismiss }: { items: SlackItem[]; onDismiss: () => void }) {
   const high = items.filter(i => i.level === "high");
+
+  useEffect(() => {
+    if (high.length === 0) return;
+    const timer = setTimeout(onDismiss, 15000);
+    return () => clearTimeout(timer);
+  }, [high.length, onDismiss]);
+
   if (high.length === 0) return null;
   return (
     <div style={{
@@ -219,7 +226,25 @@ export function Header({ clock, ideas, unresolved, calSide, eod, customTips: _cu
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
               {menuItem("💡", "Ideas", null, () => onShowIdea())}
               {slackItems.length > 0 && menuItem("💬", "Slack", slackItems.length, () => {}, levelColor(slackLevel || undefined))}
-              {linearItems.length > 0 && menuItem("📋", "Linear", linearItems.length, () => {}, levelColor(linearLevel || undefined))}
+              {linearItems.length > 0 && (
+                <div>
+                  {menuItem("📋", "Linear", linearItems.length, () => {}, levelColor(linearLevel || undefined))}
+                  <div style={{ paddingLeft: 46, paddingBottom: 4 }}>
+                    {linearItems.map((item, i) => {
+                      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+                      const isOverdue = item.dueDate && item.dueDate < today;
+                      return (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", fontSize: 12, color: C.sub }}>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{item.id} {item.task}</span>
+                          {isOverdue && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>overdue</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {menuItem("☀️", "Morning Check-in", null, () => onShowCheckin())}
               {onPrint && menuItem("🖨", "Print Daily Sheet", null, () => onPrint())}
               {menuItem("📁", "Setup Drive Folders", null, () => {

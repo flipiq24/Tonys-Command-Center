@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, phoneLogTable, contactsTable } from "@workspace/db";
 import { eq, desc, gte, and } from "drizzle-orm";
 import { z } from "zod/v4";
-import { communicationLogTable } from "../../lib/schema-v2";
+import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2";
 import { updateContactComms } from "../../lib/contact-comms";
 
 const router: IRouter = Router();
@@ -16,6 +16,7 @@ const PhoneLogBody = z.object({
   duration_seconds: z.number().optional(),
   sms_body: z.string().optional(),
   logged_at: z.string().optional(),
+  flipiq_tagged: z.boolean().optional(),
 });
 
 // ─── Shared secret check ──────────────────────────────────────────────────────
@@ -45,15 +46,36 @@ router.post("/phone-log", async (req, res): Promise<void> => {
     return;
   }
 
-  const { type, phone_number, duration_seconds, sms_body, logged_at } = parsed.data;
+  const { type, phone_number, duration_seconds, sms_body, logged_at, flipiq_tagged } = parsed.data;
   const normalizedIncoming = normalizePhone(phone_number);
 
   // Auto-match to contact via indexed phone_normalized column
-  const [match] = await db
+  let [match] = await db
     .select({ id: contactsTable.id, name: contactsTable.name })
     .from(contactsTable)
     .where(eq(contactsTable.phoneNormalized, normalizedIncoming))
     .limit(1);
+
+  // FlipIQ auto-contact creation: if tagged and no match, create a new contact + intelligence row
+  if (flipiq_tagged && !match) {
+    const autoName = `Unknown — (${phone_number})`;
+    const [newContact] = await db
+      .insert(contactsTable)
+      .values({
+        name: autoName,
+        phone: phone_number,
+        source: "phone",
+        status: "New",
+      })
+      .returning({ id: contactsTable.id, name: contactsTable.name });
+    if (newContact) {
+      match = newContact;
+      await db
+        .insert(contactIntelligenceTable)
+        .values({ contactId: newContact.id })
+        .onConflictDoNothing();
+    }
+  }
 
   const [entry] = await db
     .insert(phoneLogTable)

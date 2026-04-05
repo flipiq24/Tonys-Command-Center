@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
 import { get, patch } from "@/lib/api";
-import type { TaskItem, CalItem, EmailItem, LinearItem } from "./types";
+import type { TaskItem, CalItem, EmailItem, LinearItem, SlackItem } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
@@ -14,6 +14,7 @@ interface Props {
   calendarData: CalItem[];
   emailsImportant: EmailItem[];
   linearItems: LinearItem[];
+  slackItems?: SlackItem[];
   contacts: Contact[];
   onComplete: (task: TaskItem) => void;
   onNavigate: (view: NavView) => void;
@@ -449,7 +450,7 @@ function TD({ children, center, bold, small, dim, strike }: {
 }
 
 // ── Management task table (Ethan / Ramy) ────────────────────────────
-function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin, setTooltipPos }: {
+function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin, setTooltipPos, slackItems = [] }: {
   items: LinearItem[];
   prefix: string;
   todayStr: string;
@@ -457,6 +458,7 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
   fmtDue: (d: string | null | undefined) => string;
   setHoveredLin: (l: LinearItem | null) => void;
   setTooltipPos: (p: { x: number; y: number }) => void;
+  slackItems?: SlackItem[];
 }) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 12 }}>
@@ -480,6 +482,7 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
           const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
           const stateGlyph = isDone && l.stateType === "completed" ? "✓" : isDone ? "✕" : l.stateType === "started" ? "▷" : l.stateType === "backlog" ? "·" : "○";
           const stateColor = isDone && l.stateType === "completed" ? "#2E7D32" : isDone ? "#999" : l.stateType === "started" ? "#2563EB" : "#aaa";
+          const isMentioned = slackItems.some(s => l.id && s.message?.includes(l.id));
           return (
             <tr
               key={`${prefix}-${i}`}
@@ -499,7 +502,14 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
                   : <span style={{ color: "#2563EB" }}>{l.id}</span>
                 }
               </TD>
-              <TD strike={isDone}>{l.task}</TD>
+              <TD strike={isDone}>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                  <span>{l.task}</span>
+                  {isMentioned && (
+                    <span style={{ fontSize: 9, fontWeight: 800, background: C.bluBg, color: C.blu, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", letterSpacing: 0.3 }}>@ Mentioned</span>
+                  )}
+                </span>
+              </TD>
               <TD small center>
                 <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
                   {fmtDue(l.dueDate)}
@@ -549,7 +559,7 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, contacts, onComplete, onNavigate }: Props) {
+export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, onComplete, onNavigate }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -810,7 +820,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   const seqColor = l.inSequence === false ? "#C62828" : "#2E7D32";
                   const seqLabel = isCompleted ? "—" : l.inSequence === false ? "✗" : l.inSequence === true ? "✓" : "—";
                   const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
-                  // State indicator glyph
                   const stateGlyph = isCompleted && l.stateType === "completed" ? "✓"
                     : isCompleted ? "✕"
                     : l.stateType === "started" ? "▷"
@@ -820,6 +829,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     : isCompleted ? "#999"
                     : l.stateType === "started" ? "#2563EB"
                     : "#aaa";
+                  const isMentioned = slackItems.some(s => l.id && s.message?.includes(l.id));
+                  const isForTony = !!(l.who?.toLowerCase().includes("tony") || l.who?.toLowerCase().includes("diaz"));
                   return (
                     <tr
                       key={`lin-${i}`}
@@ -840,7 +851,17 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                           : <span style={{ color: "#E65100" }}>{l.id}</span>
                         }
                       </TD>
-                      <TD strike={isCompleted}>{l.task}</TD>
+                      <TD strike={isCompleted}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                          <span>{l.task}</span>
+                          {isMentioned && (
+                            <span style={{ fontSize: 9, fontWeight: 800, background: C.bluBg, color: C.blu, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", letterSpacing: 0.3 }}>@ Mentioned</span>
+                          )}
+                          {isForTony && (
+                            <span style={{ fontSize: 9, fontWeight: 800, background: C.ambBg, color: C.amb, borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap", letterSpacing: 0.3 }}>Task for Tony</span>
+                          )}
+                        </span>
+                      </TD>
                       <TD small>{l.who || "—"}</TD>
                       <TD center><span style={{ fontSize: 11 }}>{flagIcon}</span></TD>
                       <TD small center>
@@ -867,7 +888,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             {ethanItems.length > 0 && (
               <>
                 <SL text="COO — Ethan" color="#444" />
-                <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} />
+                <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
               </>
             )}
 
@@ -875,7 +896,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             {ramiItems.length > 0 && (
               <>
                 <SL text="CSM — Ramy" color="#444" />
-                <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} />
+                <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
               </>
             )}
 

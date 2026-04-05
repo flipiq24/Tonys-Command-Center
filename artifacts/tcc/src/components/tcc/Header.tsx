@@ -161,7 +161,74 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
           "Follow the plan I gave you!" — God
         </p>
 
-        {/* ── Right: Hamburger ── */}
+        {/* ── Right: Slack Bell + Hamburger ── */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+        {/* Standalone Slack notification bell */}
+        {slackItems.length > 0 && (
+          <div ref={slackPopoverRef} style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowSlackPopover(p => !p)}
+              title={`${slackItems.length} Slack mention${slackItems.length > 1 ? "s" : ""} — click to view`}
+              style={{
+                width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
+                background: showSlackPopover ? C.bluBg : "none",
+                border: `1.5px solid ${showSlackPopover ? C.blu : C.brd}`,
+                borderRadius: 10, cursor: "pointer", position: "relative", flexShrink: 0,
+              }}
+            >
+              <span style={{ fontSize: 15 }}>💬</span>
+              <span style={{
+                position: "absolute", top: -5, right: -5,
+                minWidth: 17, height: 17, borderRadius: 9,
+                background: slackLevel === "high" ? C.red : C.amb,
+                border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px", lineHeight: 1,
+              }}>
+                {slackItems.length}
+              </span>
+            </button>
+            {showSlackPopover && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 8px)", right: 0,
+                background: C.card, border: `1px solid ${C.brd}`,
+                borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.13)",
+                width: 310, zIndex: 300, fontFamily: F, padding: "0 0 6px",
+                animation: "fadeIn 0.12s ease-out",
+              }}>
+                <div style={{ padding: "10px 14px 8px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8, borderBottom: `1px solid ${C.brd}` }}>
+                  Slack Mentions · {slackItems.length}
+                </div>
+                {slackItems.map((item, i) => {
+                  const slackDeepLink = item.url
+                    ? item.url
+                    : item.channel
+                      ? `slack://channel?team=&id=${item.channel}`
+                      : "slack://open";
+                  return (
+                    <div key={i} style={{ padding: "9px 14px", borderBottom: i < slackItems.length - 1 ? `1px solid ${C.brd}` : "none" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: item.level === "high" ? C.red : item.level === "mid" ? C.amb : C.mut, borderRadius: 3, padding: "1px 5px", textTransform: "uppercase" }}>
+                          {item.level || "low"}
+                        </span>
+                        {item.channel && <span style={{ fontSize: 11, color: C.mut }}>{item.channel}</span>}
+                        <a href={slackDeepLink} target={item.url && item.url.startsWith("http") ? "_blank" : "_self"} rel="noopener noreferrer" style={{ marginLeft: "auto", fontSize: 10, color: C.blu, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          Open ↗
+                        </a>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.tx, lineHeight: 1.45 }}>
+                        {item.from && <span style={{ fontWeight: 700 }}>{item.from}: </span>}
+                        {(item.message || "").substring(0, 140)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Hamburger */}
         <div ref={menuRef} style={{ position: "relative" }}>
           <button
             onClick={() => setOpen(p => !p)}
@@ -254,67 +321,6 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               {/* Tools */}
               <div style={{ padding: "4px 10px 6px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>Tools</div>
               {menuItem("💡", "Ideas", null, () => onShowIdea())}
-              {slackItems.length > 0 && (
-                <div style={{ position: "relative" }} ref={slackPopoverRef}>
-                  <button
-                    onClick={() => setShowSlackPopover(p => !p)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 10, width: "100%",
-                      padding: "9px 14px", background: showSlackPopover ? "#F5F4F1" : "none", border: "none",
-                      textAlign: "left", cursor: "pointer", fontFamily: F, borderRadius: 8,
-                      transition: "background 0.1s",
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#F5F4F1")}
-                    onMouseLeave={e => (e.currentTarget.style.background = showSlackPopover ? "#F5F4F1" : "none")}
-                  >
-                    <span style={{ fontSize: 16, width: 22, textAlign: "center" }}>💬</span>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500, color: levelColor(slackLevel || undefined) }}>Slack</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: `${levelColor(slackLevel || undefined)}22`, color: levelColor(slackLevel || undefined), borderRadius: 10, padding: "1px 7px", minWidth: 20, textAlign: "center" }}>{slackItems.length}</span>
-                  </button>
-                  {showSlackPopover && (
-                    <div style={{
-                      position: "absolute", left: "calc(100% + 8px)", top: 0,
-                      background: C.card, border: `1px solid ${C.brd}`,
-                      borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.13)",
-                      width: 280, zIndex: 300, fontFamily: F, padding: "10px 0",
-                      animation: "fadeIn 0.12s ease-out",
-                    }}>
-                      <div style={{ padding: "0 14px 8px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.8 }}>
-                        Slack Messages
-                      </div>
-                      {slackItems.map((item, i) => {
-                        const slackDeepLink = item.url
-                          ? item.url
-                          : item.channel
-                            ? `slack://channel?team=&id=${item.channel}`
-                            : "slack://open";
-                        return (
-                        <div key={i} style={{
-                          padding: "8px 14px", borderBottom: i < slackItems.length - 1 ? `1px solid ${C.brd}` : "none",
-                        }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: item.level === "high" ? C.red : item.level === "mid" ? C.amb : C.mut, borderRadius: 3, padding: "1px 5px", textTransform: "uppercase" }}>{item.level || "low"}</span>
-                            {item.channel && <span style={{ fontSize: 11, color: C.mut }}>#{item.channel}</span>}
-                            <a
-                              href={slackDeepLink}
-                              target={item.url && item.url.startsWith("http") ? "_blank" : "_self"}
-                              rel="noopener noreferrer"
-                              style={{ marginLeft: "auto", fontSize: 10, color: C.blu, textDecoration: "none", fontWeight: 600, whiteSpace: "nowrap" }}
-                            >
-                              Open ↗
-                            </a>
-                          </div>
-                          <div style={{ fontSize: 12, color: C.tx, lineHeight: 1.4 }}>
-                            {item.from && <span style={{ fontWeight: 700 }}>{item.from}: </span>}
-                            {(item.message || "").substring(0, 120)}
-                          </div>
-                        </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
               {linearItems.length > 0 && (
                 <div>
                   {menuItem("📋", "Linear", linearItems.length, () => {}, levelColor(linearLevel || undefined))}
@@ -358,6 +364,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               )}
             </div>
           )}
+        </div>
         </div>
       </div>
 

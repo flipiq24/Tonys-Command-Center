@@ -10,7 +10,7 @@ const router: IRouter = Router();
 
 router.get("/emails/poll", async (req, res): Promise<void> => {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
 
     const fiveMinAgo = Math.floor((Date.now() - 5 * 60 * 1000) / 1000);
     const list = await gmail.users.messages.list({

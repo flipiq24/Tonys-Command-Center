@@ -8,7 +8,7 @@ export async function listRecentEmails(maxResults = 10): Promise<{
   date: string;
 }[]> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const list = await gmail.users.messages.list({
       userId: "me",
       maxResults,
@@ -52,7 +52,7 @@ export async function draftReply(params: {
   threadId?: string;
 }): Promise<{ ok: boolean; draftId?: string; error?: string }> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const raw = Buffer.from(
       [
         `To: ${params.to}`,
@@ -92,7 +92,7 @@ export async function sendEmail(params: {
   cc?: string;
 }): Promise<{ ok: boolean; messageId?: string; error?: string }> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const headerLines = [
       `To: ${params.to}`,
       `Subject: ${params.subject}`,
@@ -133,7 +133,7 @@ export async function searchEmails(query: string, maxResults = 20): Promise<{
   unread: boolean;
 }[]> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const list = await gmail.users.messages.list({ userId: "me", q: query, maxResults });
     const messages = list.data.messages || [];
     const results = [];
@@ -178,7 +178,7 @@ export async function getEmailThread(threadId: string): Promise<{
   date: string;
 }[]> {
   try {
-    const gmail = getGmail();
+    const gmail = await getGmail();
     const thread = await gmail.users.threads.get({ userId: "me", id: threadId, format: "full" });
     const messages = thread.data.messages || [];
 

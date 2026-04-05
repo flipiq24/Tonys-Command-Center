@@ -166,7 +166,7 @@ router.post("/emails/action", async (req, res): Promise<void> => {
       return;
     }
     try {
-      const gmail = getGmail();
+      const gmail = await getGmail();
       const msg = await gmail.users.messages.get({ userId: "me", id: gmailMessageId, format: "full" });
       const data = msg.data;
       const threadId = data.threadId || null;
@@ -270,7 +270,7 @@ Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Pl
     let threadId: string | undefined;
     if (gmailMessageId) {
       try {
-        const gmail = getGmail();
+        const gmail = await getGmail();
         const msg = await gmail.users.messages.get({ userId: "me", id: gmailMessageId, format: "metadata" });
         threadId = msg.data.threadId || undefined;
       } catch (err) {

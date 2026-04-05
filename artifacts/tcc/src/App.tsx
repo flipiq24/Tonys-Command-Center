@@ -369,7 +369,7 @@ export default function App() {
       <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <FontLink />
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: FS, fontSize: 24, marginBottom: 8 }}>Tony's Command Center</div>
+          <div style={{ fontFamily: FS, fontSize: 24, marginBottom: 8 }}>COO Dashboard</div>
           <div style={{ color: C.mut, fontSize: 14 }}>Loading your day...</div>
         </div>
       </div>

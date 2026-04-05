@@ -429,8 +429,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         {/* ══ FRONT ════════════════════════════════════════════════ */}
         <PageHeader title="FLIPIQ DAILY ACTION SHEET" sub="Follow the plan that I gave you! — God" />
 
-        {/* ── Day Timeline ── */}
-        <DayTimeline meetings={meetings} />
+        {/* ── Day Timeline ── real calendar data only (no sample fallback) */}
+        <DayTimeline meetings={calendarData.filter(c => c.real)} />
 
         <div style={{ padding: "12px 20px 18px" }}>
 

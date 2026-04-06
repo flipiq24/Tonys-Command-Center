@@ -326,31 +326,12 @@ function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]
             );
           })}
 
-          {/* Now line — green vertical line only, dot sits below meetings */}
+          {/* Now line — thin green vertical line */}
           {inDay && (
-            <>
-              {/* vertical line — behind meetings */}
-              <div style={{
-                position: "absolute", left: nowX, top: 0, bottom: 22,
-                width: 2, background: "#16A34A", borderRadius: 1, zIndex: 1,
-              }} />
-              {/* dot at the bottom of the line, below meeting blocks */}
-              <div style={{
-                position: "absolute", left: nowX - 4, bottom: 24,
-                width: 10, height: 10,
-                background: "#16A34A", borderRadius: "50%",
-                zIndex: 2,
-              }} />
-              {/* time label below the dot */}
-              <div style={{
-                position: "absolute", left: nowX - 12, bottom: 4,
-                fontSize: 9, fontWeight: 900, color: "#16A34A",
-                letterSpacing: 0.3, whiteSpace: "nowrap",
-                zIndex: 2,
-              }}>
-                {fmtMins(nowMins)}
-              </div>
-            </>
+            <div style={{
+              position: "absolute", left: nowX, top: 0, bottom: 0,
+              width: 1, background: "#16A34A", zIndex: 1,
+            }} />
           )}
 
         </div>

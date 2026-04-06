@@ -57,8 +57,8 @@ export function AuthGate({ children }: Props) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#FFFFFF", fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: 320, textAlign: "center" }}>
-        <img src="/flipiq-logo.png" alt="FlipIQ" style={{ height: 64, width: "auto", marginBottom: 12 }} />
+      <div style={{ width: 360, textAlign: "center" }}>
+        <img src="/flipiq-logo.png" alt="FlipIQ" style={{ height: 120, width: "auto", marginBottom: 20, display: "block", margin: "0 auto 20px" }} />
         <div style={{ fontFamily: FS, fontSize: 20, fontWeight: 700, marginBottom: 4 }}>COO Dashboard</div>
         <div style={{ color: C.mut, fontSize: 13, marginBottom: 32 }}>FlipIQ Operations</div>
         <form onSubmit={handleSubmit}>

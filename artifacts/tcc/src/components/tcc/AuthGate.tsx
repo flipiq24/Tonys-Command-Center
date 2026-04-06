@@ -47,7 +47,7 @@ export function AuthGate({ children }: Props) {
 
   if (!checked) {
     return (
-      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: "#FFFFFF", fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ color: C.mut, fontSize: 14 }}>Loading...</div>
       </div>
     );
@@ -56,7 +56,7 @@ export function AuthGate({ children }: Props) {
   if (authed) return <>{children}</>;
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ minHeight: "100vh", background: "#FFFFFF", fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 320, textAlign: "center" }}>
         <img src="/flipiq-logo.png" alt="FlipIQ" style={{ height: 64, width: "auto", marginBottom: 12 }} />
         <div style={{ fontFamily: FS, fontSize: 20, fontWeight: 700, marginBottom: 4 }}>COO Dashboard</div>

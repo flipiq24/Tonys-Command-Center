@@ -371,100 +371,50 @@ function GPSCards() {
   );
 }
 
-// ─── Category Grid — always open, top 5 tasks per subcategory ────────────────
+// ─── Category Grid — 2-column, numbered subcategories 1-5 ────────────────────
 
 function CategoryGrid({
-  categories, onToggleTask,
+  categories,
 }: {
   categories: CategoryWithSubs[];
   onToggleTask: (id: string, complete: boolean) => void;
 }) {
-  const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set());
-  function toggleSubExpand(id: string) {
-    setExpandedSubs(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
   if (categories.length === 0) {
-    return <div style={{ textAlign: "center", padding: "48px", color: C.mut, fontFamily: F }}>Loading 411 plan…</div>;
+    return <div style={{ textAlign: "center", padding: "48px", color: C.mut, fontFamily: F }}>Loading…</div>;
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 48px", marginBottom: 32 }}>
       {categories.map((cat) => {
-        const theme = CAT_COLORS[cat.category] || { bg: "#F9F9F9", border: C.brd, accent: C.sub };
-        const pct = cat.totalTasks === 0 ? 0 : Math.round((cat.completedTasks / cat.totalTasks) * 100);
+        const slots = Array.from({ length: 5 }, (_, i) => cat.subcategories[i] || null);
 
         return (
-          <div key={cat.id} style={{ border: `1.5px solid ${theme.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
-
-            {/* ── Category header ── */}
-            <div style={{ background: theme.bg, padding: "14px 18px", borderBottom: `1px solid ${theme.border}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                <span style={{ fontSize: 16, fontWeight: 800, color: C.tx, fontFamily: F }}>{cat.title}</span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: theme.accent, background: theme.accent + "20", borderRadius: 8, padding: "2px 9px", letterSpacing: 0.3 }}>Q1 2026</span>
-                {cat.status === "completed" && <span style={{ fontSize: 10, fontWeight: 700, color: C.grn }}>✅ Done</span>}
-                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: theme.accent }}>{cat.completedTasks}/{cat.totalTasks} · {pct}%</span>
-              </div>
-              <ProgressBar done={cat.completedTasks} total={cat.totalTasks} color={theme.accent} />
+          <div key={cat.id} style={{ marginBottom: 32 }}>
+            {/* Category title */}
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#00007A", fontFamily: F, marginBottom: 4 }}>
+              {cat.title}
             </div>
+            {/* Thick underline */}
+            <div style={{ height: 3, background: "#00007A", marginBottom: 8 }} />
 
-            {/* ── Subcategories + tasks — all always visible ── */}
-            <div style={{ background: "#fff" }}>
-              {cat.subcategories.map((sub, si) => {
-                const subDone = sub.status === "completed";
-                const subPct = sub.totalTasks === 0 ? 0 : Math.round((sub.completedTasks / sub.totalTasks) * 100);
-                const isLast = si === cat.subcategories.length - 1;
-
-                return (
-                  <div key={sub.id} style={{ borderBottom: isLast ? "none" : `1px solid ${theme.border}40` }}>
-
-                    {/* Subcategory header row */}
-                    <div style={{ padding: "10px 18px 8px", background: theme.bg + "55", display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{
-                            fontSize: 12, fontWeight: 700,
-                            color: subDone ? C.grn : theme.accent,
-                            fontFamily: F,
-                            textDecoration: subDone ? "line-through" : "none",
-                            textTransform: "uppercase", letterSpacing: 0.5,
-                          }}>
-                            {sub.title}
-                          </span>
-                          <span style={{ fontSize: 11, color: C.mut }}>{sub.completedTasks}/{sub.totalTasks}</span>
-                          {sub.completedTasks > 0 && <span style={{ fontSize: 10, color: theme.accent, fontWeight: 600 }}>{subPct}%</span>}
-                        </div>
-                        <ProgressBar done={sub.completedTasks} total={sub.totalTasks} color={theme.accent} />
-                      </div>
-                    </div>
-
-                    {/* Tasks — top 5 visible, rest behind toggle */}
-                    <div style={{ padding: "4px 18px 10px 36px", borderLeft: `3px solid ${theme.border}` }}>
-                      {sub.tasks.length === 0 ? (
-                        <div style={{ fontSize: 12, color: C.mut, fontFamily: F, padding: "6px 0", fontStyle: "italic" }}>No tasks</div>
-                      ) : (() => {
-                        const LIMIT = 5;
-                        const isExpanded = expandedSubs.has(sub.id);
-                        const visible = isExpanded ? sub.tasks : sub.tasks.slice(0, LIMIT);
-                        const hidden = sub.tasks.length - LIMIT;
-                        return (
-                          <>
-                            {visible.map(task => <TaskRow key={task.id} task={task} onToggle={onToggleTask} />)}
-                            {hidden > 0 && (
-                              <button
-                                onClick={() => toggleSubExpand(sub.id)}
-                                style={{ fontSize: 11, color: theme.accent, background: "none", border: "none", cursor: "pointer", padding: "4px 0", fontFamily: F, fontWeight: 600 }}
-                              >
-                                {isExpanded ? "▲ show less" : `+ ${hidden} more task${hidden > 1 ? "s" : ""}`}
-                              </button>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Numbered slots 1-5 */}
+            {slots.map((sub, i) => {
+              const done = sub?.status === "completed";
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #ccc", padding: "5px 0", minHeight: 28 }}>
+                  <span style={{ fontSize: 12, color: "#999", width: 14, flexShrink: 0, fontFamily: F }}>{i + 1}</span>
+                  {sub ? (
+                    <span style={{
+                      fontSize: 13, color: done ? "#888" : "#1565C0", fontFamily: F,
+                      textDecoration: done ? "line-through" : "none",
+                      fontWeight: 500,
+                    }}>
+                      {sub.title}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -472,87 +422,127 @@ function CategoryGrid({
   );
 }
 
-// ─── Weekly Grid ──────────────────────────────────────────────────────────────
+// ─── Weekly Grid — original design: rotated name left, 4 week columns ─────────
+
+const ROWS_PER_PERSON = 5;
 
 function WeeklyGrid({ byOwner, onToggleTask }: {
   byOwner: Record<string, Record<number, PlanItem[]>>;
   onToggleTask: (id: string, complete: boolean) => void;
 }) {
-  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
-  const ORDERED = ["Tony","Ethan","Ramy","Faisal","Haris","Nate","Bondilyn"];
+  const ORDERED = ["Tony", "Ethan", "Ramy", "Faisal", "Haris", "Nate", "Bondilyn"];
   const owners = [...ORDERED.filter(o => byOwner[o]), ...Object.keys(byOwner).filter(o => !ORDERED.includes(o))];
   if (owners.length === 0) return null;
-  const CURRENT = 1;
 
-  function toggleCell(key: string) {
-    setExpandedCells(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  }
+  // Date label for Week 1
+  const dateLabel = "April 7 - 11";
 
   return (
-    <div style={{ marginTop: 28 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: C.tx, fontFamily: F, marginBottom: 12 }}>Weekly breakdown — April 2026</div>
-      <div style={{ overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "140px repeat(4, minmax(170px, 1fr))", border: `1px solid ${C.brd}`, borderRadius: 10, overflow: "hidden", minWidth: 700 }}>
-          <div style={{ background: C.card, borderBottom: `1px solid ${C.brd}`, padding: "8px 10px", fontSize: 10, fontWeight: 700, color: C.sub }}>Person</div>
-          {APRIL_WEEKS.map(w => (
-            <div key={w.n} style={{ background: w.n === CURRENT ? "#FFF8F0" : C.card, borderBottom: `1px solid ${C.brd}`, borderLeft: `1px solid ${C.brd}`, padding: "8px 10px" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.tx, fontFamily: F }}>{w.label}</div>
-              <div style={{ fontSize: 10, color: C.mut }}>{w.dates}</div>
-              {w.n === CURRENT && <div style={{ fontSize: 9, color: "#F97316", fontWeight: 700 }}>← now</div>}
-            </div>
-          ))}
+    <div style={{ marginTop: 8 }}>
+      {/* Date label above week 1 */}
+      <div style={{ fontSize: 11, color: "#666", fontFamily: F, marginLeft: 48, marginBottom: 4 }}>{dateLabel}</div>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: 48 }} />
+          <col /><col /><col /><col />
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={{ padding: 0 }} />
+            {APRIL_WEEKS.map(w => (
+              <th key={w.n} style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: C.tx, fontFamily: F, padding: "6px 8px 10px" }}>
+                Week {w.n}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
           {owners.map(owner => {
             const weeks = byOwner[owner] || {};
             const pc = personColor(owner);
-            return (
-              <div key={owner} style={{ display: "contents" }}>
-                <div style={{ background: pc + "12", borderBottom: `1px solid ${C.brd}`, padding: "10px", display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: pc, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{owner[0]}</div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: C.tx, fontFamily: F }}>{owner}</span>
-                </div>
-                {APRIL_WEEKS.map(week => {
-                  const tasks = weeks[week.n] || [];
-                  const cellKey = `${owner}-${week.n}`;
-                  const isExpanded = expandedCells.has(cellKey);
-                  const SHOW = 3;
-                  const visible = isExpanded ? tasks : tasks.slice(0, SHOW);
-                  return (
-                    <div key={week.n} style={{ borderBottom: `1px solid ${C.brd}`, borderLeft: `1px solid ${C.brd}`, padding: "8px 10px", background: week.n === CURRENT ? "#FFFBF5" : "transparent" }}>
-                      {tasks.length === 0 ? (
-                        <span style={{ fontSize: 11, color: C.mut, fontStyle: "italic" }}>—</span>
-                      ) : (
-                        <>
-                          {visible.map(task => {
-                            const done = task.status === "completed";
-                            const late = week.n < CURRENT && !done;
-                            return (
-                              <div key={task.id} style={{ display: "flex", gap: 5, alignItems: "flex-start", marginBottom: 4 }}>
-                                {week.n === CURRENT ? (
-                                  <button onClick={() => onToggleTask(task.id, !done)} style={{ width: 13, height: 13, borderRadius: 3, border: `1.5px solid ${done ? C.grn : "#d1d5db"}`, background: done ? C.grn : "transparent", color: "#fff", fontSize: 7, cursor: "pointer", flexShrink: 0, marginTop: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>{done ? "✓" : ""}</button>
-                                ) : (
-                                  <span style={{ fontSize: 10, color: done ? C.grn : late ? C.red : C.mut, flexShrink: 0, marginTop: 1 }}>{done ? "✓" : late ? "!" : "○"}</span>
-                                )}
-                                <span style={{ fontSize: 11, color: done ? C.mut : late ? C.red : C.tx, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>
-                                  {task.title.replace(/^[^:]+:\s*/, "")}
-                                </span>
-                              </div>
-                            );
-                          })}
-                          {tasks.length > SHOW && (
-                            <button onClick={() => toggleCell(cellKey)} style={{ fontSize: 10, color: C.blu, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: F }}>
-                              {isExpanded ? "▲ less" : `+${tasks.length - SHOW} more`}
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
+            // Build rows: 5 slots per person
+            const rows = Array.from({ length: ROWS_PER_PERSON }, (_, ri) => ({
+              w1: (weeks[1] || [])[ri] || null,
+              w2: (weeks[2] || [])[ri] || null,
+              w3: (weeks[3] || [])[ri] || null,
+              w4: (weeks[4] || [])[ri] || null,
+            }));
+
+            return rows.map((row, ri) => {
+              const isFirstRow = ri === 0;
+              const isLastRow = ri === ROWS_PER_PERSON - 1;
+              return (
+                <tr key={`${owner}-${ri}`}>
+                  {/* Person label — only on first row, spans all rows with rowSpan */}
+                  {isFirstRow && (
+                    <td
+                      rowSpan={ROWS_PER_PERSON}
+                      style={{
+                        verticalAlign: "middle",
+                        textAlign: "center",
+                        padding: 0,
+                        borderBottom: "2px solid #ddd",
+                        width: 48,
+                      }}
+                    >
+                      <div style={{
+                        writingMode: "vertical-rl",
+                        transform: "rotate(180deg)",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: pc,
+                        fontFamily: F,
+                        letterSpacing: 0.5,
+                        whiteSpace: "nowrap",
+                      }}>
+                        {owner}
+                      </div>
+                    </td>
+                  )}
+                  {[row.w1, row.w2, row.w3, row.w4].map((task, wi) => {
+                    const done = task?.status === "completed";
+                    return (
+                      <td
+                        key={wi}
+                        style={{
+                          borderBottom: isLastRow ? "2px solid #aaa" : "1px solid #ddd",
+                          padding: "4px 8px",
+                          height: 26,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {task ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <button
+                              onClick={() => onToggleTask(task.id, !done)}
+                              style={{
+                                width: 12, height: 12, borderRadius: 2,
+                                border: `1.5px solid ${done ? C.grn : "#aaa"}`,
+                                background: done ? C.grn : "transparent",
+                                color: "#fff", fontSize: 7, cursor: "pointer", flexShrink: 0,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                              }}
+                            >{done ? "✓" : ""}</button>
+                            <span style={{
+                              fontSize: 12, color: done ? "#aaa" : "#1565C0",
+                              textDecoration: done ? "line-through" : "underline",
+                              fontFamily: F, lineHeight: 1.3,
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                              {task.title.replace(/^[^:]+:\s*/, "")}
+                            </span>
+                          </div>
+                        ) : null}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            });
           })}
-        </div>
-      </div>
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -843,7 +843,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
           <thead>
             <tr style={{ background: C.card, borderBottom: `2px solid ${C.brd}` }}>
-              {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Priority","Status","Due Date","Notes","Linear"].map((h, i) => (
+              {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Priority","Status","Due Date","Completed","Notes","Linear"].map((h, i) => (
                 <th key={i} style={{ position: "sticky", top: 0, background: C.card, fontSize: 10, fontWeight: 700, color: C.sub, textAlign: "left", padding: "8px 10px", whiteSpace: "nowrap", borderRight: `1px solid ${C.brd}`, borderBottom: `2px solid ${C.brd}`, zIndex: 10 }}>{h}</th>
               ))}
             </tr>
@@ -900,6 +900,14 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                   <td style={{ padding: "8px 10px" }}>{task.status && <StatusPill s={isLate ? "late" : task.status} />}</td>
                   {/* Due date */}
                   <td style={{ padding: "8px 10px", fontSize: 11, color: isLate ? C.red : C.mut, whiteSpace: "nowrap" }}>{task.dueDate || "—"}</td>
+                  {/* Completed date */}
+                  <td style={{ padding: "8px 10px", whiteSpace: "nowrap" }}>
+                    {task.completedAt ? (
+                      <span style={{ fontSize: 11, color: C.grn, fontWeight: 600 }}>
+                        ✓ {new Date(task.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                    ) : <span style={{ color: C.mut, fontSize: 11 }}>—</span>}
+                  </td>
                   {/* Notes */}
                   <td style={{ padding: "8px 10px", fontSize: 11, color: C.sub, maxWidth: 100 }}>{task.workNotes || "—"}</td>
                   {/* Linear */}

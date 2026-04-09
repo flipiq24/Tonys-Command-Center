@@ -426,6 +426,23 @@ function CategoryGrid({
 
 const ROWS_PER_PERSON = 5;
 
+// Category → solid color (text / border)
+const CAT_COLOR: Record<string, string> = {
+  adaptation: "#92400E",
+  sales:      "#166534",
+  tech:       "#1D4ED8",
+  capital:    "#6D28D9",
+  team:       "#374151",
+};
+// Category → light tinted background for the subcategory chip
+const CAT_BG: Record<string, string> = {
+  adaptation: "#FEF3C7",
+  sales:      "#DCFCE7",
+  tech:       "#DBEAFE",
+  capital:    "#EDE9FE",
+  team:       "#F3F4F6",
+};
+
 function WeeklyGrid({ byOwner, onToggleTask }: {
   byOwner: Record<string, Record<number, PlanItem[]>>;
   onToggleTask: (id: string, complete: boolean) => void;
@@ -434,12 +451,10 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
   const owners = [...ORDERED.filter(o => byOwner[o]), ...Object.keys(byOwner).filter(o => !ORDERED.includes(o))];
   if (owners.length === 0) return null;
 
-  // Date label for Week 1
   const dateLabel = "April 7 - 11";
 
   return (
     <div style={{ marginTop: 8 }}>
-      {/* Date label above week 1 */}
       <div style={{ fontSize: 11, color: "#666", fontFamily: F, marginLeft: 48, marginBottom: 4 }}>{dateLabel}</div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
@@ -461,7 +476,6 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
           {owners.map(owner => {
             const weeks = byOwner[owner] || {};
             const pc = personColor(owner);
-            // Build rows: 5 slots per person
             const rows = Array.from({ length: ROWS_PER_PERSON }, (_, ri) => ({
               w1: (weeks[1] || [])[ri] || null,
               w2: (weeks[2] || [])[ri] || null,
@@ -474,27 +488,18 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
               const isLastRow = ri === ROWS_PER_PERSON - 1;
               return (
                 <tr key={`${owner}-${ri}`}>
-                  {/* Person label — only on first row, spans all rows with rowSpan */}
                   {isFirstRow && (
                     <td
                       rowSpan={ROWS_PER_PERSON}
                       style={{
-                        verticalAlign: "middle",
-                        textAlign: "center",
-                        padding: 0,
-                        borderBottom: "2px solid #ddd",
-                        width: 48,
+                        verticalAlign: "middle", textAlign: "center",
+                        padding: 0, borderBottom: "2px solid #ddd", width: 48,
                       }}
                     >
                       <div style={{
-                        writingMode: "vertical-rl",
-                        transform: "rotate(180deg)",
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: pc,
-                        fontFamily: F,
-                        letterSpacing: 0.5,
-                        whiteSpace: "nowrap",
+                        writingMode: "vertical-rl", transform: "rotate(180deg)",
+                        fontSize: 13, fontWeight: 700, color: pc,
+                        fontFamily: F, letterSpacing: 0.5, whiteSpace: "nowrap",
                       }}>
                         {owner}
                       </div>
@@ -502,36 +507,60 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                   )}
                   {[row.w1, row.w2, row.w3, row.w4].map((task, wi) => {
                     const done = task?.status === "completed";
+                    const cat = task?.category ?? "";
+                    const sub = task?.subcategory ?? null;
+                    const txColor = done ? "#bbb" : (CAT_COLOR[cat] ?? "#1565C0");
+                    const bgColor = done ? "#F9F9F9" : (sub ? (CAT_BG[cat] ?? "#fff") + "60" : "#fff");
                     return (
                       <td
                         key={wi}
                         style={{
                           borderBottom: isLastRow ? "2px solid #aaa" : "1px solid #ddd",
-                          padding: "4px 8px",
-                          height: 26,
-                          verticalAlign: "middle",
+                          borderLeft: task ? `3px solid ${done ? "#ddd" : (CAT_COLOR[cat] ?? "#1565C0")}` : "3px solid transparent",
+                          padding: "4px 7px",
+                          verticalAlign: "top",
+                          background: bgColor,
+                          minHeight: 34,
                         }}
                       >
                         {task ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <div style={{ display: "flex", gap: 5, alignItems: "flex-start" }}>
                             <button
                               onClick={() => onToggleTask(task.id, !done)}
                               style={{
-                                width: 12, height: 12, borderRadius: 2,
-                                border: `1.5px solid ${done ? C.grn : "#aaa"}`,
+                                width: 12, height: 12, borderRadius: 2, marginTop: 2, flexShrink: 0,
+                                border: `1.5px solid ${done ? C.grn : (CAT_COLOR[cat] ?? "#aaa")}`,
                                 background: done ? C.grn : "transparent",
-                                color: "#fff", fontSize: 7, cursor: "pointer", flexShrink: 0,
+                                color: "#fff", fontSize: 7, cursor: "pointer",
                                 display: "flex", alignItems: "center", justifyContent: "center",
                               }}
                             >{done ? "✓" : ""}</button>
-                            <span style={{
-                              fontSize: 12, color: done ? "#aaa" : "#1565C0",
-                              textDecoration: done ? "line-through" : "underline",
-                              fontFamily: F, lineHeight: 1.3,
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            }}>
-                              {task.title.replace(/^[^:]+:\s*/, "")}
-                            </span>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{
+                                fontSize: 11, fontWeight: 600, color: txColor,
+                                textDecoration: done ? "line-through" : "none",
+                                fontFamily: F, lineHeight: 1.3,
+                                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              }}>
+                                {task.title.replace(/^[^:]+:\s*/, "")}
+                              </div>
+                              {sub && (
+                                <div style={{
+                                  marginTop: 2,
+                                  display: "inline-block",
+                                  fontSize: 8, fontWeight: 700,
+                                  color: done ? "#bbb" : (CAT_COLOR[cat] ?? "#555"),
+                                  background: done ? "#eee" : (CAT_BG[cat] ?? "#eee"),
+                                  borderRadius: 3,
+                                  padding: "0 4px",
+                                  letterSpacing: 0.2,
+                                  maxWidth: "100%",
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>
+                                  {sub}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         ) : null}
                       </td>

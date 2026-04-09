@@ -801,15 +801,62 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
 
   const selStyle: React.CSSProperties = { fontSize: 12, padding: "6px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, background: C.card };
 
+  // Count tasks per category for the nav bar badges
+  const catCounts = CAT_KEYS.reduce<Record<string, number>>((acc, k) => {
+    acc[k] = tasks.filter(t => t.category === k).length;
+    return acc;
+  }, {});
+
   return (
     <div>
-      {/* Sticky filter bar */}
+      {/* Sticky header: nav bar + filter row */}
       <div style={{
         position: "sticky", top: 0, zIndex: 30,
         background: "#fff", borderBottom: `2px solid ${C.brd}`,
-        padding: "10px 0 10px",
-        marginBottom: 0,
+        paddingBottom: 10,
       }}>
+
+        {/* ── Category nav bar ── */}
+        <div style={{
+          display: "flex", gap: 0, borderBottom: `1px solid ${C.brd}`,
+          marginBottom: 10, overflowX: "auto",
+        }}>
+          {/* All button */}
+          <button
+            onClick={() => setFilterCat("")}
+            style={{
+              padding: "9px 18px", border: "none", cursor: "pointer",
+              fontFamily: F, fontSize: 12, fontWeight: filterCat === "" ? 800 : 500,
+              color: filterCat === "" ? "#F97316" : C.sub,
+              background: "transparent",
+              borderBottom: filterCat === "" ? "3px solid #F97316" : "3px solid transparent",
+              whiteSpace: "nowrap", transition: "all 0.15s",
+            }}
+          >All · {tasks.length}</button>
+
+          {CAT_KEYS.map(k => {
+            const active = filterCat === k;
+            const color = CAT_COLOR[k] ?? C.sub;
+            return (
+              <button
+                key={k}
+                onClick={() => setFilterCat(active ? "" : k)}
+                style={{
+                  padding: "9px 18px", border: "none", cursor: "pointer",
+                  fontFamily: F, fontSize: 12, fontWeight: active ? 800 : 500,
+                  color: active ? color : C.sub,
+                  background: "transparent",
+                  borderBottom: active ? `3px solid ${color}` : "3px solid transparent",
+                  whiteSpace: "nowrap", transition: "all 0.15s",
+                }}
+              >
+                {CAT_LABELS[k]} · {catCounts[k] ?? 0}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Filter dropdowns row ── */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={selStyle}>
             <option value="">All categories</option>

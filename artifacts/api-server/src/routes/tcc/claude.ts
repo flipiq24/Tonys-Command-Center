@@ -6,6 +6,7 @@ import { db, systemInstructionsTable, meetingHistoryTable, contactsTable, checki
 import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable, communicationLogTable, companyGoalsTable, teamRolesTable, goalCompletionsTable } from "../../lib/schema-v2";
 import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
 import { sendAutoEod } from "./eod";
+import { push411ToSheet } from "./business";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
 import { getTodayEvents, createEvent } from "../../lib/gcal";
@@ -1313,6 +1314,7 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
             goalId: goalIdStr, goalTitle: updated.title, horizon: updated.horizon,
           }).catch(() => {});
         }
+        push411ToSheet().catch(() => {});
         return `✅ Goal updated: "${updated.title}" → status: ${updated.status}${input.owner ? `, owner: ${input.owner}` : ""}${input.due_date ? `, due: ${input.due_date}` : ""}`;
       } catch (err) {
         return `Failed to update goal: ${err instanceof Error ? err.message : String(err)}`;

@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tony's Command Center — Technical Handoff Document</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Instrument+Serif:ital@0;1&display=swap');
+
+  :root {
+    --bg: #FAFAF8;
+    --card: #FFFFFF;
+    --tx: #1A1A1A;
+    --sub: #555;
+    --mut: #888;
+    --brd: #E5E3DD;
+    --blu: #2563EB;
+    --bluBg: #EFF6FF;
+    --grn: #16A34A;
+    --red: #DC2626;
+    --amb: #D97706;
+    --purple: #7C3AED;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--tx);
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  /* Cover Page */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #0F3460 100%);
+    color: white;
+    text-align: center;
+    padding: 60px;
+    page-break-after: always;
+  }
+  .cover h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 56px;
+    font-weight: 400;
+    letter-spacing: -1px;
+    margin-bottom: 12px;
+  }
+  .cover .subtitle {
+    font-size: 20px;
+    font-weight: 300;
+    opacity: 0.85;
+    margin-bottom: 40px;
+  }
+  .cover .meta {
+    font-size: 14px;
+    opacity: 0.6;
+    line-height: 2;
+  }
+  .cover .meta a { color: #93C5FD; }
+  .cover .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 20px;
+    padding: 6px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 30px;
+  }
+
+  /* Page container */
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 60px 40px;
+  }
+
+  /* Section headers */
+  .section-num {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--blu);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 36px;
+    font-weight: 400;
+    margin-bottom: 8px;
+    color: var(--tx);
+    border-bottom: 2px solid var(--brd);
+    padding-bottom: 12px;
+  }
+  h3 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    color: var(--tx);
+  }
+  h4 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 24px;
+    margin-bottom: 8px;
+    color: var(--sub);
+  }
+  p { margin-bottom: 12px; color: var(--sub); }
+  .lead { font-size: 18px; color: var(--sub); margin-bottom: 24px; }
+
+  /* Cards */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--brd);
+    border-radius: 12px;
+    padding: 24px;
+    margin: 16px 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  th {
+    background: #F5F5F0;
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--sub);
+    border-bottom: 2px solid var(--brd);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--brd);
+    vertical-align: top;
+  }
+  tr:hover td { background: #FAFAF8; }
+
+  /* Tags */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .tag-ai { background: #EDE9FE; color: #7C3AED; }
+  .tag-api { background: #DBEAFE; color: #2563EB; }
+  .tag-db { background: #FEF3C7; color: #D97706; }
+  .tag-google { background: #DCFCE7; color: #16A34A; }
+  .tag-slack { background: #FCE7F3; color: #DB2777; }
+  .tag-linear { background: #E0E7FF; color: #4338CA; }
+  .tag-phone { background: #FEE2E2; color: #DC2626; }
+  .tag-pass { background: #DCFCE7; color: #16A34A; }
+  .tag-open { background: #FEF3C7; color: #D97706; }
+
+  /* Wireframe styles */
+  .wireframe {
+    background: #F8F9FA;
+    border: 2px solid #DEE2E6;
+    border-radius: 12px;
+    padding: 0;
+    margin: 20px 0;
+    overflow: hidden;
+    font-size: 12px;
+  }
+  .wf-browser {
+    background: #E9ECEF;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-bottom: 1px solid #DEE2E6;
+  }
+  .wf-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .wf-dot.r { background: #FF5F57; }
+  .wf-dot.y { background: #FFBD2E; }
+  .wf-dot.g { background: #27C93F; }
+  .wf-url {
+    flex: 1;
+    background: white;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--mut);
+    margin-left: 8px;
+  }
+  .wf-body { padding: 16px; }
+
+  .wf-header {
+    background: white;
+    border: 1px solid #DEE2E6;
+    border-radius: 8px;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .wf-title { font-weight: 800; font-size: 14px; }
+  .wf-subtitle { font-size: 10px; color: var(--mut); }
+  .wf-quote { font-style: italic; font-size: 11px; color: var(--sub); }
+  .wf-hamburger {
+    width: 28px; height: 28px;
+    border: 1.5px solid #DEE2E6;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 3px;
+  }
+  .wf-hamburger span { display: block; width: 14px; height: 1.5px; background: #333; }
+
+  .wf-grid { display: grid; gap: 12px; }
+  .wf-grid-2 { grid-template-columns: 1fr 1fr; }
+  .wf-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .wf-grid-sidebar { grid-template-columns: 1fr 260px; }
+  .wf-grid-chat { grid-template-columns: 200px 1fr; }
+
+  .wf-box {
+    background: white;
+    border: 1px solid #DEE2E6;
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .wf-box-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--mut);
+    margin-bottom: 6px;
+  }
+  .wf-box-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .wf-line {
+    height: 8px;
+    background: #E9ECEF;
+    border-radius: 4px;
+    margin: 4px 0;
+  }
+  .wf-line.short { width: 60%; }
+  .wf-line.medium { width: 80%; }
+
+  .wf-btn {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    border: 1px solid #DEE2E6;
+    margin: 2px;
+  }
+  .wf-btn-primary { background: var(--blu); color: white; border-color: var(--blu); }
+  .wf-btn-green { background: var(--grn); color: white; border-color: var(--grn); }
+  .wf-btn-red { background: var(--red); color: white; border-color: var(--red); }
+
+  .wf-badge {
+    display: inline-block;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 800;
+    color: white;
+    text-align: center;
+    line-height: 16px;
+    padding: 0 4px;
+  }
+
+  .wf-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #F0F0F0;
+  }
+  .wf-row:last-child { border-bottom: none; }
+
+  .wf-checkbox {
+    width: 14px; height: 14px;
+    border: 1.5px solid #CCC;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .wf-checkbox.checked { background: var(--grn); border-color: var(--grn); }
+
+  .wf-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #E9ECEF;
+    flex-shrink: 0;
+  }
+
+  .wf-timeline-bar {
+    height: 8px;
+    border-radius: 4px;
+    margin: 3px 0;
+  }
+
+  .wf-tier {
+    border-left: 3px solid;
+    padding-left: 12px;
+    margin: 8px 0;
+  }
+  .wf-tier.urgent { border-color: var(--red); }
+  .wf-tier.follow { border-color: var(--amb); }
+  .wf-tier.new { border-color: var(--blu); }
+
+  .wf-input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #DEE2E6;
+    border-radius: 6px;
+    font-size: 11px;
+    margin: 4px 0;
+    background: white;
+  }
+
+  .wf-mic {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--red);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  /* Flow diagrams */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .flow-step {
+    background: white;
+    border: 2px solid var(--brd);
+    border-radius: 10px;
+    padding: 12px 18px;
+    text-align: center;
+    min-width: 120px;
+  }
+  .flow-step.active { border-color: var(--blu); background: var(--bluBg); }
+  .flow-step .flow-icon { font-size: 20px; margin-bottom: 4px; }
+  .flow-step .flow-label { font-size: 11px; font-weight: 700; }
+  .flow-step .flow-sub { font-size: 9px; color: var(--mut); }
+  .flow-arrow {
+    font-size: 20px;
+    color: var(--mut);
+    padding: 0 4px;
+  }
+
+  /* Architecture diagram */
+  .arch {
+    background: #1A1A2E;
+    border-radius: 12px;
+    padding: 30px;
+    color: white;
+    margin: 20px 0;
+  }
+  .arch-layer {
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 10px;
+    padding: 16px;
+    margin: 10px 0;
+    text-align: center;
+  }
+  .arch-layer-title {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    opacity: 0.6;
+    margin-bottom: 8px;
+  }
+  .arch-boxes { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .arch-box {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .arch-box.highlight { background: rgba(37,99,235,0.3); border-color: rgba(37,99,235,0.5); }
+  .arch-arrow {
+    text-align: center;
+    font-size: 18px;
+    opacity: 0.4;
+    margin: 4px 0;
+  }
+
+  /* Callout */
+  .callout {
+    border-left: 4px solid var(--blu);
+    background: var(--bluBg);
+    padding: 16px 20px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .callout.warn { border-color: var(--amb); background: #FEF3C7; }
+  .callout.success { border-color: var(--grn); background: #DCFCE7; }
+  .callout.danger { border-color: var(--red); background: #FEE2E2; }
+
+  /* Code */
+  code {
+    background: #F1F0ED;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* Checklist */
+  .checklist { list-style: none; padding: 0; }
+  .checklist li {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--brd);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 14px;
+  }
+  .checklist li::before {
+    content: "[ ]";
+    font-family: monospace;
+    font-weight: 700;
+    color: var(--mut);
+    flex-shrink: 0;
+  }
+
+  /* TOC */
+  .toc { padding: 0; list-style: none; }
+  .toc li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--brd);
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .toc-num { font-weight: 800; color: var(--blu); font-size: 14px; min-width: 30px; }
+  .toc-title { font-weight: 600; font-size: 16px; }
+  .toc-desc { font-size: 13px; color: var(--mut); }
+
+  /* Print */
+  @media print {
+    .cover { min-height: auto; padding: 80px 40px; }
+    .page { padding: 30px 20px; }
+    .wireframe { break-inside: avoid; }
+    .card { break-inside: avoid; }
+    table { break-inside: avoid; }
+  }
+
+  /* Page breaks */
+  .page-break { page-break-before: always; }
+
+  /* Connection line */
+  .conn-map { position: relative; }
+  .conn-item {
+    display: flex;
+    align-items: stretch;
+    margin: 0;
+  }
+  .conn-left {
+    width: 180px;
+    text-align: right;
+    padding: 8px 16px 8px 0;
+    font-size: 12px;
+    font-weight: 600;
+    border-right: 3px solid var(--blu);
+    flex-shrink: 0;
+  }
+  .conn-right {
+    padding: 8px 0 8px 16px;
+    font-size: 12px;
+    color: var(--sub);
+    flex: 1;
+  }
+  .conn-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--blu);
+    position: absolute;
+    left: 176px;
+    margin-top: 3px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════ COVER ═══ -->
+<div class="cover">
+  <div class="badge">Technical Handoff Document</div>
+  <h1>Tony's Command Center</h1>
+  <div class="subtitle">A Single Point of Entry for FlipIQ Team Operations</div>
+  <div style="width:80px; height:2px; background:rgba(255,255,255,0.3); margin: 30px auto;"></div>
+  <div class="meta">
+    <strong>Version 2.0</strong> &mdash; April 5, 2026<br>
+    Tony Diaz, CEO &mdash; FlipIQ<br><br>
+    <a href="https://TonysCommandCenter.replit.app">TonysCommandCenter.replit.app</a><br>
+    <a href="https://github.com/flipiq24/Tonys-Command-Center">github.com/flipiq24/Tonys-Command-Center</a><br><br>
+    <span style="opacity:0.5">React 19 &bull; Express 5 &bull; PostgreSQL &bull; Claude AI &bull; Google Workspace &bull; Slack &bull; Linear</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ TOC ═══ -->
+<div class="page">
+  <div class="section-num">Contents</div>
+  <h2>Table of Contents</h2>
+
+  <ul class="toc">
+    <li><span class="toc-num">01</span><span class="toc-title">What Is This App?</span><span class="toc-desc">&mdash; Concept, problem, solution</span></li>
+    <li><span class="toc-num">02</span><span class="toc-title">Who Uses It</span><span class="toc-desc">&mdash; Tony, Ethan, Ramy access levels</span></li>
+    <li><span class="toc-num">03</span><span class="toc-title">Architecture</span><span class="toc-desc">&mdash; Tech stack, monorepo, system diagram</span></li>
+    <li><span class="toc-num">04</span><span class="toc-title">Morning Sequence Flow</span><span class="toc-desc">&mdash; Sequential gates, wireframes</span></li>
+    <li><span class="toc-num">05</span><span class="toc-title">Every Screen &mdash; Wireframes</span><span class="toc-desc">&mdash; Visual layout of all views + modals</span></li>
+    <li><span class="toc-num">06</span><span class="toc-title">Component Connection Map</span><span class="toc-desc">&mdash; What connects to what</span></li>
+    <li><span class="toc-num">07</span><span class="toc-title">All API Routes</span><span class="toc-desc">&mdash; 85+ endpoints organized by domain</span></li>
+    <li><span class="toc-num">08</span><span class="toc-title">Database Schema</span><span class="toc-desc">&mdash; 27 tables, columns, relationships</span></li>
+    <li><span class="toc-num">09</span><span class="toc-title">All AI Features &amp; Prompts</span><span class="toc-desc">&mdash; 24 Claude integrations, how to change each</span></li>
+    <li><span class="toc-num">10</span><span class="toc-title">External Services</span><span class="toc-desc">&mdash; Gmail, Calendar, Slack, Linear, etc.</span></li>
+    <li><span class="toc-num">11</span><span class="toc-title">Environment Variables</span><span class="toc-desc">&mdash; 22 env vars required</span></li>
+    <li><span class="toc-num">12</span><span class="toc-title">Data Flow Walkthrough</span><span class="toc-desc">&mdash; Step-by-step examples</span></li>
+    <li><span class="toc-num">13</span><span class="toc-title">What Still Needs Work</span><span class="toc-desc">&mdash; 4 remaining gaps</span></li>
+    <li><span class="toc-num">14</span><span class="toc-title">Testing Checklist</span><span class="toc-desc">&mdash; 70+ verification items</span></li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 1: WHAT ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 01</div>
+  <h2>What Is This App?</h2>
+
+  <p class="lead">Tony's Command Center is a <strong>single point of entry</strong> for the FlipIQ leadership team to manage their entire daily operation from one dashboard.</p>
+
+  <div class="card">
+    <h4 style="margin-top:0;">The Problem</h4>
+    <p>Tony (CEO), Ethan (COO), and Ramy (CSM) were switching between <strong>8+ different tools</strong> daily: Gmail, Google Calendar, Slack, Linear, Google Sheets, Google Docs, phone dialer, and CRM. Context was lost. Follow-ups were missed. Tony's ADHD made this scattered workflow especially damaging to productivity.</p>
+  </div>
+
+  <div class="card">
+    <h4 style="margin-top:0;">The Solution</h4>
+    <p>One app that <strong>pulls all data into a single dashboard</strong>, interconnected via Supabase/PostgreSQL, with a <strong>smart AI overlay (Claude)</strong> trained on FlipIQ's business logic. The AI can read and write to ALL connected services, giving the team a fully functioning AI assistant built into their daily workflow.</p>
+  </div>
+
+  <h3>Core Capabilities</h3>
+  <div class="wf-grid wf-grid-3">
+    <div class="card" style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:8px;">📊</div>
+      <strong>Unified Dashboard</strong>
+      <p style="font-size:12px;">Gmail + Calendar + Slack + Linear + CRM in one view</p>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:8px;">🤖</div>
+      <strong>AI Brain (Claude)</strong>
+      <p style="font-size:12px;">21 tools, reads/writes all data, scope gatekeeper</p>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:8px;">📈</div>
+      <strong>Sales CRM</strong>
+      <p style="font-size:12px;">3,400+ contacts, AI scoring, pre-call briefs</p>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:8px;">📋</div>
+      <strong>Google Sheets Sync</strong>
+      <p style="font-size:12px;">3-tab Business Master auto-synced every 5 min</p>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:8px;">📱</div>
+      <strong>Phone Bridge</strong>
+      <p style="font-size:12px;">MacroDroid auto-logs every call &amp; SMS</p>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:32px; margin-bottom:8px;">🖨️</div>
+      <strong>Print &amp; Scan</strong>
+      <p style="font-size:12px;">Print daily sheet, scan back via AI Vision</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>North Star Metric:</strong> Every Acquisition Associate closes <strong>2 deals/month</strong> at $2,500/acquisition.<br>
+    Revenue targets: $50K break-even &rarr; $100K Phase 1 &rarr; $250K Scale.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ SECTION 2: WHO ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 02</div>
+  <h2>Who Uses It</h2>
+
+  <table>
+    <thead>
+      <tr><th>Person</th><th>Role</th><th>Access</th><th>What They See</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Tony Diaz</strong></td>
+        <td>CEO</td>
+        <td>Full app access (web UI)</td>
+        <td>All views: check-in, journal, dashboard, emails, sales, tasks, AI chat, schedule</td>
+      </tr>
+      <tr>
+        <td><strong>Ethan</strong></td>
+        <td>COO</td>
+        <td>Google Sheets + EOD email</td>
+        <td>Business Master Sheet (3 tabs), Daily EOD accountability report via email</td>
+      </tr>
+      <tr>
+        <td><strong>Ramy</strong></td>
+        <td>CSM</td>
+        <td>Google Sheets</td>
+        <td>Business Master Sheet, task visibility, communication log</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout success">
+    <strong>Key Insight:</strong> Tony is the primary app user. Ethan and Ramy get visibility through <strong>Google Sheets auto-sync</strong> (every 5 minutes) and <strong>EOD email reports</strong> &mdash; they never need to open the app directly.
+  </div>
+
+  <h3>Google Sheets as Team Bridge</h3>
+  <table>
+    <thead>
+      <tr><th>Sheet</th><th>ID</th><th>Tabs</th><th>Who Sees</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Personal Check-in</strong></td><td><code>1rMLE...kRMw</code></td><td>Single tab</td><td>Tony only</td></tr>
+      <tr><td><strong>Business Master</strong></td><td><code>1WGu...EQyw</code></td><td>Master Task List, Contact Master, Communication Log</td><td>Tony + Ethan + Ramy</td></tr>
+      <tr><td><strong>Daily Journal</strong></td><td><code>1kQj...XYRE</code></td><td>N/A (Google Doc)</td><td>Tony only</td></tr>
+      <tr><td><strong>90-Day Plan</strong></td><td><code>1b1E...P2E</code></td><td>N/A (Google Doc)</td><td>Team</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════ SECTION 3: ARCH ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 03</div>
+  <h2>Architecture</h2>
+
+  <div class="arch">
+    <div class="arch-layer">
+      <div class="arch-layer-title">Frontend &mdash; React 19 + Vite + TypeScript</div>
+      <div class="arch-boxes">
+        <div class="arch-box">App.tsx (Router)</div>
+        <div class="arch-box">39 Components</div>
+        <div class="arch-box">Voice Input</div>
+        <div class="arch-box">Print View</div>
+      </div>
+    </div>
+    <div class="arch-arrow">&darr; fetch() with x-tcc-token &darr;</div>
+    <div class="arch-layer">
+      <div class="arch-layer-title">Backend &mdash; Express 5 + TypeScript</div>
+      <div class="arch-boxes">
+        <div class="arch-box">25 Route Files</div>
+        <div class="arch-box">85+ Endpoints</div>
+        <div class="arch-box">15 Lib Files</div>
+        <div class="arch-box highlight">Auth Middleware</div>
+      </div>
+    </div>
+    <div class="arch-arrow">&darr; Drizzle ORM / API calls &darr;</div>
+    <div class="arch-layer" style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center; padding:12px;">
+      <div class="arch-box highlight">Supabase PostgreSQL<br><span style="font-size:9px;opacity:0.6;">27 tables</span></div>
+      <div class="arch-box">Gmail API</div>
+      <div class="arch-box">Google Calendar</div>
+      <div class="arch-box">Google Drive/Docs/Sheets</div>
+      <div class="arch-box">Slack API</div>
+      <div class="arch-box">Linear GraphQL</div>
+      <div class="arch-box highlight">Claude AI (Anthropic)<br><span style="font-size:9px;opacity:0.6;">21 tools, 4 models</span></div>
+      <div class="arch-box">MacroDroid</div>
+      <div class="arch-box">AgentMail</div>
+    </div>
+  </div>
+
+  <h3>Monorepo Structure</h3>
+  <div class="card" style="font-family:monospace; font-size:12px; line-height:1.8;">
+    <span style="color:var(--blu);">Tonys-Command-Center/</span><br>
+    &nbsp;&nbsp;<span style="color:var(--grn);">artifacts/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--grn);">tcc/</span> &mdash; Frontend (React + Vite)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;src/App.tsx &mdash; Main shell + routing<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;src/components/tcc/ &mdash; 39 UI components<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--grn);">api-server/</span> &mdash; Backend (Express)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;src/routes/tcc/ &mdash; 25 route files<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;src/lib/ &mdash; 16 service connector libs<br>
+    &nbsp;&nbsp;<span style="color:var(--amb);">lib/</span><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;db/ &mdash; Drizzle ORM + schema (27 tables)<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;api-zod/ &mdash; Shared Zod validation<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;integrations/ &mdash; Anthropic AI + Linear SDK<br>
+    &nbsp;&nbsp;<span style="color:var(--mut);">docs/</span> &mdash; Build docs + this handoff<br>
+    &nbsp;&nbsp;<span style="color:var(--mut);">scripts/</span> &mdash; Import, seed, post-merge
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ SECTION 4: MORNING FLOW ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 04</div>
+  <h2>Morning Sequence Flow</h2>
+
+  <p class="lead">The app enforces a strict sequential flow. Tony <strong>cannot skip</strong> to emails or sales until completing each gate.</p>
+
+  <div class="flow">
+    <div class="flow-step active">
+      <div class="flow-icon">🌅</div>
+      <div class="flow-label">Check-In</div>
+      <div class="flow-sub">Sleep, Bible, Workout</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon">📓</div>
+      <div class="flow-label">Journal</div>
+      <div class="flow-sub">Brain dump + anchor</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon">📊</div>
+      <div class="flow-label">Dashboard</div>
+      <div class="flow-sub">Full day overview</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon">📧📞📋💬</div>
+      <div class="flow-label">Free Nav</div>
+      <div class="flow-sub">Emails, Sales, Tasks, Chat</div>
+    </div>
+  </div>
+
+  <!-- Wireframe: Check-in -->
+  <h3>Gate 1: Morning Check-In</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Check-In</div>
+    </div>
+    <div class="wf-body">
+      <div style="text-align:center; margin-bottom:16px;">
+        <div style="font-size:24px;">🌅</div>
+        <div style="font-weight:800; font-size:16px;">Good Morning, Tony</div>
+        <div style="font-size:11px; color:var(--mut);">Saturday, April 5, 2026 &bull; 6:42 AM</div>
+      </div>
+
+      <div class="wf-grid wf-grid-2">
+        <div class="wf-box">
+          <div class="wf-box-label">Bedtime</div>
+          <div class="wf-input">10:30 PM</div>
+        </div>
+        <div class="wf-box">
+          <div class="wf-box-label">Wake Time</div>
+          <div class="wf-input">5:45 AM</div>
+        </div>
+      </div>
+
+      <div class="wf-box" style="margin-top:12px;">
+        <div class="wf-box-label">Sleep Hours (auto-calculated)</div>
+        <div style="font-size:24px; font-weight:800; text-align:center; padding:8px;">7.25h</div>
+      </div>
+
+      <div class="wf-grid wf-grid-3" style="margin-top:12px;">
+        <div class="wf-box" style="text-align:center; border:2px solid var(--grn);">
+          <div style="font-size:20px;">📖</div>
+          <div style="font-size:11px; font-weight:700;">Bible &check;</div>
+        </div>
+        <div class="wf-box" style="text-align:center; border:2px solid var(--brd);">
+          <div style="font-size:20px;">🏋️</div>
+          <div style="font-size:11px; font-weight:700; color:var(--mut);">Workout</div>
+        </div>
+        <div class="wf-box" style="text-align:center; border:2px solid var(--grn);">
+          <div style="font-size:20px;">📓</div>
+          <div style="font-size:11px; font-weight:700;">Journal &check;</div>
+        </div>
+      </div>
+
+      <div style="text-align:center; margin-top:16px;">
+        <span class="wf-btn wf-btn-primary" style="padding:8px 40px; font-size:13px;">Complete Check-In &rarr;</span>
+      </div>
+
+      <div class="callout warn" style="margin-top:12px; font-size:11px;">
+        <strong>AI Guilt Trip:</strong> If workout or journal is unchecked, Claude generates a confrontational accountability message quoting Tony's own personal commitment document.
+      </div>
+    </div>
+  </div>
+
+  <!-- Wireframe: Journal -->
+  <h3>Gate 2: Journal Brain Dump</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Journal</div>
+    </div>
+    <div class="wf-body">
+      <div class="wf-box" style="border-left:3px solid var(--purple); margin-bottom:12px;">
+        <div class="wf-box-label" style="color:var(--purple);">Spiritual Anchor <span class="tag tag-ai">AI-Generated</span></div>
+        <div style="font-style:italic; font-size:12px;">"Seek first the kingdom of God and his righteousness, and all these things will be added to you." You showed up yesterday with 12 calls and 3 tasks done. Keep that energy today &mdash; the consistency is building something real.</div>
+      </div>
+
+      <div class="wf-box">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div class="wf-box-label">Brain Dump</div>
+          <div class="wf-mic">🎤</div>
+        </div>
+        <div class="wf-input" style="height:100px; font-style:italic; color:var(--mut);">What's on your mind this morning? Speak or type...</div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:12px; justify-content:flex-end;">
+        <span class="wf-btn">Skip</span>
+        <span class="wf-btn wf-btn-primary">Save &amp; Continue &rarr;</span>
+      </div>
+
+      <div class="callout" style="margin-top:12px; font-size:11px;">
+        <strong>AI Processing:</strong> Raw text &rarr; Claude formats into structured entry (Mood, Key Events, Health Notes, Reflection) &rarr; Saved to DB &rarr; Prepended to Google Doc
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ SECTION 5: WIREFRAMES ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 05</div>
+  <h2>Every Screen &mdash; Wireframes</h2>
+
+  <!-- Dashboard Wireframe -->
+  <h3>5.1 Dashboard View</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Dashboard</div>
+    </div>
+    <div class="wf-body">
+      <!-- Header -->
+      <div class="wf-header">
+        <div>
+          <div class="wf-title">Tony's Command Center</div>
+          <div class="wf-subtitle">Sat, Apr 5, 2026 &bull; 7:15 AM &bull; <span style="color:var(--blu);">Updated 2m ago</span></div>
+        </div>
+        <div class="wf-quote">"Follow the plan I gave you!" &mdash; God</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <div style="position:relative;">
+            <div style="font-size:16px;">🔔</div>
+            <div class="wf-badge" style="background:var(--red);position:absolute;top:-6px;right:-6px;">3</div>
+          </div>
+          <div class="wf-hamburger"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+
+      <!-- Day Timeline -->
+      <div class="wf-box" style="margin-bottom:12px;">
+        <div class="wf-box-label">Day Timeline</div>
+        <div style="display:flex; gap:4px; align-items:center; font-size:10px;">
+          <span>6AM</span>
+          <div style="flex:1;">
+            <div class="wf-timeline-bar" style="background:var(--grn); width:15%; margin-left:0;"></div>
+            <div class="wf-timeline-bar" style="background:var(--blu); width:25%; margin-left:15%;"></div>
+            <div class="wf-timeline-bar" style="background:var(--amb); width:10%; margin-left:45%;"></div>
+            <div class="wf-timeline-bar" style="background:var(--blu); width:20%; margin-left:55%;"></div>
+          </div>
+          <span>6PM</span>
+        </div>
+        <div style="display:flex; gap:12px; font-size:9px; color:var(--mut); margin-top:4px;">
+          <span style="color:var(--grn);">&#9632; Sales Calls</span>
+          <span style="color:var(--blu);">&#9632; Meetings</span>
+          <span style="color:var(--amb);">&#9632; Email Block</span>
+        </div>
+      </div>
+
+      <div class="wf-grid wf-grid-2">
+        <!-- Tasks Column -->
+        <div class="wf-box">
+          <div class="wf-box-label">Today's Tasks</div>
+          <div class="wf-row"><div class="wf-checkbox checked"></div><s style="font-size:11px;color:var(--mut);">Review Linear backlog</s></div>
+          <div class="wf-row"><div class="wf-checkbox"></div><span style="font-size:11px;">Follow up with Fernando re: partnership</span></div>
+          <div class="wf-row"><div class="wf-checkbox"></div><span style="font-size:11px;">Send updated pitch deck to Xander</span></div>
+          <div class="wf-row"><div class="wf-checkbox"></div><span style="font-size:11px;">Call Mike O. about Q3 pipeline</span></div>
+        </div>
+
+        <!-- Emails Column -->
+        <div class="wf-box">
+          <div class="wf-box-label">Important Emails <span class="wf-badge" style="background:var(--red);">4</span></div>
+          <div class="wf-row">
+            <div class="wf-avatar"></div>
+            <div style="flex:1;">
+              <div style="font-size:11px; font-weight:600;">Fernando Perez</div>
+              <div style="font-size:10px; color:var(--mut);">Re: FlipIQ Partnership Next Steps</div>
+            </div>
+            <span class="wf-btn" style="font-size:9px;">Reply</span>
+          </div>
+          <div class="wf-row">
+            <div class="wf-avatar"></div>
+            <div style="flex:1;">
+              <div style="font-size:11px; font-weight:600;">Xander Clemens</div>
+              <div style="font-size:10px; color:var(--mut);">Demo follow-up &mdash; pricing questions</div>
+            </div>
+            <span class="wf-btn" style="font-size:9px;">Reply</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="wf-grid wf-grid-2" style="margin-top:12px;">
+        <!-- Linear Items -->
+        <div class="wf-box">
+          <div class="wf-box-label">Linear Items <span class="tag tag-linear">Linear</span></div>
+          <div class="wf-row">
+            <span style="font-size:10px; font-weight:700; color:var(--red);">P1</span>
+            <span style="font-size:11px;">FIQ-342 Fix onboarding flow</span>
+          </div>
+          <div class="wf-row">
+            <span style="font-size:10px; font-weight:700; color:var(--amb);">P2</span>
+            <span style="font-size:11px;">FIQ-339 Update API docs</span>
+          </div>
+        </div>
+
+        <!-- Call List -->
+        <div class="wf-box">
+          <div class="wf-box-label">Sales Calls</div>
+          <div class="wf-row">
+            <span style="font-size:11px; flex:1;">Mike Oyoque</span>
+            <span class="wf-btn" style="font-size:9px;">📞</span>
+            <span class="wf-btn" style="font-size:9px;">📧</span>
+          </div>
+          <div class="wf-row">
+            <span style="font-size:11px; flex:1;">Xander Clemens</span>
+            <span class="wf-btn" style="font-size:9px;">📞</span>
+            <span class="wf-btn" style="font-size:9px;">📧</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Emails Wireframe -->
+  <h3>5.2 Emails View (3-Tier Triage)</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Emails</div>
+    </div>
+    <div class="wf-body">
+      <div class="wf-header">
+        <div class="wf-title">📧 Email Triage</div>
+        <div><span class="wf-btn wf-btn-primary">Proceed to Schedule &rarr;</span></div>
+      </div>
+
+      <!-- Tier 1: Important -->
+      <div class="wf-box" style="border-left:3px solid var(--red);">
+        <div class="wf-box-label" style="color:var(--red);">Important <span class="wf-badge" style="background:var(--red);">4</span></div>
+        <div class="wf-row">
+          <div class="wf-avatar"></div>
+          <div style="flex:1;">
+            <div style="font-size:11px; font-weight:600;">Fernando Perez <span style="font-size:9px; color:var(--grn);">Broker &bull; Engaged</span></div>
+            <div style="font-size:10px; color:var(--mut);">Re: FlipIQ Partnership &mdash; Ready to schedule demo for team</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <span class="wf-btn wf-btn-primary" style="font-size:9px;">Suggest Reply</span>
+            <span class="wf-btn" style="font-size:9px;">Snooze</span>
+            <span class="wf-btn" style="font-size:9px;">👍</span>
+            <span class="wf-btn" style="font-size:9px;">👎</span>
+          </div>
+        </div>
+        <div class="wf-row">
+          <div class="wf-avatar"></div>
+          <div style="flex:1;">
+            <div style="font-size:11px; font-weight:600;">Ramy (FlipIQ)</div>
+            <div style="font-size:10px; color:var(--mut);">Client escalation &mdash; needs immediate attention</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <span class="wf-btn wf-btn-primary" style="font-size:9px;">Suggest Reply</span>
+            <span class="wf-btn" style="font-size:9px;">Snooze</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tier 2: FYI -->
+      <div class="wf-box" style="border-left:3px solid var(--amb); margin-top:8px;">
+        <div class="wf-box-label" style="color:var(--amb);">FYI <span class="wf-badge" style="background:var(--amb);">6</span></div>
+        <div class="wf-row">
+          <div style="font-size:11px; flex:1;">Google Calendar &mdash; New invitation: Product sync</div>
+        </div>
+      </div>
+
+      <!-- Tier 3: Promotions -->
+      <div class="wf-box" style="border-left:3px solid var(--mut); margin-top:8px; opacity:0.6;">
+        <div class="wf-box-label">Promotions <span class="wf-badge" style="background:var(--mut);">12</span></div>
+        <div style="font-size:10px;color:var(--mut);">Collapsed by default &mdash; click to expand</div>
+      </div>
+
+      <div class="callout" style="margin-top:12px; font-size:11px;">
+        <strong>AI Features:</strong> "Suggest Reply" &rarr; Claude drafts reply in Tony's voice &bull; 👍/👎 trains the "Email Brain" &bull; Snooze options: 1h, 2h, tomorrow, next week, custom date
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sales Morning Wireframe -->
+<div class="page page-break">
+  <h3>5.3 Sales Morning View (3-Tier)</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Sales Morning</div>
+    </div>
+    <div class="wf-body">
+      <div class="wf-header">
+        <div class="wf-title">📞 Morning Sales Briefing</div>
+        <div style="display:flex;gap:6px;">
+          <span class="wf-btn wf-btn-primary">Score Selected</span>
+          <span class="wf-btn">Research Selected</span>
+        </div>
+      </div>
+
+      <!-- Pipeline Summary -->
+      <div class="wf-box" style="margin-bottom:12px;">
+        <div class="wf-box-label">Pipeline Summary</div>
+        <div style="display:flex; gap:16px; font-size:11px; text-align:center;">
+          <div><div style="font-size:20px; font-weight:800; color:var(--blu);">147</div>Active</div>
+          <div><div style="font-size:20px; font-weight:800; color:var(--grn);">23</div>Engaged</div>
+          <div><div style="font-size:20px; font-weight:800; color:var(--amb);">8</div>Negotiating</div>
+          <div><div style="font-size:20px; font-weight:800; color:var(--red);">5</div>Overdue</div>
+        </div>
+      </div>
+
+      <!-- Tier 1: Urgent -->
+      <div class="wf-tier urgent">
+        <div class="wf-box-label" style="color:var(--red); font-size:13px; font-weight:800;">🔴 Tier 1: Urgent Responses (3)</div>
+        <div class="wf-box" style="margin:6px 0;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" style="width:14px;height:14px;">
+            <div style="flex:1;">
+              <div style="font-size:12px; font-weight:700;">Fernando Perez <span style="font-size:10px; color:var(--mut);">Keller Williams</span></div>
+              <div style="font-size:10px; color:var(--sub); font-style:italic;">AI Brief: Key broker contact, engaged in partnership talks since March</div>
+              <div style="font-size:10px; color:var(--red);">Email received 2h ago &mdash; needs response</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:16px; font-weight:800; color:var(--grn);">87</div>
+              <div style="font-size:9px; color:var(--mut);">AI Score</div>
+            </div>
+            <div style="display:flex; gap:4px; flex-direction:column;">
+              <select style="font-size:9px; padding:2px; border-radius:4px; border:1px solid #ddd;"><option>Engaged</option></select>
+              <select style="font-size:9px; padding:2px; border-radius:4px; border:1px solid #ddd;"><option>Hot</option></select>
+            </div>
+            <div style="display:flex; gap:3px;">
+              <span class="wf-btn" style="font-size:9px;">📞</span>
+              <span class="wf-btn" style="font-size:9px;">📧</span>
+              <span class="wf-btn" style="font-size:9px;">📋 Brief</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tier 2: Follow-ups -->
+      <div class="wf-tier follow" style="margin-top:12px;">
+        <div class="wf-box-label" style="color:var(--amb); font-size:13px; font-weight:800;">🟡 Tier 2: Follow-Ups Due Today (5)</div>
+        <div class="wf-line"></div>
+        <div class="wf-line short"></div>
+      </div>
+
+      <!-- Tier 3: Top 10 New -->
+      <div class="wf-tier new" style="margin-top:12px;">
+        <div class="wf-box-label" style="color:var(--blu); font-size:13px; font-weight:800;">🔵 Tier 3: Top 10 New Prospects (10)</div>
+        <div class="wf-line"></div>
+        <div class="wf-line short"></div>
+      </div>
+
+      <div class="callout" style="margin-top:12px; font-size:11px;">
+        <strong>AI Features:</strong> Contacts scored 0-100 by rule engine &bull; AI web research per contact (~$0.15) &bull; AI pre-call brief with personality notes &bull; Stage/Status inline dropdowns
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Chat Wireframe -->
+  <h3>5.4 AI Chat (Claude)</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; AI Chat</div>
+    </div>
+    <div class="wf-body">
+      <div class="wf-grid wf-grid-chat">
+        <!-- Thread Sidebar -->
+        <div class="wf-box" style="font-size:10px;">
+          <div style="font-weight:700; margin-bottom:8px;">Threads</div>
+          <div class="wf-btn wf-btn-primary" style="width:100%; text-align:center; margin-bottom:8px;">+ New Thread</div>
+          <div class="wf-row" style="background:var(--bluBg);border-radius:6px;padding:6px;">
+            <span>Sales pipeline review</span>
+          </div>
+          <div class="wf-row"><span>Email to Fernando</span></div>
+          <div class="wf-row"><span>Task prioritization</span></div>
+          <div class="wf-row"><span>Ramy support plan</span></div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="wf-box">
+          <div style="margin-bottom:12px;">
+            <!-- User message -->
+            <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+              <div style="background:var(--blu); color:white; padding:8px 12px; border-radius:12px 12px 0 12px; max-width:70%; font-size:11px;">
+                What's my pipeline looking like? Any urgent follow-ups?
+              </div>
+            </div>
+
+            <!-- Tool activity -->
+            <div style="font-size:9px; color:var(--mut); text-align:center; margin:4px 0;">
+              <span class="tag tag-ai">Using: search_contacts</span>
+              <span class="tag tag-api">Using: get_today_calendar</span>
+            </div>
+
+            <!-- AI response -->
+            <div style="display:flex; gap:8px; margin-bottom:8px;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--purple);color:white;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;">AI</div>
+              <div style="background:#F5F4F1; padding:8px 12px; border-radius:0 12px 12px 12px; font-size:11px; flex:1;">
+                <strong>Pipeline Summary:</strong><br>
+                &bull; 147 active contacts, 23 engaged<br>
+                &bull; 5 overdue follow-ups (Fernando, Xander, Mike O.)<br>
+                &bull; <span style="color:var(--red);">Fernando replied 2h ago</span> &mdash; needs immediate response<br><br>
+                Want me to draft a reply to Fernando?
+              </div>
+            </div>
+          </div>
+
+          <!-- Input -->
+          <div style="display:flex; gap:8px; align-items:center;">
+            <div class="wf-input" style="flex:1;">Type a message...</div>
+            <div class="wf-mic">🎤</div>
+            <span class="wf-btn wf-btn-primary">Send</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:12px; font-size:11px;">
+        <strong>21 Tools Available:</strong> Send email, post Slack, create Linear issue, read calendar, search contacts, draft replies, analyze transcripts, send EOD, update pipeline stages, research contacts, log meetings, and more. Streaming SSE responses.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tasks + Schedule Wireframes -->
+<div class="page page-break">
+  <h3>5.5 Tasks View</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Tasks</div>
+    </div>
+    <div class="wf-body">
+      <!-- 90-day pillars -->
+      <div style="display:flex; gap:6px; margin-bottom:12px;">
+        <span class="wf-btn wf-btn-primary">All</span>
+        <span class="wf-btn">Adaptation</span>
+        <span class="wf-btn">Sales</span>
+        <span class="wf-btn">Foundation</span>
+        <span class="wf-btn">COO Dashboard</span>
+      </div>
+
+      <!-- Alerts -->
+      <div class="wf-box" style="border-left:3px solid var(--red); margin-bottom:12px;">
+        <div style="font-size:11px; color:var(--red); font-weight:700;">⚠️ 2 Alerts</div>
+        <div style="font-size:10px;">FIQ-342: Missing due date &bull; FIQ-339: Out of sequence (should be higher priority)</div>
+      </div>
+
+      <div class="wf-grid wf-grid-2">
+        <div class="wf-box">
+          <div class="wf-box-label">My Tasks</div>
+          <div class="wf-row"><div class="wf-checkbox"></div><span style="font-size:11px;">Follow up with Fernando</span><span class="wf-btn" style="font-size:9px;">📝 Note</span></div>
+          <div class="wf-row"><div class="wf-checkbox"></div><span style="font-size:11px;">Review Q3 sales deck</span><span class="wf-btn" style="font-size:9px;">📝 Note</span></div>
+          <div class="wf-row"><div class="wf-checkbox checked"></div><s style="font-size:11px;color:var(--mut);">Update CRM records</s></div>
+        </div>
+        <div class="wf-box">
+          <div class="wf-box-label">Work Note</div>
+          <div style="font-size:10px; color:var(--mut); margin-bottom:6px;">Progress tracking for selected task</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="flex:1;background:#E9ECEF;border-radius:10px;height:8px;"><div style="width:60%;background:var(--grn);border-radius:10px;height:8px;"></div></div>
+            <span style="font-size:11px;font-weight:700;">60%</span>
+          </div>
+          <div class="wf-input" style="height:60px;">Notes about progress...</div>
+          <div class="wf-input">Next steps...</div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <span class="wf-btn" style="font-size:9px;">📁 Attach Drive File</span>
+            <span class="wf-btn wf-btn-green" style="font-size:9px;">Save Note</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>5.6 Schedule View</h3>
+  <div class="wireframe">
+    <div class="wf-browser">
+      <div class="wf-dot r"></div><div class="wf-dot y"></div><div class="wf-dot g"></div>
+      <div class="wf-url">tonyscommandcenter.replit.app &mdash; Schedule</div>
+    </div>
+    <div class="wf-body">
+      <div class="wf-box">
+        <div class="wf-box-label">Today's Schedule</div>
+        <div style="position:relative;">
+          <div style="display:flex;font-size:10px;margin-bottom:4px;"><span style="width:50px;color:var(--mut);">8:00</span><div style="flex:1;background:var(--grn);color:white;padding:4px 8px;border-radius:4px;font-weight:600;">Sales Call Block</div></div>
+          <div style="display:flex;font-size:10px;margin-bottom:4px;"><span style="width:50px;color:var(--mut);">9:30</span><div style="flex:1;background:var(--blu);color:white;padding:4px 8px;border-radius:4px;font-weight:600;">Demo: Fernando Perez <span style="opacity:0.7;font-size:9px;">📍 Google Meet</span></div></div>
+          <div style="display:flex;font-size:10px;margin-bottom:4px;"><span style="width:50px;color:var(--mut);">10:30</span><div style="flex:1;background:var(--grn);color:white;padding:4px 8px;border-radius:4px;font-weight:600;">Sales Call Block</div></div>
+          <div style="display:flex;font-size:10px;margin-bottom:4px;"><span style="width:50px;color:var(--mut);">12:00</span><div style="flex:1;background:var(--amb);color:white;padding:4px 8px;border-radius:4px;font-weight:600;">Lunch + Email Block</div></div>
+          <div style="display:flex;font-size:10px;margin-bottom:4px;"><span style="width:50px;color:var(--mut);">1:00</span><div style="flex:1;background:#7C3AED;color:white;padding:4px 8px;border-radius:4px;font-weight:600;">Team Sync (Ethan + Ramy)</div></div>
+          <div style="display:flex;font-size:10px;margin-bottom:4px;"><span style="width:50px;color:var(--red);font-weight:700;">NOW</span><div style="flex:1;background:var(--blu);color:white;padding:4px 8px;border-radius:4px;font-weight:600;border:2px solid var(--red);">Prospect Call: Xander</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>5.7 Hamburger Menu</h3>
+  <div class="wireframe" style="max-width:300px;">
+    <div class="wf-body" style="padding:8px;">
+      <div style="display:flex; justify-content:space-between; padding:6px 12px; font-size:11px; color:var(--mut); border-bottom:1px solid var(--brd); margin-bottom:4px;">
+        <span>Updated 2m ago</span>
+        <span class="wf-btn" style="font-size:10px;">↻</span>
+      </div>
+      <div style="font-size:9px; font-weight:700; color:var(--mut); padding:6px 12px; text-transform:uppercase; letter-spacing:1px;">Navigate</div>
+      <div class="wf-row" style="padding:6px 12px;"><span>🏠</span><span style="flex:1;font-size:12px;font-weight:500;">Dashboard</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>📞</span><span style="flex:1;font-size:12px;font-weight:500;">Sales</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>📅</span><span style="flex:1;font-size:12px;font-weight:500;">Calendar</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>✉️</span><span style="flex:1;font-size:12px;font-weight:500;">Emails</span><span class="wf-badge" style="background:var(--red);">4</span> <span style="font-size:9px;color:var(--mut);">(2 snoozed)</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>✅</span><span style="flex:1;font-size:12px;font-weight:500;">Tasks</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>💬</span><span style="flex:1;font-size:12px;font-weight:500;">AI Chat</span></div>
+      <div style="height:1px;background:var(--brd);margin:6px 0;"></div>
+      <div style="font-size:9px; font-weight:700; color:var(--mut); padding:6px 12px; text-transform:uppercase; letter-spacing:1px;">Tools</div>
+      <div class="wf-row" style="padding:6px 12px;"><span>💡</span><span style="flex:1;font-size:12px;font-weight:500;">Ideas</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>☀️</span><span style="flex:1;font-size:12px;font-weight:500;">Morning Check-in</span></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>🖨</span><span style="flex:1;font-size:12px;font-weight:500;">Print Daily Sheet</span></div>
+      <div style="height:1px;background:var(--brd);margin:6px 0;"></div>
+      <div class="wf-row" style="padding:6px 12px;"><span>📊</span><span style="flex:1;font-size:12px;font-weight:500;color:var(--grn);">Send EOD Report</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ SECTION 6: CONNECTIONS ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 06</div>
+  <h2>Component Connection Map</h2>
+  <p class="lead">How every frontend component connects to the backend, database, and external services.</p>
+
+  <h3>Morning Sequence</h3>
+  <table>
+    <thead><tr><th>Component</th><th>Calls API</th><th>Backend Calls</th><th>Database Tables</th><th>External APIs</th><th>AI?</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>CheckinGate</strong></td>
+        <td><code>POST /checkin</code><br><code>POST /checkin/guilt-trip</code></td>
+        <td>checkin.ts</td>
+        <td>checkins (R/W)</td>
+        <td>Google Sheets, Claude</td>
+        <td><span class="tag tag-ai">YES</span> Guilt trip + pattern alerts</td>
+      </tr>
+      <tr>
+        <td><strong>JournalGate</strong></td>
+        <td><code>GET /brief/spiritual-anchor</code><br><code>POST /journal</code></td>
+        <td>brief.ts, journal.ts</td>
+        <td>journals (R/W), checkins (W)</td>
+        <td>Google Docs, Claude</td>
+        <td><span class="tag tag-ai">YES</span> Anchor + format</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Main Views</h3>
+  <table>
+    <thead><tr><th>Component</th><th>Calls API</th><th>Backend Calls</th><th>Database Tables</th><th>External APIs</th><th>AI?</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>DashboardView</strong></td>
+        <td><code>GET /brief/today</code><br><code>GET /contacts</code></td>
+        <td>brief.ts, contacts.ts</td>
+        <td>daily_briefs, contacts, call_log, task_completions</td>
+        <td>Gmail, Calendar, Slack, Linear</td>
+        <td>No (displays data)</td>
+      </tr>
+      <tr>
+        <td><strong>EmailsView</strong></td>
+        <td><code>POST /emails/action</code></td>
+        <td>emails.ts</td>
+        <td>email_training, email_snoozes, system_instructions</td>
+        <td>Gmail, Claude</td>
+        <td><span class="tag tag-ai">YES</span> Brain training, reply draft</td>
+      </tr>
+      <tr>
+        <td><strong>SalesMorning</strong></td>
+        <td><code>GET /sales/morning</code><br><code>POST /contacts/score</code><br><code>POST /contacts/research</code><br><code>POST /contacts/brief</code></td>
+        <td>sales-morning.ts, contacts-score.ts, contacts-research.ts, contacts-brief.ts</td>
+        <td>contacts, contact_intelligence, contact_briefs, communication_log</td>
+        <td>Claude (web search)</td>
+        <td><span class="tag tag-ai">YES</span> Score, research, brief</td>
+      </tr>
+      <tr>
+        <td><strong>SalesView</strong></td>
+        <td><code>GET /contacts</code></td>
+        <td>contacts.ts</td>
+        <td>contacts, call_log</td>
+        <td>None</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><strong>TasksView</strong></td>
+        <td><code>GET /tasks/local</code><br><code>GET /tasks/alerts</code><br><code>POST /tasks/work-note</code></td>
+        <td>tasks.ts</td>
+        <td>local_tasks, task_work_notes, task_completions</td>
+        <td>Linear, Google Tasks, Drive</td>
+        <td><span class="tag tag-ai">YES</span> Priority check</td>
+      </tr>
+      <tr>
+        <td><strong>ClaudeChatView</strong></td>
+        <td><code>POST /chat/threads/:id/messages</code> (SSE)</td>
+        <td>chat-threads.ts</td>
+        <td>chat_threads, chat_messages, + 10 more via tools</td>
+        <td>ALL (Gmail, Calendar, Slack, Linear, Claude)</td>
+        <td><span class="tag tag-ai">YES</span> 21 tools, streaming</td>
+      </tr>
+      <tr>
+        <td><strong>ScheduleView</strong></td>
+        <td>Uses data from App props</td>
+        <td>schedule.ts (via wizard)</td>
+        <td>manual_schedule_events</td>
+        <td>Google Calendar, Claude</td>
+        <td><span class="tag tag-ai">YES</span> Scope gate, guilt trip</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Modals</h3>
+  <table>
+    <thead><tr><th>Component</th><th>Calls API</th><th>DB Tables</th><th>AI?</th></tr></thead>
+    <tbody>
+      <tr><td><strong>AttemptModal</strong></td><td><code>POST /calls</code></td><td>call_log, communication_log, contact_intelligence</td><td><span class="tag tag-ai">YES</span> Follow-up draft</td></tr>
+      <tr><td><strong>ConnectedCallModal</strong></td><td><code>POST /calls/connected-outcome</code></td><td>call_log, communication_log, contact_intelligence</td><td>No</td></tr>
+      <tr><td><strong>EmailCompose</strong></td><td><code>POST /email/send</code>, <code>POST /email/suggest-draft</code></td><td>communication_log</td><td><span class="tag tag-ai">YES</span> AI draft</td></tr>
+      <tr><td><strong>EmailReplyModal</strong></td><td><code>POST /emails/action</code> (suggest_reply, send_reply)</td><td>communication_log</td><td><span class="tag tag-ai">YES</span> AI reply</td></tr>
+      <tr><td><strong>IdeasModal</strong></td><td><code>POST /ideas/classify</code>, <code>POST /ideas</code></td><td>ideas, business_context</td><td><span class="tag tag-ai">YES</span> Classify + pushback</td></tr>
+      <tr><td><strong>AddContactModal</strong></td><td><code>POST /contacts/scan-card</code>, <code>POST /contacts</code></td><td>contacts</td><td><span class="tag tag-ai">YES</span> Card OCR</td></tr>
+      <tr><td><strong>Header (EOD)</strong></td><td><code>POST /eod-report/preview</code>, <code>POST /eod-report</code></td><td>eod_reports, call_log, demos, task_completions</td><td><span class="tag tag-ai">YES</span> Report gen</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════ SECTION 9: AI FEATURES ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 09</div>
+  <h2>All AI Features &amp; Prompts</h2>
+  <p class="lead">Every place Claude AI is called. <strong>To change any AI behavior, edit the prompt in the file listed.</strong></p>
+
+  <div class="callout danger">
+    <strong>How to modify AI outputs:</strong> Every AI prompt is a string in a TypeScript file. Find the file, find the prompt text, edit it, redeploy. No AI training or fine-tuning required &mdash; it's all prompt engineering.
+  </div>
+
+  <table>
+    <thead><tr><th>#</th><th>Feature</th><th>File</th><th>Model</th><th>What to Edit</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><strong>Guilt Trip</strong></td><td><code>checkin.ts</code> ~L200</td><td>haiku</td><td>Edit <code>TONY_PERSONAL_DOC</code> constant + system prompt</td></tr>
+      <tr><td>2</td><td><strong>Pattern Alerts</strong></td><td><code>checkin.ts</code> ~L126</td><td><em>Rule-based</em></td><td>Change threshold numbers in if/else code</td></tr>
+      <tr><td>3</td><td><strong>Spiritual Anchor</strong></td><td><code>brief.ts</code> ~L614</td><td>haiku</td><td>Edit inline prompt in spiritual-anchor handler</td></tr>
+      <tr><td>4</td><td><strong>Journal Formatting</strong></td><td><code>journal.ts</code> ~L50</td><td>sonnet</td><td>Edit the output format template</td></tr>
+      <tr><td>5</td><td><strong>Email Classification</strong></td><td><code>brief.ts</code> ~L100</td><td>haiku</td><td>Edit classification criteria</td></tr>
+      <tr><td>6</td><td><strong>Email Brain</strong></td><td><code>emails.ts</code> ~L50</td><td>haiku</td><td>Training data is user-generated (thumbs up/down)</td></tr>
+      <tr><td>7</td><td><strong>Email Reply Suggest</strong></td><td><code>emails.ts</code> ~L120</td><td>sonnet</td><td>Edit "Tony's voice" system prompt</td></tr>
+      <tr><td>8</td><td><strong>Email Compose Draft</strong></td><td><code>email-send.ts</code> ~L80</td><td>haiku</td><td>Edit drafting system prompt</td></tr>
+      <tr><td>9</td><td><strong>Call Follow-Up</strong></td><td><code>calls.ts</code> ~L50</td><td>haiku</td><td>Edit follow-up prompt template</td></tr>
+      <tr><td>10</td><td><strong>Idea Classification</strong></td><td><code>ideas.ts</code> ~L100</td><td>haiku</td><td>Edit classification + pushback criteria</td></tr>
+      <tr><td>11</td><td><strong>Contact Scoring</strong></td><td><code>contacts-score.ts</code></td><td><em>Rule-based</em></td><td>Edit scoring weights in code</td></tr>
+      <tr><td>12</td><td><strong>Contact Research</strong></td><td><code>contacts-research.ts</code> ~L60</td><td>sonnet + web search</td><td>Edit research prompt (what to look for)</td></tr>
+      <tr><td>13</td><td><strong>Pre-Call Brief</strong></td><td><code>contacts-brief.ts</code> ~L80</td><td>haiku</td><td>Edit section headers + instructions</td></tr>
+      <tr><td>14</td><td><strong>Business Card OCR</strong></td><td><code>contacts.ts</code> ~L200</td><td>haiku (vision)</td><td>Edit extraction prompt + JSON schema</td></tr>
+      <tr><td>15</td><td><strong>Full AI Chat</strong></td><td><code>claude.ts</code> L686</td><td>sonnet</td><td>Edit <code>buildSystemPrompt()</code> function</td></tr>
+      <tr><td>16</td><td><strong>Streaming Chat</strong></td><td><code>chat-threads.ts</code></td><td>sonnet</td><td>Edit inline system prompt</td></tr>
+      <tr><td>17</td><td><strong>EOD Report (Tony)</strong></td><td><code>eod.ts</code> ~L100</td><td>sonnet</td><td>Edit Tony's EOD prompt</td></tr>
+      <tr><td>18</td><td><strong>EOD Report (Ethan)</strong></td><td><code>eod.ts</code> ~L150</td><td>sonnet</td><td>Edit Ethan's accountability prompt</td></tr>
+      <tr><td>19</td><td><strong>Task Priority Check</strong></td><td><code>tasks.ts</code></td><td>haiku</td><td>Edit priority evaluation prompt</td></tr>
+      <tr><td>20</td><td><strong>Schedule Scope Gate</strong></td><td><code>schedule.ts</code></td><td>haiku</td><td>Edit classification categories</td></tr>
+      <tr><td>21</td><td><strong>AI Day Plan</strong></td><td><code>schedule.ts</code></td><td>opus</td><td>Edit day plan prompt</td></tr>
+      <tr><td>22</td><td><strong>Demo Feedback</strong></td><td><code>lib/demo-feedback.ts</code></td><td>haiku</td><td>Edit analysis prompt</td></tr>
+      <tr><td>23</td><td><strong>Scanned Sheet OCR</strong></td><td><code>sheet-scan.ts</code></td><td>opus (vision)</td><td>Edit vision prompt + JSON schema</td></tr>
+      <tr><td>24</td><td><strong>90-Day Plan Summary</strong></td><td><code>sheets-sync.ts</code></td><td>haiku</td><td>Edit summarization prompt</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Claude Models Used:</strong><br>
+    &bull; <strong>claude-haiku-4-5</strong> &mdash; Fast, cheap. Used for quick classifications, drafts, scoring.<br>
+    &bull; <strong>claude-sonnet-4-6</strong> &mdash; Main workhorse. Used for chat, replies, reports.<br>
+    &bull; <strong>claude-opus-4-5</strong> &mdash; Heavy lifting. Used for day plans, sheet OCR (vision).<br>
+    All prompts are editable strings in TypeScript files. No fine-tuning. Change the prompt = change the output.
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SECTION 10: SERVICES ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 10</div>
+  <h2>External Services</h2>
+
+  <table>
+    <thead><tr><th>Service</th><th>Library File</th><th>Auth Method</th><th>What TCC Does</th></tr></thead>
+    <tbody>
+      <tr><td><span class="tag tag-google">Gmail</span></td><td><code>lib/gmail.ts</code></td><td>OAuth2 / Replit Connector</td><td>Read inbox, send email, draft replies, search, get threads</td></tr>
+      <tr><td><span class="tag tag-google">Calendar</span></td><td><code>lib/gcal.ts</code></td><td>OAuth2 / Replit Connector</td><td>Read events, create events, reminders, multi-day queries</td></tr>
+      <tr><td><span class="tag tag-google">Drive</span></td><td><code>lib/google-drive.ts</code></td><td>Replit Connector</td><td>Browse folders, search files, read Docs</td></tr>
+      <tr><td><span class="tag tag-google">Docs</span></td><td><code>lib/google-docs.ts</code></td><td>OAuth2</td><td>Append/prepend text, read document</td></tr>
+      <tr><td><span class="tag tag-google">Sheets</span></td><td><code>lib/google-sheets.ts</code></td><td>Replit Connector</td><td>Append rows, read ranges, update cells</td></tr>
+      <tr><td><span class="tag tag-google">People</span></td><td><code>contacts-autocomplete.ts</code></td><td>OAuth2</td><td>Contact autocomplete</td></tr>
+      <tr><td><span class="tag tag-google">Tasks</span></td><td><code>lib/gtasks.ts</code></td><td>OAuth2</td><td>Create, complete, delete, list tasks</td></tr>
+      <tr><td><span class="tag tag-slack">Slack</span></td><td><code>lib/slack.ts</code></td><td>Bot Token (xoxb-)</td><td>Post messages, read channels, search, DM, list users</td></tr>
+      <tr><td><span class="tag tag-linear">Linear</span></td><td><code>lib/linear.ts</code></td><td>Replit Connector / SDK</td><td>Query issues, create, update, list members</td></tr>
+      <tr><td><span class="tag tag-ai">Claude AI</span></td><td><code>integrations/anthropic-ai</code></td><td>API Key</td><td>24 AI features, 21 tools, 4 models, vision, web search</td></tr>
+      <tr><td><span class="tag tag-phone">MacroDroid</span></td><td>Via HTTP webhooks</td><td>Shared secret</td><td>Auto-log calls/SMS, send SMS from phone</td></tr>
+      <tr><td><span class="tag tag-api">AgentMail</span></td><td><code>lib/agentmail.ts</code></td><td>Replit Connector</td><td>Receive scanned sheet photos via email</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Environment Variables</h3>
+  <table>
+    <thead><tr><th>Variable</th><th>Purpose</th><th>Where Used</th></tr></thead>
+    <tbody>
+      <tr><td><code>DATABASE_URL</code></td><td>PostgreSQL connection</td><td>lib/db</td></tr>
+      <tr><td><code>TCC_AUTH_TOKEN</code></td><td>App access token</td><td>auth middleware</td></tr>
+      <tr><td><code>AI_INTEGRATIONS_ANTHROPIC_API_KEY</code></td><td>Claude API key</td><td>Anthropic integration</td></tr>
+      <tr><td><code>GOOGLE_CLIENT_ID</code></td><td>Google OAuth</td><td>google-auth.ts</td></tr>
+      <tr><td><code>GOOGLE_CLIENT_SECRET</code></td><td>Google OAuth</td><td>google-auth.ts</td></tr>
+      <tr><td><code>GOOGLE_REFRESH_TOKEN</code></td><td>Google OAuth</td><td>google-auth.ts</td></tr>
+      <tr><td><code>SLACK_TOKEN</code></td><td>Slack bot token</td><td>lib/slack.ts</td></tr>
+      <tr><td><code>MACRODROID_SECRET</code></td><td>Webhook auth</td><td>phone-log.ts</td></tr>
+      <tr><td><code>MACRODROID_WEBHOOK_URL</code></td><td>SMS trigger URL</td><td>send-sms.ts</td></tr>
+      <tr><td><code>BUSINESS_MASTER_SHEET_ID</code></td><td>Business Master Sheet</td><td>sheets-sync.ts</td></tr>
+      <tr><td><code>CHECKIN_SHEET_ID</code></td><td>Personal Check-in Sheet</td><td>sheets-sync.ts</td></tr>
+      <tr><td><code>JOURNAL_DOC_ID</code></td><td>Daily Journal Doc</td><td>journal.ts</td></tr>
+      <tr><td><code>PLAN_90_DAY_ID</code></td><td>90-Day Plan Doc</td><td>sheets-sync.ts</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════ SECTION 13: REMAINING WORK ═══ -->
+<div class="page page-break">
+  <div class="section-num">Section 13</div>
+  <h2>What Still Needs Work</h2>
+
+  <h3>4 Remaining PRD Gaps</h3>
+  <table>
+    <thead><tr><th>#</th><th>Gap</th><th>Priority</th><th>File</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Bible engagement escalation in spiritual anchor</td><td><span class="tag" style="background:#FEF3C7;color:#D97706;">MEDIUM</span></td><td><code>brief.ts</code></td><td><span class="tag tag-open">OPEN</span></td></tr>
+      <tr><td>2</td><td>Contact brief-line shown on sales cards</td><td><span class="tag" style="background:#FEF3C7;color:#D97706;">MEDIUM</span></td><td><code>sales-morning.ts</code> + <code>SalesMorning.tsx</code></td><td><span class="tag tag-open">OPEN</span></td></tr>
+      <tr><td>3</td><td>Meeting attendee brief in warning banner</td><td><span class="tag" style="background:#FEF3C7;color:#D97706;">MEDIUM</span></td><td><code>brief.ts</code> + <code>App.tsx</code></td><td><span class="tag tag-open">OPEN</span></td></tr>
+      <tr><td>4</td><td>Separate Linear badge in Header</td><td><span class="tag" style="background:#DCFCE7;color:#16A34A;">LOW</span></td><td><code>Header.tsx</code></td><td><span class="tag tag-open">OPEN</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>AI Expansion Needed</h3>
+  <p>The AI chat has 21 tools but is missing these capabilities (Replit prompt has been prepared):</p>
+  <div class="wf-grid wf-grid-3">
+    <div class="card" style="font-size:12px;"><strong>Internet search</strong><br>web_search + browse_url</div>
+    <div class="card" style="font-size:12px;"><strong>Database queries</strong><br>Read-only SQL on all 27 tables</div>
+    <div class="card" style="font-size:12px;"><strong>Drive/Sheets/Docs</strong><br>Read any Google document</div>
+    <div class="card" style="font-size:12px;"><strong>Email threads</strong><br>Read full Gmail threads + search</div>
+    <div class="card" style="font-size:12px;"><strong>Calendar range</strong><br>Query/update/delete any events</div>
+    <div class="card" style="font-size:12px;"><strong>Comm log + history</strong><br>Full communication + check-in data</div>
+  </div>
+
+  <div class="section-num" style="margin-top:40px;">Section 14</div>
+  <h2>Testing Checklist</h2>
+
+  <h3>Morning Sequence</h3>
+  <ul class="checklist">
+    <li>App loads, shows auth gate if no token</li>
+    <li>Enter valid token &rarr; enters app</li>
+    <li>CheckinGate shows if no check-in today</li>
+    <li>Fill in sleep (bed/wake), toggle Bible/workout/journal &rarr; Submit</li>
+    <li>Guilt-trip message appears if workout OR journal missed (AI-generated)</li>
+    <li>Pattern alerts show after submit (sleep debt, Bible streak, late bedtime)</li>
+    <li>Check-in row appears in Personal Google Sheet</li>
+    <li>Journal gate shows next &rarr; spiritual anchor loads (AI-generated)</li>
+    <li>Type/voice brain dump &rarr; Save &rarr; AI formats entry</li>
+    <li>Formatted journal prepended to Google Doc</li>
+    <li>Dashboard loads with real data from all sources</li>
+  </ul>
+
+  <h3>Emails</h3>
+  <ul class="checklist">
+    <li>3 tiers display: Important, FYI, Promotions</li>
+    <li>"Suggest Reply" opens modal &rarr; AI drafts reply</li>
+    <li>Can edit reply, add notes, regenerate</li>
+    <li>"Send Reply" sends via Gmail</li>
+    <li>Snooze works (1h, 2h, tomorrow, next week, date picker)</li>
+    <li>Thumbs up/down training logs correctly</li>
+    <li>5-min email poll fetches new emails</li>
+    <li>Snoozed count shows in Header menu</li>
+  </ul>
+
+  <h3>Sales</h3>
+  <ul class="checklist">
+    <li>SalesView shows all contacts with filters (status, stage, type, category)</li>
+    <li>Search works</li>
+    <li>Phone icon opens dialer (tel: link)</li>
+    <li>Text icon opens SMS modal</li>
+    <li>"Attempt" modal &rarr; AI drafts follow-up &rarr; preview before send</li>
+    <li>"Connected" modal &rarr; logs outcome, next step, follow-up date</li>
+    <li>ContactDrawer opens on row click, auto-saves on edit</li>
+    <li>Morning 3-tier view loads (Urgent, Follow-Ups, Top 10)</li>
+    <li>Batch score/research works</li>
+    <li>AI pre-call brief generates correctly</li>
+  </ul>
+
+  <h3>Tasks</h3>
+  <ul class="checklist">
+    <li>90-day pillar filters work</li>
+    <li>Work notes with progress % save correctly</li>
+    <li>Task creation triggers AI priority check</li>
+    <li>Google Tasks sync works</li>
+    <li>Task alerts show (out-of-sequence, missing due dates)</li>
+  </ul>
+
+  <h3>AI Chat</h3>
+  <ul class="checklist">
+    <li>Create thread, send message, response streams via SSE</li>
+    <li>Tool usage shows in real-time</li>
+    <li>All 21 tools execute correctly when invoked</li>
+    <li>Thread persistence works (reload page, thread still there)</li>
+  </ul>
+
+  <h3>Schedule + EOD</h3>
+  <ul class="checklist">
+    <li>Calendar timeline shows events with color coding</li>
+    <li>Add event wizard with guest autocomplete</li>
+    <li>Guilt trip if scheduling during call hours</li>
+    <li>EOD preview generates (AI-written)</li>
+    <li>EOD sends to Tony + Ethan</li>
+    <li>Auto-EOD fires at 4:30 PM Pacific</li>
+  </ul>
+
+  <h3>Infrastructure</h3>
+  <ul class="checklist">
+    <li>Google Sheets sync runs every 5 minutes (3 tabs)</li>
+    <li>MacroDroid phone logging works</li>
+    <li>15-minute auto-refresh works</li>
+    <li>Voice input works on all fields</li>
+    <li>Print view generates correctly</li>
+    <li>All env vars configured in Replit</li>
+  </ul>
+</div>
+
+<!-- Footer -->
+<div class="page" style="text-align:center; padding:60px 40px; color:var(--mut); font-size:13px;">
+  <div style="width:60px; height:2px; background:var(--brd); margin:0 auto 20px;"></div>
+  <p><strong>Tony's Command Center &mdash; Technical Handoff Document</strong></p>
+  <p>Version 2.0 &bull; April 5, 2026</p>
+  <p>Generated from a complete code audit of 69 files (27 frontend, 25 routes, 15 libs, 2 schemas)</p>
+  <p style="margin-top:20px;">
+    <a href="https://TonysCommandCenter.replit.app" style="color:var(--blu);">Live App</a> &bull;
+    <a href="https://github.com/flipiq24/Tonys-Command-Center" style="color:var(--blu);">GitHub</a>
+  </p>
+</div>
+
+</body>
+</html>

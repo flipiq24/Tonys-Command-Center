@@ -376,7 +376,7 @@ export async function pushTeamToSheet(): Promise<void> {
     const header = ["Name", "Role / Title", "Email", "Current Focus / Priority", "Responsibilities"];
     const rows = team.map(m => [
       m.name, m.role, m.email || "", m.currentFocus || "",
-      (m.responsibilities || []).join(", "),
+      Array.isArray(m.responsibilities) ? (m.responsibilities as string[]).join(", ") : (m.responsibilities as string | null) || "",
     ]);
     await sheets.spreadsheets.values.clear({ spreadsheetId: BUSINESS_MASTER_SHEET_ID, range: "Team Roster!A:Z" });
     if (rows.length > 0) {
@@ -404,7 +404,7 @@ router.post("/business/sync-from-sheet", async (_req, res): Promise<void> => {
 
 router.post("/business/push-to-sheet", async (_req, res): Promise<void> => {
   try {
-    await push411ToSheet();
+    await Promise.all([push411ToSheet(), pushTeamToSheet()]);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

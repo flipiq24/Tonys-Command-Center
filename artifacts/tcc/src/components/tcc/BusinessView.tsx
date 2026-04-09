@@ -434,14 +434,6 @@ const CAT_COLOR: Record<string, string> = {
   capital:    "#6D28D9",
   team:       "#374151",
 };
-// Category → light tinted background for the subcategory chip
-const CAT_BG: Record<string, string> = {
-  adaptation: "#FEF3C7",
-  sales:      "#DCFCE7",
-  tech:       "#DBEAFE",
-  capital:    "#EDE9FE",
-  team:       "#F3F4F6",
-};
 
 function WeeklyGrid({ byOwner, onToggleTask }: {
   byOwner: Record<string, Record<number, PlanItem[]>>;
@@ -510,7 +502,6 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                     const cat = task?.category ?? "";
                     const sub = task?.subcategory ?? null;
                     const txColor = done ? "#bbb" : (CAT_COLOR[cat] ?? "#1565C0");
-                    const bgColor = done ? "#F9F9F9" : (sub ? (CAT_BG[cat] ?? "#fff") + "60" : "#fff");
                     return (
                       <td
                         key={wi}
@@ -519,7 +510,7 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                           borderLeft: task ? `3px solid ${done ? "#ddd" : (CAT_COLOR[cat] ?? "#1565C0")}` : "3px solid transparent",
                           padding: "4px 7px",
                           verticalAlign: "top",
-                          background: bgColor,
+                          background: "#fff",
                           minHeight: 34,
                         }}
                       >
@@ -546,15 +537,10 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                               </div>
                               {sub && (
                                 <div style={{
-                                  marginTop: 2,
-                                  display: "inline-block",
-                                  fontSize: 8, fontWeight: 700,
-                                  color: done ? "#bbb" : (CAT_COLOR[cat] ?? "#555"),
-                                  background: done ? "#eee" : (CAT_BG[cat] ?? "#eee"),
-                                  borderRadius: 3,
-                                  padding: "0 4px",
+                                  marginTop: 1,
+                                  fontSize: 8, fontWeight: 600,
+                                  color: done ? "#ccc" : (CAT_COLOR[cat] ?? "#555"),
                                   letterSpacing: 0.2,
-                                  maxWidth: "100%",
                                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                 }}>
                                   {sub}
@@ -1385,34 +1371,6 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
 
         {tab === "goals" && (
           <>
-            {/* ── TOP 3 STRIP ──────────────────────────────────────────── */}
-            {top3.length > 0 && (
-              <div style={{ margin: "0 0 16px 0", borderRadius: 10, border: "2px solid #F97316", background: "#FFFBF2", padding: "12px 16px" }}>
-                <div style={{ fontSize: 11, fontWeight: 900, color: "#B45309", letterSpacing: 1, marginBottom: 8, textTransform: "uppercase" }}>
-                  ★ Top 3 — Do These First Today
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {top3.map((t, i) => {
-                    const CAT_COLOR: Record<string, string> = { adaptation: "#B45309", sales: "#3B6D11", tech: "#185FA5", capital: "#5B3FA0", team: "#5F5E5A" };
-                    const catColor = CAT_COLOR[t.category] || "#888";
-                    const done = t.status === "completed";
-                    return (
-                      <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, background: done ? "#ccc" : (i === 0 ? "#111" : "#DDD"), color: done ? "#aaa" : (i === 0 ? "#fff" : "#888"), fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ fontSize: 13, fontWeight: i === 0 ? 700 : 600, color: done ? "#bbb" : "#111", textDecoration: done ? "line-through" : "none" }}>{t.title}</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
-                          {t.sprintId && <span style={{ fontSize: 9, fontWeight: 800, color: catColor, background: catColor + "18", borderRadius: 4, padding: "1px 5px", fontFamily: "monospace" }}>{t.sprintId}</span>}
-                          {t.owner && <span style={{ fontSize: 9, fontWeight: 700, color: catColor }}>{t.owner}</span>}
-                          <span style={{ fontSize: 9, fontWeight: 800, color: "#B91C1C", background: "#FEE2E2", borderRadius: 3, padding: "0 4px" }}>P0</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
             <GPSCards />
             {loading ? (
               <div style={{ textAlign: "center", padding: "48px", color: C.mut }}>Loading 411 plan…</div>

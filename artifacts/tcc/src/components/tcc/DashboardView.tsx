@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { C, F, FS } from "./constants";
-import { get, patch } from "@/lib/api";
+import { get, patch, post } from "@/lib/api";
 import { ContactDrawer } from "./ContactDrawer";
 import { SmsModal } from "./SmsModal";
 import type { TaskItem, CalItem, EmailItem, LinearItem, SlackItem } from "./types";
@@ -559,9 +559,18 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
     setWins(prev => { const next = [...prev]; next[i] = val; localStorage.setItem(_winsKey, JSON.stringify(next)); return next; });
   };
 
+  // ── Plan Top 3 — from 411 plan P0 tasks ──────────────────────────
+  type PlanTask = { id: string; title: string; category: string; subcategory?: string | null; owner?: string | null; priority?: string | null; sprintId?: string; status?: string | null; dueDate?: string | null; };
+  const [planTop3, setPlanTop3] = useState<PlanTask[]>([]);
+
+  const loadPlanTop3 = useCallback(() => {
+    get("/plan/top3").then((d: { tasks: PlanTask[] }) => setPlanTop3(d.tasks || [])).catch(() => {});
+  }, []);
+
   useEffect(() => {
     get<LocalTask[]>("/tasks/local").then(setLocalTasks).catch(() => {});
-  }, []);
+    loadPlanTop3();
+  }, [loadPlanTop3]);
 
   const toggle = useCallback((id: string) => {
     setChecked(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -577,7 +586,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
 
   // Data — real sources only
-  const top3    = tasks.filter(t => !tDone[t.id]).filter(t => !/sales.?call/i.test(t.text)).slice(0, 3);
   const callList = contacts.slice(0, 10);
   const meetings = calendarData.filter(c => c.real);
   const emails   = emailsImportant.slice(0, 5);
@@ -666,24 +674,26 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </tbody>
             </table>
 
-            {/* ── TOP 3 ── */}
+            {/* ── TOP 3 — from 411 Plan P0 tasks ── */}
             <SL text="★ Top 3 — Do These First" color="#B7791F" view="tasks" onNavigate={onNavigate} />
             <div style={{ marginBottom: 6 }}>
               {Array.from({ length: 3 }).map((_, i) => {
-                const t = top3[i];
-                const id = t ? `top3-${t.id}` : `top3-blank-${i}`;
-                const done = t ? tDone[t.id] || ck(id) : false;
+                const t = planTop3[i];
+                const id = t ? `plan-top3-${t.id}` : `plan-top3-blank-${i}`;
+                const done = t ? (t.status === "completed" || ck(id)) : false;
+                const CAT_COLOR: Record<string, string> = { adaptation: "#B45309", sales: "#3B6D11", tech: "#185FA5", capital: "#5B3FA0", team: "#5F5E5A" };
+                const catColor = t ? (CAT_COLOR[t.category] || "#888") : "#888";
                 return (
                   <div key={id} className="dash-row-hover" style={{
                     display: "flex", gap: 10, alignItems: "flex-start",
                     padding: "8px 10px", borderBottom: "1px solid #EBEBEB",
                     background: i === 0 ? "#FFFBF2" : "#fff", transition: "background 0.15s",
-                  }}
-                    onMouseEnter={e => t ? onHoverEnter({ kind: "task", t, rank: i + 1 }, e) : undefined}
-                    onMouseMove={onHoverMove}
-                    onMouseLeave={onHoverLeave}
-                  >
-                    <CB id={id} checked={done} onToggle={t ? () => { toggle(id); onComplete(t); } : toggle} />
+                  }}>
+                    <CB id={id} checked={done} onToggle={t ? async () => {
+                      toggle(id);
+                      await post(`/plan/task/${t.id}/complete`, {}).catch(() => {});
+                      loadPlanTop3();
+                    } : () => toggle(id)} />
                     <div style={{
                       width: 20, height: 20, borderRadius: 4, flexShrink: 0,
                       background: done ? "#ccc" : (i === 0 ? BLK : "#DDD"),
@@ -692,9 +702,16 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}>{i + 1}</div>
                     {t ? (
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: i === 0 ? 700 : 600, color: done ? "#bbb" : BLK, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>{t.text}</div>
-                        {t.cat && <div style={{ fontSize: 9, color: "#aaa", marginTop: 1 }}>{t.cat}</div>}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: i === 0 ? 700 : 600, color: done ? "#bbb" : BLK, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>
+                          {t.title}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 2 }}>
+                          {t.sprintId && <span style={{ fontSize: 9, fontWeight: 800, color: catColor, background: catColor + "18", borderRadius: 4, padding: "1px 5px", fontFamily: "monospace" }}>{t.sprintId}</span>}
+                          {t.subcategory && <span style={{ fontSize: 9, color: "#aaa" }}>{t.subcategory}</span>}
+                          {t.owner && <span style={{ fontSize: 9, color: catColor, fontWeight: 700 }}>{t.owner}</span>}
+                          <span style={{ fontSize: 9, fontWeight: 800, color: "#B91C1C", background: "#FEE2E2", borderRadius: 3, padding: "0 4px" }}>P0</span>
+                        </div>
                       </div>
                     ) : <div style={{ flex: 1, height: 1, background: "#EEE", marginTop: 10 }} />}
                   </div>

@@ -440,6 +440,28 @@ router.get("/plan/tasks", async (req, res): Promise<void> => {
   }
 });
 
+// GET /plan/top3 — top 3 highest-priority active tasks across all categories
+router.get("/plan/top3", async (_req, res): Promise<void> => {
+  try {
+    // Fetch ALL active tasks so sprint ID computation has full context
+    const allActive = await db.select().from(planItemsTable)
+      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.status, "active")))
+      .orderBy(asc(planItemsTable.priorityOrder));
+
+    // Assign sprint IDs using full context
+    const withSprintIds = assignSprintIds(allActive);
+
+    // Pick top 3: P0 first (by priorityOrder within category), then P1 as fallback
+    const p0 = withSprintIds.filter(t => t.priority === "P0");
+    const p1 = withSprintIds.filter(t => t.priority === "P1");
+    const top3 = [...p0, ...p1].slice(0, 3);
+
+    res.json({ tasks: top3 });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // GET /plan/subcategories/:category — return subcategory list for a category
 router.get("/plan/subcategories/:category", async (req, res): Promise<void> => {
   try {

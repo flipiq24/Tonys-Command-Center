@@ -18,10 +18,11 @@ import { TasksView } from "@/components/tcc/TasksView";
 import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
 import { DashboardView } from "@/components/tcc/DashboardView";
+import { BusinessView } from "@/components/tcc/BusinessView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "tasks" | "chat";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "tasks" | "chat" | "business";
 
 
 export default function App() {
@@ -617,6 +618,15 @@ export default function App() {
         onBackToSchedule={() => persistView("schedule")}
         onPrint={() => setPrintMode(true)}
       />
+    </div>
+  );
+
+  // ═══ BUSINESS VIEW ═══
+  if (view === "business") return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
+      {sharedHeader}
+      {sharedModals}
+      <BusinessView onBack={() => persistView("dashboard")} />
     </div>
   );
 

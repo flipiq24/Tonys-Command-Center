@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, ilike, or, sql } from "drizzle-orm";
+import { eq, desc, ilike, or, sql, asc } from "drizzle-orm";
 import { ClaudePromptBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, meetingHistoryTable, contactsTable, checkinsTable } from "@workspace/db";
-import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable, communicationLogTable } from "../../lib/schema-v2";
+import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable, communicationLogTable, companyGoalsTable, teamRolesTable, goalCompletionsTable } from "../../lib/schema-v2";
 import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
 import { sendAutoEod } from "./eod";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
@@ -474,6 +474,42 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
         event_id: { type: "string", description: "Google Calendar event ID to delete" },
       },
       required: ["event_id"],
+    },
+  },
+  {
+    name: "get_411_plan",
+    description: "Get FlipIQ's full 411 goal cascade: 5-year → 1-year → quarterly → monthly → weekly goals. Shows who owns each goal and current status. Use to answer questions about company direction, priorities, and accountability.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        horizon: { type: "string", description: "Filter to a specific horizon: 5yr, 1yr, quarterly, monthly, weekly, daily (optional — omit for all)" },
+        owner: { type: "string", description: "Filter by team member name (optional)" },
+        status: { type: "string", description: "Filter by status: active, done, paused (optional)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_team_roster",
+    description: "Get FlipIQ's full team roster: each person's role, responsibilities, current focus, and Slack/email info. Use when routing tasks, assigning issues, or understanding who owns what.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "update_goal_status",
+    description: "Mark a company goal as done, active, or paused. Can also reassign the owner or change the due date. Use when Tony completes a goal or wants to update accountability.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        goal_id: { type: "string", description: "UUID of the goal to update" },
+        status: { type: "string", description: "New status: active, done, paused" },
+        owner: { type: "string", description: "New owner name (optional)" },
+        due_date: { type: "string", description: "New due date in YYYY-MM-DD format (optional)" },
+      },
+      required: ["goal_id"],
     },
   },
 ];
@@ -1201,6 +1237,92 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
       }
     }
 
+    case "get_411_plan": {
+      try {
+        const params = new URLSearchParams();
+        if (input.horizon) params.set("horizon", String(input.horizon));
+        if (input.owner) params.set("owner", String(input.owner));
+        if (input.status) params.set("status", String(input.status));
+        const goals = await db.select().from(companyGoalsTable)
+          .orderBy(asc(companyGoalsTable.position), asc(companyGoalsTable.createdAt));
+        let filtered = goals;
+        if (input.horizon) filtered = filtered.filter((g: typeof goals[0]) => g.horizon === String(input.horizon));
+        if (input.owner) filtered = filtered.filter((g: typeof goals[0]) => g.owner?.toLowerCase().includes(String(input.owner).toLowerCase()));
+        if (input.status) filtered = filtered.filter((g: typeof goals[0]) => g.status === String(input.status));
+        if (filtered.length === 0) return "No goals found matching those filters.";
+        const HORIZON_ORDER_LOCAL = ["5yr", "1yr", "quarterly", "monthly", "weekly", "daily"];
+        const grouped: Record<string, typeof filtered> = {};
+        for (const h of HORIZON_ORDER_LOCAL) grouped[h] = [];
+        for (const g of filtered) {
+          const h = g.horizon || "other";
+          if (!grouped[h]) grouped[h] = [];
+          grouped[h].push(g);
+        }
+        const lines: string[] = ["## FlipIQ 411 Goal Plan\n"];
+        for (const h of HORIZON_ORDER_LOCAL) {
+          const items = grouped[h];
+          if (!items || items.length === 0) continue;
+          lines.push(`### ${h.toUpperCase()}`);
+          for (const g of items) {
+            const statusIcon = g.status === "done" ? "✅" : g.status === "paused" ? "⏸️" : "🎯";
+            lines.push(`${statusIcon} [${g.id.slice(0, 8)}] **${g.title}** — Owner: ${g.owner || "TBD"}${g.dueDate ? ` | Due: ${g.dueDate}` : ""}`);
+            if (g.description) lines.push(`   ${g.description}`);
+          }
+          lines.push("");
+        }
+        return lines.join("\n");
+      } catch (err) {
+        return `Failed to get 411 plan: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "get_team_roster": {
+      try {
+        const team = await db.select().from(teamRolesTable)
+          .orderBy(asc(teamRolesTable.position), asc(teamRolesTable.name));
+        if (team.length === 0) return "No team roster found. The Business Brain has no team members yet.";
+        const lines = ["## FlipIQ Team Roster\n"];
+        for (const m of team) {
+          lines.push(`**${m.name}** — ${m.role}`);
+          if (m.email) lines.push(`  Email: ${m.email}`);
+          if (m.slackId) lines.push(`  Slack: ${m.slackId}`);
+          if (m.currentFocus) lines.push(`  Current Focus: ${m.currentFocus}`);
+          if (m.responsibilities && Array.isArray(m.responsibilities) && m.responsibilities.length > 0) {
+            lines.push(`  Responsibilities: ${(m.responsibilities as string[]).join(", ")}`);
+          }
+          lines.push("");
+        }
+        return lines.join("\n");
+      } catch (err) {
+        return `Failed to get team roster: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "update_goal_status": {
+      try {
+        if (!input.goal_id) return "goal_id is required";
+        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        if (input.status) {
+          updates.status = String(input.status);
+          if (input.status === "done") updates.completedAt = new Date();
+        }
+        if (input.owner) updates.owner = String(input.owner);
+        if (input.due_date) updates.dueDate = String(input.due_date);
+        const goalIdStr = String(input.goal_id);
+        const [updated] = await db.update(companyGoalsTable).set(updates)
+          .where(eq(companyGoalsTable.id, goalIdStr)).returning();
+        if (!updated) return `Goal ${goalIdStr} not found`;
+        if (input.status === "done") {
+          await db.insert(goalCompletionsTable).values({
+            goalId: goalIdStr, goalTitle: updated.title, horizon: updated.horizon,
+          }).catch(() => {});
+        }
+        return `✅ Goal updated: "${updated.title}" → status: ${updated.status}${input.owner ? `, owner: ${input.owner}` : ""}${input.due_date ? `, due: ${input.due_date}` : ""}`;
+      } catch (err) {
+        return `Failed to update goal: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
     default:
       return `Unknown tool: ${name}`;
   }
@@ -1225,6 +1347,32 @@ async function buildSystemPrompt(): Promise<string> {
   const plan90Section = plan90Row?.summary
     ? `\n\n90-DAY PLAN SUMMARY:\n${plan90Row.summary}`
     : "";
+
+  // Load current active goals (top priority items by horizon)
+  let goalsSection = "";
+  try {
+    const activeGoals = await db.select().from(companyGoalsTable)
+      .where(eq(companyGoalsTable.status, "active"))
+      .orderBy(asc(companyGoalsTable.position))
+      .limit(30);
+    if (activeGoals.length > 0) {
+      const HORIZON_ORDER_LOCAL = ["5yr", "1yr", "quarterly", "monthly", "weekly", "daily"];
+      const grouped: Record<string, typeof activeGoals> = {};
+      for (const h of HORIZON_ORDER_LOCAL) grouped[h] = [];
+      for (const g of activeGoals) {
+        const h = g.horizon || "other";
+        if (!grouped[h]) grouped[h] = [];
+        grouped[h].push(g);
+      }
+      const lines: string[] = ["\n\nCURRENT 411 GOAL CASCADE (active goals):"];
+      for (const h of HORIZON_ORDER_LOCAL) {
+        const items = grouped[h];
+        if (!items || items.length === 0) continue;
+        lines.push(`${h.toUpperCase()}: ${items.map((g: typeof activeGoals[0]) => `${g.title} (${g.owner || "Tony"})`).join(" | ")}`);
+      }
+      goalsSection = lines.join("\n");
+    }
+  } catch {}
 
   return `You are Tony Diaz's UNRESTRICTED Command Center AI — his personal daily operating system for running FlipIQ.
 
@@ -1323,14 +1471,14 @@ Contacts: search_contacts, get_contact_brief, research_contact, update_contact_s
 Google: read_google_sheet, read_google_doc, search_google_drive
 Tasks: create_linear_issue, create_task, get_all_tasks, get_linear_members
 Meetings: get_meeting_history, log_meeting_context, analyze_transcript
-Business: get_business_context, get_daily_checkin_history
+Business: get_business_context, get_daily_checkin_history, get_411_plan, get_team_roster, update_goal_status
 Database: query_database
 Internet: web_search, browse_url
 Reports: send_eod_report
 
 SCRIPTURE ANCHORS:
 - "Seek first the kingdom of God" — Matthew 6:33
-- "Commit your work to the Lord" — Proverbs 16:3${brainSection}${businessPlanSection}${plan90Section}`;
+- "Commit your work to the Lord" — Proverbs 16:3${brainSection}${businessPlanSection}${plan90Section}${goalsSection}`;
 }
 
 const router: IRouter = Router();

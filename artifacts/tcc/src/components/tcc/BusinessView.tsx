@@ -371,7 +371,7 @@ function GPSCards() {
   );
 }
 
-// ─── Category Grid — fully expanded, nothing collapsible ─────────────────────
+// ─── Category Grid — always open, top 5 tasks per subcategory ────────────────
 
 function CategoryGrid({
   categories, onToggleTask,
@@ -379,6 +379,10 @@ function CategoryGrid({
   categories: CategoryWithSubs[];
   onToggleTask: (id: string, complete: boolean) => void;
 }) {
+  const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set());
+  function toggleSubExpand(id: string) {
+    setExpandedSubs(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
   if (categories.length === 0) {
     return <div style={{ textAlign: "center", padding: "48px", color: C.mut, fontFamily: F }}>Loading 411 plan…</div>;
   }
@@ -433,13 +437,29 @@ function CategoryGrid({
                       </div>
                     </div>
 
-                    {/* All tasks — always visible */}
+                    {/* Tasks — top 5 visible, rest behind toggle */}
                     <div style={{ padding: "4px 18px 10px 36px", borderLeft: `3px solid ${theme.border}` }}>
                       {sub.tasks.length === 0 ? (
                         <div style={{ fontSize: 12, color: C.mut, fontFamily: F, padding: "6px 0", fontStyle: "italic" }}>No tasks</div>
-                      ) : (
-                        sub.tasks.map(task => <TaskRow key={task.id} task={task} onToggle={onToggleTask} />)
-                      )}
+                      ) : (() => {
+                        const LIMIT = 5;
+                        const isExpanded = expandedSubs.has(sub.id);
+                        const visible = isExpanded ? sub.tasks : sub.tasks.slice(0, LIMIT);
+                        const hidden = sub.tasks.length - LIMIT;
+                        return (
+                          <>
+                            {visible.map(task => <TaskRow key={task.id} task={task} onToggle={onToggleTask} />)}
+                            {hidden > 0 && (
+                              <button
+                                onClick={() => toggleSubExpand(sub.id)}
+                                style={{ fontSize: 11, color: theme.accent, background: "none", border: "none", cursor: "pointer", padding: "4px 0", fontFamily: F, fontWeight: 600 }}
+                              >
+                                {isExpanded ? "▲ show less" : `+ ${hidden} more task${hidden > 1 ? "s" : ""}`}
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

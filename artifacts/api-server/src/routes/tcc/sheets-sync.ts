@@ -15,6 +15,7 @@ const CHECKIN_SHEET_ID = process.env.CHECKIN_SHEET_ID || "1rMLE_RhdRDsC2dqRs8eIi
 const BUSINESS_MASTER_SHEET_ID = process.env.BUSINESS_MASTER_SHEET_ID || "1WGuJwCoWbwyFamXXP79yxnPmYhdFPgOGhOR8_V-EQyw";
 const JOURNAL_DOC_ID = process.env.JOURNAL_DOC_ID || "1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE";
 const PLAN_90_DAY_ID = process.env.PLAN_90_DAY_ID || "1b1Ejf6Tim1gevq0BoMeV7XZ2KuXrgP2E";
+const BUSINESS_PLAN_ID = process.env.BUSINESS_PLAN_ID || "";
 
 // ─── Business Master Sheet sync helpers ─────────────────────────────────────
 
@@ -273,6 +274,48 @@ router.post("/sheets/ingest-90-day-plan", async (req, res): Promise<void> => {
     res.json({ ok: true, contentLength: docText.length, summary });
   } catch (err) {
     console.warn("[sheets-sync] ingest-90-day-plan failed:", (err as Error).message);
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+router.post("/sheets/ingest-business-plan", async (_req, res): Promise<void> => {
+  try {
+    if (!BUSINESS_PLAN_ID) {
+      res.json({ ok: false, error: "BUSINESS_PLAN_ID not configured" });
+      return;
+    }
+    const docText = await readGoogleDoc(BUSINESS_PLAN_ID);
+    if (!docText || docText.length < 50) {
+      res.json({ ok: false, error: "Document appears empty or too short" });
+      return;
+    }
+    let summary = docText.substring(0, 500);
+    try {
+      const msg = await anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 256,
+        messages: [{
+          role: "user",
+          content: `Summarize this business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, 3000)}`,
+        }],
+      });
+      const block = msg.content[0];
+      if (block.type === "text") summary = block.text;
+    } catch { /* use substring fallback */ }
+
+    await db.insert(businessContextTable).values({
+      documentType: "business_plan",
+      content: docText.substring(0, 10000),
+      summary,
+      lastUpdated: new Date(),
+    }).onConflictDoUpdate({
+      target: businessContextTable.documentType,
+      set: { content: docText.substring(0, 10000), summary, lastUpdated: new Date() },
+    });
+
+    res.json({ ok: true, contentLength: docText.length, summary });
+  } catch (err) {
+    console.warn("[sheets-sync] ingest-business-plan failed:", (err as Error).message);
     res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });

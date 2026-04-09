@@ -371,68 +371,59 @@ function GPSCards() {
   );
 }
 
-// ─── Category Grid — always open, subcategories always visible ────────────────
+// ─── Category Grid — fully expanded, nothing collapsible ─────────────────────
 
 function CategoryGrid({
-  categories, expandedSubs, onToggleSub, onToggleTask, showToast,
+  categories, onToggleTask,
 }: {
   categories: CategoryWithSubs[];
-  expandedSubs: Set<string>;
-  onToggleSub: (id: string) => void;
   onToggleTask: (id: string, complete: boolean) => void;
-  showToast: (msg: string) => void;
 }) {
   if (categories.length === 0) {
     return <div style={{ textAlign: "center", padding: "48px", color: C.mut, fontFamily: F }}>Loading 411 plan…</div>;
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {categories.map((cat) => {
         const theme = CAT_COLORS[cat.category] || { bg: "#F9F9F9", border: C.brd, accent: C.sub };
         const pct = cat.totalTasks === 0 ? 0 : Math.round((cat.completedTasks / cat.totalTasks) * 100);
 
         return (
-          <div key={cat.id} style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 6px rgba(0,0,0,0.04)" }}>
-            {/* Category header — always visible, always open */}
-            <div style={{ background: theme.bg, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: C.tx, fontFamily: F }}>{cat.title}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: theme.accent, background: theme.accent + "18", borderRadius: 8, padding: "1px 8px" }}>Q1 2026</span>
-                  {cat.status === "completed" && <span style={{ fontSize: 10, fontWeight: 700, color: C.grn }}>✅ Complete</span>}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: theme.accent, fontFamily: F, fontWeight: 600 }}>{cat.completedTasks}/{cat.totalTasks} tasks · {pct}%</span>
-                  <ProgressBar done={cat.completedTasks} total={cat.totalTasks} color={theme.accent} />
-                </div>
+          <div key={cat.id} style={{ border: `1.5px solid ${theme.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
+
+            {/* ── Category header ── */}
+            <div style={{ background: theme.bg, padding: "14px 18px", borderBottom: `1px solid ${theme.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 16, fontWeight: 800, color: C.tx, fontFamily: F }}>{cat.title}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: theme.accent, background: theme.accent + "20", borderRadius: 8, padding: "2px 9px", letterSpacing: 0.3 }}>Q1 2026</span>
+                {cat.status === "completed" && <span style={{ fontSize: 10, fontWeight: 700, color: C.grn }}>✅ Done</span>}
+                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: theme.accent }}>{cat.completedTasks}/{cat.totalTasks} · {pct}%</span>
               </div>
+              <ProgressBar done={cat.completedTasks} total={cat.totalTasks} color={theme.accent} />
             </div>
 
-            {/* Subcategory list — ALWAYS visible */}
-            <div style={{ background: "#fff", padding: "10px 14px 14px" }}>
-              {cat.subcategories.map(sub => {
-                const subExpanded = expandedSubs.has(sub.id);
+            {/* ── Subcategories + tasks — all always visible ── */}
+            <div style={{ background: "#fff" }}>
+              {cat.subcategories.map((sub, si) => {
                 const subDone = sub.status === "completed";
                 const subPct = sub.totalTasks === 0 ? 0 : Math.round((sub.completedTasks / sub.totalTasks) * 100);
+                const isLast = si === cat.subcategories.length - 1;
 
                 return (
-                  <div key={sub.id} style={{ marginBottom: 8 }}>
-                    {/* Subcategory row */}
-                    <div
-                      onClick={() => onToggleSub(sub.id)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
-                        padding: "7px 10px", borderRadius: 8,
-                        background: subExpanded ? theme.bg + "90" : "#F9FAFB",
-                        border: `1px solid ${subExpanded ? theme.border : "transparent"}`,
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <span style={{ fontSize: 10, color: C.mut, flexShrink: 0, width: 12, textAlign: "center" }}>{subExpanded ? "▼" : "▶"}</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: subDone ? C.grn : C.tx, fontFamily: F, textDecoration: subDone ? "line-through" : "none" }}>
+                  <div key={sub.id} style={{ borderBottom: isLast ? "none" : `1px solid ${theme.border}40` }}>
+
+                    {/* Subcategory header row */}
+                    <div style={{ padding: "10px 18px 8px", background: theme.bg + "55", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{
+                            fontSize: 12, fontWeight: 700,
+                            color: subDone ? C.grn : theme.accent,
+                            fontFamily: F,
+                            textDecoration: subDone ? "line-through" : "none",
+                            textTransform: "uppercase", letterSpacing: 0.5,
+                          }}>
                             {sub.title}
                           </span>
                           <span style={{ fontSize: 11, color: C.mut }}>{sub.completedTasks}/{sub.totalTasks}</span>
@@ -442,16 +433,14 @@ function CategoryGrid({
                       </div>
                     </div>
 
-                    {/* Task list — shown when expanded */}
-                    {subExpanded && (
-                      <div style={{ marginLeft: 22, marginTop: 6, borderLeft: `3px solid ${theme.border}`, paddingLeft: 12 }}>
-                        {sub.tasks.length === 0 ? (
-                          <div style={{ fontSize: 12, color: C.mut, fontFamily: F, padding: "6px 0", fontStyle: "italic" }}>No tasks yet</div>
-                        ) : (
-                          sub.tasks.map(task => <TaskRow key={task.id} task={task} onToggle={onToggleTask} />)
-                        )}
-                      </div>
-                    )}
+                    {/* All tasks — always visible */}
+                    <div style={{ padding: "4px 18px 10px 36px", borderLeft: `3px solid ${theme.border}` }}>
+                      {sub.tasks.length === 0 ? (
+                        <div style={{ fontSize: 12, color: C.mut, fontFamily: F, padding: "6px 0", fontStyle: "italic" }}>No tasks</div>
+                      ) : (
+                        sub.tasks.map(task => <TaskRow key={task.id} task={task} onToggle={onToggleTask} />)
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1249,7 +1238,6 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   const [tab, setTab] = useState<Tab>(defaultTab || "goals");
   const [categories, setCategories] = useState<CategoryWithSubs[]>([]);
   const [byOwner, setByOwner] = useState<Record<string, Record<number, PlanItem[]>>>({});
-  const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -1272,10 +1260,6 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   }, []);
 
   useEffect(() => { loadPlan(); loadWeekly(); }, [loadPlan, loadWeekly]);
-
-  function toggleSub(id: string) {
-    setExpandedSubs(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  }
 
   async function handleToggleTask(id: string, complete: boolean) {
     try {
@@ -1362,10 +1346,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
               <>
                 <CategoryGrid
                   categories={categories}
-                  expandedSubs={expandedSubs}
-                  onToggleSub={toggleSub}
                   onToggleTask={handleToggleTask}
-                  showToast={msg => setToast(msg)}
                 />
                 <WeeklyGrid byOwner={byOwner} onToggleTask={handleToggleTask} />
               </>

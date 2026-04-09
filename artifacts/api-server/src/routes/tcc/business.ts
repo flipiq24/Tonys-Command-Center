@@ -44,6 +44,18 @@ router.get("/business/goals/by-horizon", async (_req, res): Promise<void> => {
   }
 });
 
+router.get("/business/goals/:horizon", async (req, res): Promise<void> => {
+  try {
+    const { horizon } = req.params;
+    const goals = await db.select().from(companyGoalsTable)
+      .where(eq(companyGoalsTable.horizon, horizon))
+      .orderBy(asc(companyGoalsTable.position), asc(companyGoalsTable.createdAt));
+    res.json(goals);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 router.post("/business/goals", async (req, res): Promise<void> => {
   try {
     const { horizon, title, description, owner, status, dueDate } = req.body;
@@ -149,6 +161,7 @@ router.patch("/business/team/:id", async (req, res): Promise<void> => {
     }
     const [member] = await db.update(teamRolesTable).set(updates).where(eq(teamRolesTable.id, req.params.id)).returning();
     if (!member) { res.status(404).json({ error: "Team member not found" }); return; }
+    pushTeamToSheet().catch(() => {});
     res.json(member);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -352,6 +365,31 @@ export async function push411ToSheet(): Promise<void> {
     console.log(`[business] push411ToSheet: ${rows.length} goals pushed`);
   } catch (err) {
     console.warn("[business] push411ToSheet failed:", (err as Error).message);
+  }
+}
+
+export async function pushTeamToSheet(): Promise<void> {
+  if (!BUSINESS_MASTER_SHEET_ID) return;
+  try {
+    const sheets = await getSheetsClient();
+    const team = await db.select().from(teamRolesTable).orderBy(asc(teamRolesTable.position), asc(teamRolesTable.name));
+    const header = ["Name", "Role / Title", "Email", "Current Focus / Priority", "Responsibilities"];
+    const rows = team.map(m => [
+      m.name, m.role, m.email || "", m.currentFocus || "",
+      (m.responsibilities || []).join(", "),
+    ]);
+    await sheets.spreadsheets.values.clear({ spreadsheetId: BUSINESS_MASTER_SHEET_ID, range: "Team Roster!A:Z" });
+    if (rows.length > 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: BUSINESS_MASTER_SHEET_ID,
+        range: "Team Roster!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [header, ...rows] },
+      });
+    }
+    console.log(`[business] pushTeamToSheet: ${rows.length} members pushed`);
+  } catch (err) {
+    console.warn("[business] pushTeamToSheet failed:", (err as Error).message);
   }
 }
 

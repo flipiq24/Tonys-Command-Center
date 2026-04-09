@@ -54,17 +54,6 @@ type TeamMember = {
 
 type Tab = "goals" | "team" | "tasks" | "plan";
 
-type LocalTask = {
-  id: string;
-  title: string;
-  source?: string | null;
-  owner?: string | null;
-  priority?: string | null;
-  status?: string | null;
-  dueDate?: string | null;
-  notes?: string | null;
-};
-
 type BusinessDoc = {
   id: string;
   documentType: string;
@@ -90,136 +79,257 @@ function Pill({ label, color, bg }: { label: string; color: string; bg: string }
   );
 }
 
-function GoalCard({ goal, onStatusChange, onDelete }: {
+function GoalCard({
+  goal, onStatusChange, onDelete, onReassign, onMoveHorizon,
+  dragging, dragOver, onDragStart, onDragEnter, onDragEnd, teamNames, showHorizonBadge,
+}: {
   goal: Goal;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
+  onReassign?: (id: string, owner: string) => void;
+  onMoveHorizon?: (id: string, horizon: string) => void;
+  dragging?: boolean;
+  dragOver?: boolean;
+  onDragStart?: () => void;
+  onDragEnter?: () => void;
+  onDragEnd?: () => void;
+  teamNames?: string[];
+  showHorizonBadge?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showReassign, setShowReassign] = useState(false);
+  const [showMoveHorizon, setShowMoveHorizon] = useState(false);
   const isDone = goal.status === "done";
   const hColor = HORIZON_COLORS[goal.horizon] || C.sub;
 
   return (
     <div
+      draggable
+      onDragStart={e => { e.dataTransfer.effectAllowed = "move"; onDragStart?.(); }}
+      onDragEnter={e => { e.preventDefault(); onDragEnter?.(); }}
+      onDragOver={e => e.preventDefault()}
+      onDragEnd={onDragEnd}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setMenuOpen(false); }}
+      onMouseLeave={() => { setHovered(false); setMenuOpen(false); setShowReassign(false); setShowMoveHorizon(false); }}
       style={{
-        background: C.card, border: `1px solid ${hovered ? hColor : C.brd}`,
-        borderRadius: 10, padding: "14px 16px", position: "relative",
-        transition: "border-color 0.15s, box-shadow 0.15s",
+        background: C.card,
+        border: dragOver ? `2px dashed ${hColor}` : `1px solid ${hovered ? hColor : C.brd}`,
+        borderRadius: 10, padding: "12px 14px 12px 10px", position: "relative",
+        transition: "border-color 0.15s, box-shadow 0.15s, opacity 0.15s",
         boxShadow: hovered ? "0 2px 12px rgba(0,0,0,0.07)" : "none",
-        opacity: isDone ? 0.6 : 1,
+        opacity: dragging ? 0.4 : isDone ? 0.6 : 1,
+        cursor: "grab",
+        display: "flex", alignItems: "flex-start", gap: 6,
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+      {/* Drag handle */}
+      <div style={{
+        color: C.mut, fontSize: 16, lineHeight: 1, paddingTop: 2, flexShrink: 0,
+        userSelect: "none", cursor: "grab", opacity: hovered ? 1 : 0.3,
+        transition: "opacity 0.15s",
+      }}>⠿</div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+          {showHorizonBadge && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, color: "#fff", background: hColor,
+              padding: "2px 7px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5,
+            }}>
+              {HORIZON_LABELS[goal.horizon] || goal.horizon}
+            </span>
+          )}
+          {!showHorizonBadge && (
             <span style={{ fontSize: 11, fontWeight: 700, color: hColor, textTransform: "uppercase", letterSpacing: 0.5 }}>
               {HORIZON_LABELS[goal.horizon] || goal.horizon}
             </span>
-            {goal.owner && (
-              <span style={{ fontSize: 11, color: C.mut, fontFamily: F }}>— {goal.owner}</span>
-            )}
-            {goal.dueDate && (
-              <span style={{ fontSize: 10, color: C.mut, fontFamily: F }}>📅 {goal.dueDate}</span>
-            )}
-          </div>
-          <div style={{
-            fontSize: 14, fontWeight: 600, color: isDone ? C.mut : C.tx,
-            textDecoration: isDone ? "line-through" : "none",
-            lineHeight: 1.4, fontFamily: F,
-          }}>
-            {goal.title}
-          </div>
-          {goal.description && (
-            <div style={{ fontSize: 12, color: C.sub, marginTop: 5, lineHeight: 1.5, fontFamily: F }}>
-              {goal.description}
-            </div>
+          )}
+          {goal.owner && (
+            <span style={{ fontSize: 11, color: C.mut, fontFamily: F }}>— {goal.owner}</span>
+          )}
+          {goal.dueDate && (
+            <span style={{ fontSize: 10, color: C.mut, fontFamily: F }}>📅 {goal.dueDate}</span>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          {!isDone && (
-            <button
-              onClick={() => onStatusChange(goal.id, "done")}
-              title="Mark done"
-              style={{
-                background: C.grnBg, border: `1px solid ${C.grn}`, color: C.grn,
-                borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700,
-                cursor: "pointer", fontFamily: F,
-              }}
-            >✓ Done</button>
-          )}
-          {isDone && (
-            <button
-              onClick={() => onStatusChange(goal.id, "active")}
-              title="Reactivate"
-              style={{
-                background: C.bg, border: `1px solid ${C.brd}`, color: C.sub,
-                borderRadius: 6, padding: "4px 10px", fontSize: 11,
-                cursor: "pointer", fontFamily: F,
-              }}
-            >↩ Reopen</button>
-          )}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setMenuOpen(o => !o)}
-              style={{
-                background: "none", border: "none", color: C.mut, cursor: "pointer",
-                fontSize: 18, lineHeight: 1, padding: "2px 6px", borderRadius: 4,
-                fontFamily: F,
-              }}
-            >⋯</button>
-            {menuOpen && (
-              <div style={{
-                position: "absolute", right: 0, top: 24, zIndex: 50,
-                background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8,
-                boxShadow: "0 4px 16px rgba(0,0,0,0.1)", minWidth: 130, padding: "4px 0",
-              }}>
-                {goal.status !== "paused" && (
-                  <div
-                    onClick={() => { onStatusChange(goal.id, "paused"); setMenuOpen(false); }}
-                    style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", color: C.amb, fontFamily: F }}
-                  >⏸ Pause</div>
-                )}
-                {goal.status === "paused" && (
-                  <div
-                    onClick={() => { onStatusChange(goal.id, "active"); setMenuOpen(false); }}
-                    style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", color: C.grn, fontFamily: F }}
-                  >▶ Resume</div>
-                )}
-                <div
-                  onClick={async () => {
-                    if (deleting) return;
-                    setDeleting(true);
-                    await onDelete(goal.id);
-                    setMenuOpen(false);
-                    setDeleting(false);
-                  }}
-                  style={{ padding: "8px 14px", fontSize: 13, cursor: "pointer", color: C.red, fontFamily: F }}
-                >{deleting ? "Deleting…" : "🗑 Delete"}</div>
-              </div>
-            )}
+        <div style={{
+          fontSize: 14, fontWeight: 600, color: isDone ? C.mut : C.tx,
+          textDecoration: isDone ? "line-through" : "none",
+          lineHeight: 1.4, fontFamily: F,
+        }}>
+          {goal.title}
+        </div>
+        {goal.description && (
+          <div style={{ fontSize: 12, color: C.sub, marginTop: 5, lineHeight: 1.5, fontFamily: F }}>
+            {goal.description}
           </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {!isDone && (
+          <button
+            onClick={e => { e.stopPropagation(); onStatusChange(goal.id, "done"); }}
+            title="Mark done"
+            style={{
+              background: C.grnBg, border: `1px solid ${C.grn}`, color: C.grn,
+              borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700,
+              cursor: "pointer", fontFamily: F,
+            }}
+          >✓</button>
+        )}
+        {isDone && (
+          <button
+            onClick={e => { e.stopPropagation(); onStatusChange(goal.id, "active"); }}
+            title="Reactivate"
+            style={{
+              background: C.bg, border: `1px solid ${C.brd}`, color: C.sub,
+              borderRadius: 6, padding: "4px 8px", fontSize: 11,
+              cursor: "pointer", fontFamily: F,
+            }}
+          >↩</button>
+        )}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={e => { e.stopPropagation(); setMenuOpen(o => !o); setShowReassign(false); setShowMoveHorizon(false); }}
+            style={{
+              background: "none", border: "none", color: C.mut, cursor: "pointer",
+              fontSize: 18, lineHeight: 1, padding: "2px 6px", borderRadius: 4, fontFamily: F,
+            }}
+          >⋯</button>
+          {menuOpen && (
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                position: "absolute", right: 0, top: 28, zIndex: 100,
+                background: C.card, border: `1px solid ${C.brd}`, borderRadius: 10,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.12)", minWidth: 160, padding: "4px 0",
+              }}
+            >
+              {goal.status !== "paused" && !isDone && (
+                <div
+                  onClick={() => { onStatusChange(goal.id, "paused"); setMenuOpen(false); }}
+                  style={{ padding: "9px 14px", fontSize: 13, cursor: "pointer", color: C.amb, fontFamily: F }}
+                >⏸ Pause</div>
+              )}
+              {goal.status === "paused" && (
+                <div
+                  onClick={() => { onStatusChange(goal.id, "active"); setMenuOpen(false); }}
+                  style={{ padding: "9px 14px", fontSize: 13, cursor: "pointer", color: C.grn, fontFamily: F }}
+                >▶ Resume</div>
+              )}
+
+              {/* Owner reassignment */}
+              {onReassign && (
+                <>
+                  <div
+                    onClick={() => { setShowReassign(r => !r); setShowMoveHorizon(false); }}
+                    style={{ padding: "9px 14px", fontSize: 13, cursor: "pointer", color: C.blu, fontFamily: F }}
+                  >👤 Reassign owner</div>
+                  {showReassign && (
+                    <div style={{ padding: "4px 10px 8px", borderTop: `1px solid ${C.brd}` }}>
+                      {(teamNames || []).map(name => (
+                        <div
+                          key={name}
+                          onClick={() => { onReassign(goal.id, name); setMenuOpen(false); }}
+                          style={{
+                            padding: "6px 8px", borderRadius: 6, fontSize: 12,
+                            cursor: "pointer", color: goal.owner === name ? "#F97316" : C.tx,
+                            fontWeight: goal.owner === name ? 700 : 400, fontFamily: F,
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                        >{name}</div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Move to horizon */}
+              {onMoveHorizon && (
+                <>
+                  <div
+                    onClick={() => { setShowMoveHorizon(h => !h); setShowReassign(false); }}
+                    style={{ padding: "9px 14px", fontSize: 13, cursor: "pointer", color: C.blu, fontFamily: F }}
+                  >↗ Move to horizon</div>
+                  {showMoveHorizon && (
+                    <div style={{ padding: "4px 10px 8px", borderTop: `1px solid ${C.brd}` }}>
+                      {HORIZON_ORDER.filter(h => h !== goal.horizon).map(h => (
+                        <div
+                          key={h}
+                          onClick={() => { onMoveHorizon(goal.id, h); setMenuOpen(false); }}
+                          style={{
+                            padding: "6px 8px", borderRadius: 6, fontSize: 12,
+                            cursor: "pointer", color: HORIZON_COLORS[h] || C.sub, fontWeight: 600,
+                            fontFamily: F,
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "none")}
+                        >{HORIZON_LABELS[h]}</div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div style={{ borderTop: `1px solid ${C.brd}`, margin: "4px 0" }} />
+              <div
+                onClick={async () => {
+                  if (deleting) return;
+                  setDeleting(true);
+                  await onDelete(goal.id);
+                  setMenuOpen(false);
+                  setDeleting(false);
+                }}
+                style={{ padding: "9px 14px", fontSize: 13, cursor: "pointer", color: C.red, fontFamily: F }}
+              >{deleting ? "Deleting…" : "🗑 Delete"}</div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function HorizonSection({ horizon, goals, onStatusChange, onDelete }: {
+function HorizonSection({ horizon, goals, onStatusChange, onDelete, onReassign, onMoveHorizon, onReorder, teamNames }: {
   horizon: string;
   goals: Goal[];
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
+  onReassign?: (id: string, owner: string) => void;
+  onMoveHorizon?: (id: string, horizon: string) => void;
+  onReorder?: (orderedIds: string[]) => void;
+  teamNames?: string[];
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [localGoals, setLocalGoals] = useState(goals);
   const color = HORIZON_COLORS[horizon] || C.sub;
-  const active = goals.filter(g => g.status !== "done");
-  const done = goals.filter(g => g.status === "done");
+  const active = localGoals.filter(g => g.status !== "done");
+  const done = localGoals.filter(g => g.status === "done");
+
+  useEffect(() => { setLocalGoals(goals); }, [goals]);
 
   if (goals.length === 0) return null;
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!dragId || !dragOverId || dragId === dragOverId) {
+      setDragId(null); setDragOverId(null); return;
+    }
+    const reordered = [...localGoals];
+    const fromIdx = reordered.findIndex(g => g.id === dragId);
+    const toIdx = reordered.findIndex(g => g.id === dragOverId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, moved);
+    setLocalGoals(reordered);
+    setDragId(null); setDragOverId(null);
+    onReorder?.(reordered.map(g => g.id));
+  };
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -243,12 +353,26 @@ function HorizonSection({ horizon, goals, onStatusChange, onDelete }: {
         <span style={{ fontSize: 12, color: C.mut, marginLeft: "auto" }}>{collapsed ? "▶" : "▼"}</span>
       </div>
       {!collapsed && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 14 }}>
-          {active.map(g => (
-            <GoalCard key={g.id} goal={g} onStatusChange={onStatusChange} onDelete={onDelete} />
-          ))}
-          {done.map(g => (
-            <GoalCard key={g.id} goal={g} onStatusChange={onStatusChange} onDelete={onDelete} />
+        <div
+          onDrop={handleDrop}
+          onDragOver={e => e.preventDefault()}
+          style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 14 }}
+        >
+          {[...active, ...done].map(g => (
+            <GoalCard
+              key={g.id}
+              goal={g}
+              onStatusChange={onStatusChange}
+              onDelete={onDelete}
+              onReassign={onReassign}
+              onMoveHorizon={onMoveHorizon}
+              teamNames={teamNames}
+              dragging={dragId === g.id}
+              dragOver={dragOverId === g.id}
+              onDragStart={() => setDragId(g.id)}
+              onDragEnter={() => setDragOverId(g.id)}
+              onDragEnd={() => { setDragId(null); setDragOverId(null); }}
+            />
           ))}
         </div>
       )}
@@ -256,16 +380,22 @@ function HorizonSection({ horizon, goals, onStatusChange, onDelete }: {
   );
 }
 
-function TeamCard({ member }: { member: TeamMember }) {
+function TeamCard({ member, allGoals }: { member: TeamMember; allGoals: Goal[] }) {
   const initials = member.name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
   const colors = ["#7C3AED", "#1565C0", "#0D7A5F", "#E65100", "#C62828"];
   const colorIdx = member.name.charCodeAt(0) % colors.length;
   const color = colors[colorIdx];
 
+  const memberGoals = allGoals.filter(g =>
+    g.status !== "done" &&
+    (g.owner?.toLowerCase() === member.name.toLowerCase() ||
+     (member.name === "Tony Diaz" && g.owner?.toLowerCase() === "tony"))
+  ).slice(0, 4);
+
   return (
     <div style={{
       background: C.card, border: `1px solid ${C.brd}`, borderRadius: 12, padding: "18px 20px",
-      display: "flex", flexDirection: "column", gap: 10, minWidth: 200,
+      display: "flex", flexDirection: "column", gap: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{
@@ -275,39 +405,67 @@ function TeamCard({ member }: { member: TeamMember }) {
         }}>
           {initials}
         </div>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: C.tx, fontFamily: F }}>{member.name}</div>
           <div style={{ fontSize: 12, color: C.sub, fontFamily: F }}>{member.role}</div>
         </div>
+        {(member.email || member.slackId) && (
+          <div style={{ display: "flex", gap: 6 }}>
+            {member.email && (
+              <a href={`mailto:${member.email}`} title={member.email} style={{ fontSize: 14, color: C.mut, textDecoration: "none" }}>✉</a>
+            )}
+          </div>
+        )}
       </div>
       {member.currentFocus && (
         <div style={{
           background: C.ambBg, border: `1px solid ${C.amb}20`, borderRadius: 7,
-          padding: "8px 10px", fontSize: 12, color: C.amb, fontFamily: F, lineHeight: 1.4,
+          padding: "7px 10px", fontSize: 12, color: C.amb, fontFamily: F, lineHeight: 1.4,
         }}>
           <span style={{ fontWeight: 700 }}>Focus: </span>{member.currentFocus}
         </div>
       )}
       {member.responsibilities && member.responsibilities.length > 0 && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, fontFamily: F }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, fontFamily: F }}>
             Responsibilities
           </div>
-          <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
-            {member.responsibilities.map((r, i) => (
-              <li key={i} style={{ fontSize: 12, color: C.sub, marginBottom: 2, fontFamily: F }}>{r}</li>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {member.responsibilities.slice(0, 4).map((r, i) => (
+              <span key={i} style={{
+                fontSize: 11, color: C.sub, background: C.bg, border: `1px solid ${C.brd}`,
+                borderRadius: 12, padding: "2px 8px", fontFamily: F,
+              }}>{r}</span>
             ))}
-          </ul>
+          </div>
         </div>
       )}
-      {(member.email || member.slackId) && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {member.email && (
-            <div style={{ fontSize: 11, color: C.mut, fontFamily: F }}>✉ {member.email}</div>
-          )}
-          {member.slackId && (
-            <div style={{ fontSize: 11, color: C.mut, fontFamily: F }}>💬 {member.slackId}</div>
-          )}
+      {memberGoals.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6, fontFamily: F }}>
+            Active Goals ({memberGoals.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {memberGoals.map(g => (
+              <div key={g.id} style={{
+                display: "flex", alignItems: "center", gap: 6, padding: "5px 8px",
+                background: C.bg, border: `1px solid ${C.brd}`, borderRadius: 7,
+              }}>
+                <span style={{
+                  fontSize: 9, fontWeight: 700, color: HORIZON_COLORS[g.horizon] || C.sub,
+                  textTransform: "uppercase", letterSpacing: 0.3, flexShrink: 0,
+                }}>{g.horizon}</span>
+                <span style={{ fontSize: 12, color: C.tx, fontFamily: F, flex: 1, minWidth: 0,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>{g.title}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {memberGoals.length === 0 && (
+        <div style={{ fontSize: 12, color: C.mut, fontFamily: F, textAlign: "center", padding: "4px 0" }}>
+          No active goals assigned
         </div>
       )}
     </div>
@@ -456,16 +614,16 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
 
   const [goals, setGoals] = useState<Record<string, Goal[]>>({});
   const [team, setTeam] = useState<TeamMember[]>([]);
-  const [tasks, setTasks] = useState<LocalTask[]>([]);
   const [docs, setDocs] = useState<BusinessDoc[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tasksLoading, setTasksLoading] = useState(false);
   const [docsLoading, setDocsLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [refreshingDrive, setRefreshingDrive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDone, setShowDone] = useState(false);
-  const [taskFilter, setTaskFilter] = useState<"all" | "active" | "done">("active");
+  const [taskHorizonFilter, setTaskHorizonFilter] = useState<string>("all");
+  const [taskOwnerFilter, setTaskOwnerFilter] = useState<string>("all");
+  const [taskStatusFilter, setTaskStatusFilter] = useState<"all" | "active" | "done">("active");
   const [err, setErr] = useState("");
 
   const loadGoals = useCallback(async () => {
@@ -491,24 +649,6 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
     }
   }, []);
 
-  const loadTasks = useCallback(async () => {
-    setTasksLoading(true);
-    try {
-      const data = await get("/tasks") as { tasks?: LocalTask[]; linear?: LocalTask[] } | LocalTask[];
-      if (Array.isArray(data)) {
-        setTasks(data);
-      } else if (data && typeof data === "object") {
-        const all: LocalTask[] = [];
-        if (Array.isArray((data as { tasks?: LocalTask[] }).tasks)) all.push(...((data as { tasks: LocalTask[] }).tasks));
-        if (Array.isArray((data as { linear?: LocalTask[] }).linear)) all.push(...((data as { linear: LocalTask[] }).linear));
-        setTasks(all);
-      }
-    } catch {
-      setTasks([]);
-    } finally {
-      setTasksLoading(false);
-    }
-  }, []);
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
@@ -531,7 +671,6 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
   }, [loadGoals, loadTeam]);
 
   useEffect(() => {
-    if (tab === "tasks" && tasks.length === 0) loadTasks();
     if (tab === "plan" && docs.length === 0) loadDocs();
   }, [tab]);
 
@@ -539,7 +678,7 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
     try {
       await patch(`/business/goals/${id}`, { status });
       await loadGoals();
-    } catch (e) {
+    } catch {
       setErr("Failed to update goal");
     }
   };
@@ -548,7 +687,7 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
     try {
       await del(`/business/goals/${id}`);
       await loadGoals();
-    } catch (e) {
+    } catch {
       setErr("Failed to delete goal");
     }
   };
@@ -556,6 +695,32 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
   const handleAdd = async (form: AddGoalForm) => {
     await post("/business/goals", form);
     await loadGoals();
+  };
+
+  const handleReassign = async (id: string, owner: string) => {
+    try {
+      await patch(`/business/goals/${id}`, { owner });
+      await loadGoals();
+    } catch {
+      setErr("Failed to reassign goal");
+    }
+  };
+
+  const handleMoveHorizon = async (id: string, horizon: string) => {
+    try {
+      await patch(`/business/goals/${id}`, { horizon });
+      await loadGoals();
+    } catch {
+      setErr("Failed to move goal");
+    }
+  };
+
+  const handleReorder = async (orderedIds: string[]) => {
+    try {
+      await post("/business/goals/reorder", { orderedIds });
+    } catch {
+      // Optimistic update already applied in HorizonSection; silent error
+    }
   };
 
   const handleSync = async () => {
@@ -574,6 +739,7 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
   const allGoals = Object.values(goals).flat();
   const activeCount = allGoals.filter(g => g.status !== "done").length;
   const doneCount = allGoals.filter(g => g.status === "done").length;
+  const teamNames = team.map(m => m.name);
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     padding: "9px 18px", borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500,
@@ -604,7 +770,7 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
               <div style={{ fontSize: 12, color: C.sub, marginTop: 2, fontFamily: F }}>
                 {tab === "goals" ? "411 Goal Cascade — 5yr → 1yr → Quarterly → Monthly → Weekly"
                   : tab === "team" ? "Team Roster — Roles, Focus & Accountability"
-                  : tab === "tasks" ? "Master Task List — All tasks synced from Google Sheet"
+                  : tab === "tasks" ? "Master Task List — All 411 goals, filterable by horizon · owner · status"
                   : "Business Plan & 90-Day Plan — Live from Google Drive"}
               </div>
             </div>
@@ -662,14 +828,13 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
 
               {tab === "tasks" && (
                 <button
-                  onClick={loadTasks}
-                  disabled={tasksLoading}
+                  onClick={loadGoals}
                   style={{
                     padding: "7px 13px", borderRadius: 7, border: `1px solid ${C.brd}`,
                     background: C.card, color: C.sub, fontSize: 12,
-                    cursor: tasksLoading ? "default" : "pointer", fontFamily: F,
+                    cursor: "pointer", fontFamily: F,
                   }}
-                >{tasksLoading ? "Refreshing…" : "↻ Refresh Tasks"}</button>
+                >↻ Refresh</button>
               )}
 
               {tab === "plan" && (
@@ -754,6 +919,10 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
                   goals={items}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
+                  onReassign={handleReassign}
+                  onMoveHorizon={handleMoveHorizon}
+                  onReorder={handleReorder}
+                  teamNames={teamNames}
                 />
               );
             })}
@@ -788,84 +957,106 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: {
                 <div style={{ fontSize: 16, fontWeight: 700, color: C.sub }}>No team members yet</div>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-                {team.map(m => <TeamCard key={m.id} member={m} />)}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+                {team.map(m => <TeamCard key={m.id} member={m} allGoals={allGoals} />)}
               </div>
             )}
           </div>
         ) : tab === "tasks" ? (
-          /* Master Task List Tab */
+          /* Master Task List Tab — 411 goals flat view with filters + horizon-move */
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-              <span style={{ fontSize: 13, color: C.sub, fontFamily: F }}>Filter:</span>
+            {/* Filters */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: 0.4, fontFamily: F }}>Horizon</span>
+              <button
+                onClick={() => setTaskHorizonFilter("all")}
+                style={{
+                  padding: "4px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer", fontFamily: F,
+                  border: `1px solid ${taskHorizonFilter === "all" ? "#F97316" : C.brd}`,
+                  background: taskHorizonFilter === "all" ? "#FFF7ED" : "none",
+                  color: taskHorizonFilter === "all" ? "#F97316" : C.sub, fontWeight: taskHorizonFilter === "all" ? 700 : 400,
+                }}
+              >All</button>
+              {HORIZON_ORDER.map(h => (
+                <button
+                  key={h}
+                  onClick={() => setTaskHorizonFilter(h)}
+                  style={{
+                    padding: "4px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer", fontFamily: F,
+                    border: `1px solid ${taskHorizonFilter === h ? HORIZON_COLORS[h] : C.brd}`,
+                    background: taskHorizonFilter === h ? `${HORIZON_COLORS[h]}15` : "none",
+                    color: taskHorizonFilter === h ? HORIZON_COLORS[h] : C.sub,
+                    fontWeight: taskHorizonFilter === h ? 700 : 400,
+                  }}
+                >{HORIZON_LABELS[h]}</button>
+              ))}
+              <div style={{ width: 1, height: 20, background: C.brd, margin: "0 4px" }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: 0.4, fontFamily: F }}>Owner</span>
+              <select
+                value={taskOwnerFilter}
+                onChange={e => setTaskOwnerFilter(e.target.value)}
+                style={{
+                  padding: "4px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, background: C.card,
+                  color: C.tx, fontSize: 12, fontFamily: F, cursor: "pointer",
+                }}
+              >
+                <option value="all">All</option>
+                {teamNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <div style={{ width: 1, height: 20, background: C.brd, margin: "0 4px" }} />
               {(["active", "done", "all"] as const).map(f => (
                 <button
                   key={f}
-                  onClick={() => setTaskFilter(f)}
+                  onClick={() => setTaskStatusFilter(f)}
                   style={{
-                    padding: "5px 14px", borderRadius: 20, border: `1px solid ${taskFilter === f ? "#F97316" : C.brd}`,
-                    background: taskFilter === f ? "#FFF7ED" : "none",
-                    color: taskFilter === f ? "#F97316" : C.sub, fontSize: 12, cursor: "pointer",
-                    fontWeight: taskFilter === f ? 700 : 400, fontFamily: F,
+                    padding: "4px 12px", borderRadius: 20, fontSize: 12, cursor: "pointer", fontFamily: F,
+                    border: `1px solid ${taskStatusFilter === f ? "#F97316" : C.brd}`,
+                    background: taskStatusFilter === f ? "#FFF7ED" : "none",
+                    color: taskStatusFilter === f ? "#F97316" : C.sub,
+                    fontWeight: taskStatusFilter === f ? 700 : 400,
                   }}
-                >{f === "active" ? "Active" : f === "done" ? "Done" : "All"}</button>
+                >{f === "active" ? "Active" : f === "done" ? "Done" : "All status"}</button>
               ))}
-              <button
-                onClick={loadTasks}
-                disabled={tasksLoading}
-                style={{
-                  marginLeft: "auto", padding: "5px 12px", borderRadius: 7, border: `1px solid ${C.brd}`,
-                  background: C.card, color: C.sub, fontSize: 12, cursor: "pointer", fontFamily: F,
-                }}
-              >{tasksLoading ? "Loading…" : "↻ Refresh"}</button>
             </div>
 
-            {tasksLoading ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: C.mut, fontFamily: F }}>Loading tasks…</div>
-            ) : tasks.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 0", color: C.mut, fontFamily: F }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: C.sub }}>No tasks found</div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {tasks
-                  .filter(t => {
-                    if (taskFilter === "active") return t.status !== "done" && t.status !== "completed";
-                    if (taskFilter === "done") return t.status === "done" || t.status === "completed";
-                    return true;
-                  })
-                  .map(t => {
-                    const isDone = t.status === "done" || t.status === "completed";
-                    const priorityColors: Record<string, string> = { high: C.red, medium: C.amb, low: C.grn, critical: "#7C3AED" };
-                    const pColor = t.priority ? (priorityColors[t.priority.toLowerCase()] || C.sub) : C.sub;
-                    return (
-                      <div key={t.id} style={{
-                        background: C.card, border: `1px solid ${C.brd}`, borderRadius: 9,
-                        padding: "12px 16px", display: "flex", alignItems: "flex-start", gap: 12,
-                        opacity: isDone ? 0.6 : 1,
-                      }}>
-                        <div style={{ width: 3, borderRadius: 2, alignSelf: "stretch", background: pColor, flexShrink: 0 }} />
-                        <div style={{ flex: 1 }}>
-                          <div style={{
-                            fontSize: 14, fontWeight: 600, color: isDone ? C.mut : C.tx,
-                            textDecoration: isDone ? "line-through" : "none", fontFamily: F, lineHeight: 1.4,
-                          }}>{t.title}</div>
-                          <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
-                            {t.source && <span style={{ fontSize: 11, color: C.mut, fontFamily: F }}>{t.source}</span>}
-                            {t.owner && <span style={{ fontSize: 11, color: C.sub, fontFamily: F }}>→ {t.owner}</span>}
-                            {t.dueDate && <span style={{ fontSize: 11, color: C.mut, fontFamily: F }}>📅 {t.dueDate}</span>}
-                            {t.priority && <span style={{ fontSize: 11, fontWeight: 600, color: pColor, fontFamily: F }}>{t.priority}</span>}
-                          </div>
-                          {t.notes && (
-                            <div style={{ fontSize: 12, color: C.sub, marginTop: 4, fontFamily: F }}>{t.notes}</div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
+            {/* Filtered goals list */}
+            {(() => {
+              const filtered = allGoals.filter(g => {
+                if (taskHorizonFilter !== "all" && g.horizon !== taskHorizonFilter) return false;
+                if (taskOwnerFilter !== "all") {
+                  const ownerMatch = g.owner?.toLowerCase() === taskOwnerFilter.toLowerCase() ||
+                    (taskOwnerFilter === "Tony Diaz" && g.owner?.toLowerCase() === "tony");
+                  if (!ownerMatch) return false;
+                }
+                if (taskStatusFilter === "active") return g.status !== "done";
+                if (taskStatusFilter === "done") return g.status === "done";
+                return true;
+              });
+
+              if (filtered.length === 0) return (
+                <div style={{ textAlign: "center", padding: "60px 0", color: C.mut, fontFamily: F }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>🎯</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: C.sub }}>No goals match these filters</div>
+                </div>
+              );
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {filtered.map(g => (
+                    <GoalCard
+                      key={g.id}
+                      goal={g}
+                      onStatusChange={handleStatusChange}
+                      onDelete={handleDelete}
+                      onReassign={handleReassign}
+                      onMoveHorizon={handleMoveHorizon}
+                      teamNames={teamNames}
+                      showHorizonBadge
+                    />
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         ) : (
           /* Business Plan / Docs Tab */

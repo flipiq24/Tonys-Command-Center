@@ -4,6 +4,7 @@ import { contactsTable } from "@workspace/db";
 import { appendToSheet, getSheetValues, getSheetsClient } from "../../lib/google-sheets";
 import { readGoogleDoc } from "../../lib/google-drive";
 import { businessContextTable, contactIntelligenceTable, communicationLogTable } from "../../lib/schema-v2";
+import { sync411FromSheet, syncTeamFromSheet } from "./business";
 import { eq, desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates";
@@ -173,7 +174,7 @@ export function startAutoSync(): void {
   }
   console.log("[sheets-sync] Starting Business Master Sheet auto-sync (every 5 minutes)");
   const runSync = async () => {
-    await Promise.allSettled([syncTasksTab(), syncContactsTab(), syncCommsTab()]);
+    await Promise.allSettled([syncTasksTab(), syncContactsTab(), syncCommsTab(), sync411FromSheet(), syncTeamFromSheet()]);
   };
   // Run immediately on startup, then every 5 minutes
   runSync();
@@ -226,8 +227,8 @@ router.post("/sheets/sync-master", async (req, res): Promise<void> => {
     return;
   }
   try {
-    await Promise.allSettled([syncTasksTab(), syncContactsTab(), syncCommsTab()]);
-    res.json({ ok: true, synced: ["Tasks", "Contacts", "Comms"] });
+    await Promise.allSettled([syncTasksTab(), syncContactsTab(), syncCommsTab(), sync411FromSheet(), syncTeamFromSheet()]);
+    res.json({ ok: true, synced: ["Tasks", "Contacts", "Comms", "411 Goals", "Team"] });
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message });
   }

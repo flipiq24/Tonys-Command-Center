@@ -52,7 +52,26 @@ type TeamMember = {
   position?: number;
 };
 
-type Tab = "goals" | "team";
+type Tab = "goals" | "team" | "tasks" | "plan";
+
+type LocalTask = {
+  id: string;
+  title: string;
+  source?: string | null;
+  owner?: string | null;
+  priority?: string | null;
+  status?: string | null;
+  dueDate?: string | null;
+  notes?: string | null;
+};
+
+type BusinessDoc = {
+  id: string;
+  documentType: string;
+  summary?: string | null;
+  content?: string | null;
+  lastUpdated?: string | null;
+};
 
 type AddGoalForm = {
   horizon: Horizon;
@@ -417,14 +436,36 @@ function AddGoalModal({ onAdd, onClose }: { onAdd: (goal: AddGoalForm) => Promis
   );
 }
 
-export function BusinessView({ onBack }: { onBack?: () => void }) {
-  const [tab, setTab] = useState<Tab>("goals");
+export function BusinessView({ onBack, defaultTab, onTabChange }: {
+  onBack?: () => void;
+  defaultTab?: Tab;
+  onTabChange?: (tab: Tab) => void;
+}) {
+  const [tab, setTabState] = useState<Tab>(defaultTab || "goals");
+
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    onTabChange?.(t);
+  };
+
+  useEffect(() => {
+    if (defaultTab && defaultTab !== tab) {
+      setTabState(defaultTab);
+    }
+  }, [defaultTab]);
+
   const [goals, setGoals] = useState<Record<string, Goal[]>>({});
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [tasks, setTasks] = useState<LocalTask[]>([]);
+  const [docs, setDocs] = useState<BusinessDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [docsLoading, setDocsLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [refreshingDrive, setRefreshingDrive] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<"all" | "active" | "done">("active");
   const [err, setErr] = useState("");
 
   const loadGoals = useCallback(async () => {
@@ -450,6 +491,37 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
     }
   }, []);
 
+  const loadTasks = useCallback(async () => {
+    setTasksLoading(true);
+    try {
+      const data = await get("/tasks") as { tasks?: LocalTask[]; linear?: LocalTask[] } | LocalTask[];
+      if (Array.isArray(data)) {
+        setTasks(data);
+      } else if (data && typeof data === "object") {
+        const all: LocalTask[] = [];
+        if (Array.isArray((data as { tasks?: LocalTask[] }).tasks)) all.push(...((data as { tasks: LocalTask[] }).tasks));
+        if (Array.isArray((data as { linear?: LocalTask[] }).linear)) all.push(...((data as { linear: LocalTask[] }).linear));
+        setTasks(all);
+      }
+    } catch {
+      setTasks([]);
+    } finally {
+      setTasksLoading(false);
+    }
+  }, []);
+
+  const loadDocs = useCallback(async () => {
+    setDocsLoading(true);
+    try {
+      const data = await get("/business/context");
+      setDocs(data as BusinessDoc[]);
+    } catch {
+      setDocs([]);
+    } finally {
+      setDocsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -457,6 +529,11 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
       setLoading(false);
     })();
   }, [loadGoals, loadTeam]);
+
+  useEffect(() => {
+    if (tab === "tasks" && tasks.length === 0) loadTasks();
+    if (tab === "plan" && docs.length === 0) loadDocs();
+  }, [tab]);
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
@@ -525,19 +602,53 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
                 Business Brain
               </h1>
               <div style={{ fontSize: 12, color: C.sub, marginTop: 2, fontFamily: F }}>
-                FlipIQ 411 Goal Cascade · Team Roster
+                {tab === "goals" ? "411 Goal Cascade — 5yr → 1yr → Quarterly → Monthly → Weekly"
+                  : tab === "team" ? "Team Roster — Roles, Focus & Accountability"
+                  : tab === "tasks" ? "Master Task List — All tasks synced from Google Sheet"
+                  : "Business Plan & 90-Day Plan — Live from Google Drive"}
               </div>
             </div>
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                style={{
-                  padding: "7px 14px", borderRadius: 7, border: `1px solid ${C.brd}`,
-                  background: C.card, color: C.sub, fontSize: 12, cursor: syncing ? "default" : "pointer",
-                  fontFamily: F, opacity: syncing ? 0.6 : 1,
-                }}
-              >{syncing ? "Syncing…" : "↻ Sync Sheet"}</button>
+
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {/* Bilateral sync controls — shown on goals and team tabs */}
+              {(tab === "goals" || tab === "team") && (<>
+                <button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  title="Pull latest data from Google Sheet into database"
+                  style={{
+                    padding: "7px 13px", borderRadius: 7, border: `1px solid ${C.blu}`,
+                    background: C.bluBg, color: C.blu, fontSize: 12, fontWeight: 600,
+                    cursor: syncing ? "default" : "pointer", fontFamily: F,
+                    opacity: syncing ? 0.6 : 1, display: "flex", alignItems: "center", gap: 5,
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22V12m0 0L8 16m4-4l4 4"/><path d="M20 6a8.5 8.5 0 10-16.97 2"/></svg>
+                  {syncing ? "Pulling…" : "↓ Pull from Sheet"}
+                </button>
+                {tab === "goals" && (
+                  <button
+                    onClick={async () => {
+                      setSyncing(true);
+                      try { await post("/business/push-to-sheet", {}); }
+                      catch { setErr("Push to sheet failed"); }
+                      finally { setSyncing(false); }
+                    }}
+                    disabled={syncing}
+                    title="Push your current goals from database up to Google Sheet"
+                    style={{
+                      padding: "7px 13px", borderRadius: 7, border: `1px solid ${C.grn}`,
+                      background: C.grnBg, color: C.grn, fontSize: 12, fontWeight: 600,
+                      cursor: syncing ? "default" : "pointer", fontFamily: F,
+                      opacity: syncing ? 0.6 : 1, display: "flex", alignItems: "center", gap: 5,
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v10m0 0l4-4m-4 4L8 8"/><path d="M4 18a8.5 8.5 0 0016.97-2"/></svg>
+                    {syncing ? "Pushing…" : "↑ Push to Sheet"}
+                  </button>
+                )}
+              </>)}
+
               {tab === "goals" && (
                 <button
                   onClick={() => setShowAdd(true)}
@@ -547,6 +658,36 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
                     cursor: "pointer", fontFamily: F,
                   }}
                 >+ Add Goal</button>
+              )}
+
+              {tab === "tasks" && (
+                <button
+                  onClick={loadTasks}
+                  disabled={tasksLoading}
+                  style={{
+                    padding: "7px 13px", borderRadius: 7, border: `1px solid ${C.brd}`,
+                    background: C.card, color: C.sub, fontSize: 12,
+                    cursor: tasksLoading ? "default" : "pointer", fontFamily: F,
+                  }}
+                >{tasksLoading ? "Refreshing…" : "↻ Refresh Tasks"}</button>
+              )}
+
+              {tab === "plan" && (
+                <button
+                  onClick={async () => {
+                    setRefreshingDrive(true);
+                    try { await post("/sheets/ingest-90-day-plan", {}); } catch { /* ignore */ }
+                    try { await post("/sheets/ingest-business-plan", {}); } catch { /* ignore */ }
+                    await loadDocs();
+                    setRefreshingDrive(false);
+                  }}
+                  disabled={refreshingDrive}
+                  style={{
+                    padding: "7px 13px", borderRadius: 7, border: `1px solid ${C.brd}`,
+                    background: C.card, color: C.sub, fontSize: 12,
+                    cursor: refreshingDrive ? "default" : "pointer", fontFamily: F,
+                  }}
+                >{refreshingDrive ? "Refreshing…" : "↻ Refresh from Drive"}</button>
               )}
             </div>
           </div>
@@ -574,6 +715,12 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
             </button>
             <button style={tabStyle(tab === "team")} onClick={() => setTab("team")}>
               👥 Team Roster
+            </button>
+            <button style={tabStyle(tab === "tasks")} onClick={() => setTab("tasks")}>
+              ✅ Master Tasks
+            </button>
+            <button style={tabStyle(tab === "plan")} onClick={() => setTab("plan")}>
+              📄 Business Plan
             </button>
           </div>
         </div>
@@ -632,7 +779,7 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
               </div>
             )}
           </div>
-        ) : (
+        ) : tab === "team" ? (
           /* Team Tab */
           <div>
             {team.length === 0 ? (
@@ -643,6 +790,146 @@ export function BusinessView({ onBack }: { onBack?: () => void }) {
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
                 {team.map(m => <TeamCard key={m.id} member={m} />)}
+              </div>
+            )}
+          </div>
+        ) : tab === "tasks" ? (
+          /* Master Task List Tab */
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+              <span style={{ fontSize: 13, color: C.sub, fontFamily: F }}>Filter:</span>
+              {(["active", "done", "all"] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setTaskFilter(f)}
+                  style={{
+                    padding: "5px 14px", borderRadius: 20, border: `1px solid ${taskFilter === f ? "#F97316" : C.brd}`,
+                    background: taskFilter === f ? "#FFF7ED" : "none",
+                    color: taskFilter === f ? "#F97316" : C.sub, fontSize: 12, cursor: "pointer",
+                    fontWeight: taskFilter === f ? 700 : 400, fontFamily: F,
+                  }}
+                >{f === "active" ? "Active" : f === "done" ? "Done" : "All"}</button>
+              ))}
+              <button
+                onClick={loadTasks}
+                disabled={tasksLoading}
+                style={{
+                  marginLeft: "auto", padding: "5px 12px", borderRadius: 7, border: `1px solid ${C.brd}`,
+                  background: C.card, color: C.sub, fontSize: 12, cursor: "pointer", fontFamily: F,
+                }}
+              >{tasksLoading ? "Loading…" : "↻ Refresh"}</button>
+            </div>
+
+            {tasksLoading ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: C.mut, fontFamily: F }}>Loading tasks…</div>
+            ) : tasks.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: C.mut, fontFamily: F }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.sub }}>No tasks found</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {tasks
+                  .filter(t => {
+                    if (taskFilter === "active") return t.status !== "done" && t.status !== "completed";
+                    if (taskFilter === "done") return t.status === "done" || t.status === "completed";
+                    return true;
+                  })
+                  .map(t => {
+                    const isDone = t.status === "done" || t.status === "completed";
+                    const priorityColors: Record<string, string> = { high: C.red, medium: C.amb, low: C.grn, critical: "#7C3AED" };
+                    const pColor = t.priority ? (priorityColors[t.priority.toLowerCase()] || C.sub) : C.sub;
+                    return (
+                      <div key={t.id} style={{
+                        background: C.card, border: `1px solid ${C.brd}`, borderRadius: 9,
+                        padding: "12px 16px", display: "flex", alignItems: "flex-start", gap: 12,
+                        opacity: isDone ? 0.6 : 1,
+                      }}>
+                        <div style={{ width: 3, borderRadius: 2, alignSelf: "stretch", background: pColor, flexShrink: 0 }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{
+                            fontSize: 14, fontWeight: 600, color: isDone ? C.mut : C.tx,
+                            textDecoration: isDone ? "line-through" : "none", fontFamily: F, lineHeight: 1.4,
+                          }}>{t.title}</div>
+                          <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+                            {t.source && <span style={{ fontSize: 11, color: C.mut, fontFamily: F }}>{t.source}</span>}
+                            {t.owner && <span style={{ fontSize: 11, color: C.sub, fontFamily: F }}>→ {t.owner}</span>}
+                            {t.dueDate && <span style={{ fontSize: 11, color: C.mut, fontFamily: F }}>📅 {t.dueDate}</span>}
+                            {t.priority && <span style={{ fontSize: 11, fontWeight: 600, color: pColor, fontFamily: F }}>{t.priority}</span>}
+                          </div>
+                          {t.notes && (
+                            <div style={{ fontSize: 12, color: C.sub, marginTop: 4, fontFamily: F }}>{t.notes}</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Business Plan / Docs Tab */
+          <div>
+
+            {docsLoading ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: C.mut, fontFamily: F }}>Loading…</div>
+            ) : docs.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: C.mut, fontFamily: F }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.sub, marginBottom: 8 }}>
+                  No business documents loaded yet
+                </div>
+                <div style={{ fontSize: 13, color: C.mut, marginBottom: 16 }}>
+                  Click "Refresh from Drive" to load your 90-day plan and business plan
+                </div>
+                <button
+                  onClick={async () => {
+                    setRefreshingDrive(true);
+                    try { await post("/sheets/ingest-90-day-plan", {}); } catch { /* ignore */ }
+                    await loadDocs();
+                    setRefreshingDrive(false);
+                  }}
+                  disabled={refreshingDrive}
+                  style={{
+                    padding: "9px 20px", borderRadius: 7, border: "none",
+                    background: "#F97316", color: "#fff", fontSize: 13, fontWeight: 700,
+                    cursor: "pointer", fontFamily: F,
+                  }}
+                >{refreshingDrive ? "Loading…" : "↻ Refresh from Drive"}</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                {docs.map(doc => (
+                  <div key={doc.id} style={{
+                    background: C.card, border: `1px solid ${C.brd}`, borderRadius: 12, padding: "20px 24px",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                      <span style={{ fontSize: 22 }}>{doc.documentType === "business_plan" ? "🏢" : doc.documentType === "90_day_plan" ? "📅" : "📄"}</span>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: C.tx, fontFamily: F }}>
+                          {doc.documentType === "business_plan" ? "FlipIQ Business Plan" :
+                           doc.documentType === "90_day_plan" ? "90-Day Plan" :
+                           doc.documentType.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                        </div>
+                        {doc.lastUpdated && (
+                          <div style={{ fontSize: 11, color: C.mut, fontFamily: F }}>
+                            Last updated: {new Date(doc.lastUpdated).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {doc.summary && (
+                      <div style={{
+                        background: C.bg, borderRadius: 8, padding: "12px 14px",
+                        fontSize: 13, color: C.sub, fontFamily: F, lineHeight: 1.6,
+                        maxHeight: 300, overflowY: "auto",
+                        whiteSpace: "pre-wrap",
+                      }}>
+                        {doc.summary}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>

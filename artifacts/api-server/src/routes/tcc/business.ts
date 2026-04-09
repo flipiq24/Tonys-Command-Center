@@ -81,6 +81,8 @@ router.patch("/business/goals/:id", async (req, res): Promise<void> => {
       await db.insert(goalCompletionsTable).values({ goalId: id, goalTitle: goal.title, horizon: goal.horizon }).catch(() => {});
     }
 
+    push411ToSheet().catch(() => {});
+
     res.json(goal);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -90,6 +92,7 @@ router.patch("/business/goals/:id", async (req, res): Promise<void> => {
 router.delete("/business/goals/:id", async (req, res): Promise<void> => {
   try {
     await db.delete(companyGoalsTable).where(eq(companyGoalsTable.id, req.params.id));
+    push411ToSheet().catch(() => {});
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -154,9 +157,7 @@ router.patch("/business/team/:id", async (req, res): Promise<void> => {
 
 router.post("/business/team/seed", async (_req, res): Promise<void> => {
   try {
-    const existing = await db.select().from(teamRolesTable);
-    if (existing.length > 0) { res.json({ ok: true, seeded: false, reason: "Team already exists" }); return; }
-    await db.insert(teamRolesTable).values([
+    const defaults = [
       {
         name: "Tony Diaz", slackId: "U0991BAS0TC", email: "tony@flipiq.com", role: "CEO",
         responsibilities: ["Sales strategy", "Acquisition associate oversight", "Key deal relationships", "Company vision"],
@@ -177,7 +178,13 @@ router.post("/business/team/seed", async (_req, res): Promise<void> => {
         responsibilities: ["Sales calls", "Lead follow-up", "Demo scheduling", "Pipeline management"],
         currentFocus: "2 deals/month target", position: 3,
       },
-    ]);
+    ];
+    for (const m of defaults) {
+      await db.insert(teamRolesTable).values(m).onConflictDoUpdate({
+        target: teamRolesTable.name,
+        set: { role: m.role, slackId: m.slackId, email: m.email, currentFocus: m.currentFocus, position: m.position, updatedAt: new Date() },
+      });
+    }
     res.json({ ok: true, seeded: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -239,16 +246,25 @@ export async function sync411FromSheet(): Promise<void> {
       const normalized = horizon.replace(/[^a-z0-9]/g, "").replace("year", "yr").replace("quarter", "quarterly").replace("5yr", "5yr").replace("1yr", "1yr");
       const finalHorizon = HORIZON_ORDER.includes(normalized) ? normalized : horizon;
 
+      const owner = ownerIdx >= 0 ? String(row[ownerIdx] || "Tony").trim() || "Tony" : "Tony";
+      const status = statusIdx >= 0 ? String(row[statusIdx] || "active").trim().toLowerCase() || "active" : "active";
+      const description = descIdx >= 0 ? String(row[descIdx] || "").trim() || null : null;
+      const dueDate = dueDateIdx >= 0 ? String(row[dueDateIdx] || "").trim() || null : null;
+      const sheetRowRef = String(i + 1);
+
       await db.insert(companyGoalsTable).values({
         horizon: finalHorizon,
         title,
-        description: descIdx >= 0 ? String(row[descIdx] || "").trim() || null : null,
-        owner: ownerIdx >= 0 ? String(row[ownerIdx] || "Tony").trim() || "Tony" : "Tony",
-        status: statusIdx >= 0 ? String(row[statusIdx] || "active").trim().toLowerCase() || "active" : "active",
-        dueDate: dueDateIdx >= 0 ? String(row[dueDateIdx] || "").trim() || null : null,
+        description,
+        owner,
+        status,
+        dueDate: dueDate || null,
         position: i - 1,
-        sheetRowRef: String(i + 1),
-      }).onConflictDoNothing();
+        sheetRowRef,
+      }).onConflictDoUpdate({
+        target: [companyGoalsTable.horizon, companyGoalsTable.title],
+        set: { description, owner, status, dueDate: dueDate || null, position: i - 1, sheetRowRef, updatedAt: new Date() },
+      });
       synced++;
     }
     console.log(`[business] sync411FromSheet: ${synced} goals synced from sheet`);
@@ -283,13 +299,19 @@ export async function syncTeamFromSheet(): Promise<void> {
       const role = String(row[roleIdx] || "").trim();
       if (!name || !role) continue;
 
+      const teamEmail = emailIdx >= 0 ? String(row[emailIdx] || "").trim() || null : null;
+      const teamFocus = focusIdx >= 0 ? String(row[focusIdx] || "").trim() || null : null;
+      const teamResp = respIdx >= 0 ? String(row[respIdx] || "").split(",").map((s: string) => s.trim()).filter(Boolean) : [];
       await db.insert(teamRolesTable).values({
         name, role,
-        email: emailIdx >= 0 ? String(row[emailIdx] || "").trim() || null : null,
-        currentFocus: focusIdx >= 0 ? String(row[focusIdx] || "").trim() || null : null,
-        responsibilities: respIdx >= 0 ? String(row[respIdx] || "").split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+        email: teamEmail,
+        currentFocus: teamFocus,
+        responsibilities: teamResp,
         position: i - 1,
-      }).onConflictDoNothing();
+      }).onConflictDoUpdate({
+        target: teamRolesTable.name,
+        set: { role, email: teamEmail, currentFocus: teamFocus, responsibilities: teamResp, position: i - 1, updatedAt: new Date() },
+      });
     }
     console.log(`[business] syncTeamFromSheet: team synced from sheet`);
   } catch (err) {

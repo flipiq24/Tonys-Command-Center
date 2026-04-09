@@ -170,3 +170,47 @@ export const manualScheduleEventsTable = pgTable("manual_schedule_events", {
 }, (table) => [
   index("idx_mse_date").on(table.date),
 ]);
+
+export const companyGoalsTable = pgTable("company_goals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  horizon: text("horizon").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  owner: text("owner").default("Tony"),
+  status: text("status").default("active"),
+  dueDate: date("due_date"),
+  position: integer("position").default(0),
+  sheetRowRef: text("sheet_row_ref"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_cg_horizon").on(table.horizon),
+  index("idx_cg_owner").on(table.owner),
+  index("idx_cg_status").on(table.status),
+  index("idx_cg_position").on(table.position),
+]);
+
+export const teamRolesTable = pgTable("team_roles", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  slackId: text("slack_id"),
+  email: text("email"),
+  role: text("role").notNull(),
+  responsibilities: jsonb("responsibilities").default("[]"),
+  currentFocus: text("current_focus"),
+  metrics: jsonb("metrics").default("{}"),
+  position: integer("position").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_tr_name").on(table.name),
+]);
+
+export const goalCompletionsTable = pgTable("goal_completions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  goalId: uuid("goal_id").references(() => companyGoalsTable.id, { onDelete: "cascade" }),
+  goalTitle: text("goal_title").notNull(),
+  horizon: text("horizon").notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }).defaultNow(),
+});

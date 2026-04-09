@@ -803,42 +803,48 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
 
   return (
     <div>
-      {/* Header row */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={selStyle}>
-          <option value="">All categories</option>
-          {CAT_KEYS.map(c => <option key={c} value={c}>{CAT_LABELS[c]}</option>)}
-        </select>
-        <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} style={selStyle}>
-          <option value="">All owners</option>
-          {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} style={selStyle}>
-          <option value="">All priorities</option>
-          <option value="P0">P0 — Critical</option>
-          <option value="P1">P1 — High</option>
-          <option value="P2">P2 — Standard</option>
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-          <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="completed">Completed</option>
-        </select>
-        <span style={{ marginLeft: "auto", fontSize: 12, color: C.mut }}>{loading ? "Loading…" : `${displayed.length} tasks`}</span>
-        <button onClick={() => setShowAdd(true)} style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#F97316", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>+ Add task</button>
+      {/* Sticky filter bar */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 30,
+        background: "#fff", borderBottom: `2px solid ${C.brd}`,
+        padding: "10px 0 10px",
+        marginBottom: 0,
+      }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={selStyle}>
+            <option value="">All categories</option>
+            {CAT_KEYS.map(c => <option key={c} value={c}>{CAT_LABELS[c]}</option>)}
+          </select>
+          <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} style={selStyle}>
+            <option value="">All owners</option>
+            {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} style={selStyle}>
+            <option value="">All priorities</option>
+            <option value="P0">P0 — Critical</option>
+            <option value="P1">P1 — High</option>
+            <option value="P2">P2 — Standard</option>
+          </select>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+          </select>
+          <span style={{ marginLeft: "auto", fontSize: 11, color: C.mut }}>
+            {loading ? "Loading…" : `${displayed.length} tasks`}
+          </span>
+          <span style={{ fontSize: 10, color: C.mut, fontFamily: F }}>⠿ drag to reorder</span>
+          <button onClick={() => setShowAdd(true)} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#F97316", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>+ Add task</button>
+        </div>
       </div>
 
-      <div style={{ fontSize: 11, color: C.mut, fontFamily: F, marginBottom: 10 }}>
-        ⠿ drag rows to reorder · sprint ID = category code + position (e.g. ADP-01)
-      </div>
-
-      {/* Table */}
-      <div style={{ overflowX: "auto", borderRadius: 10, border: `1px solid ${C.brd}` }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+      {/* Table — full-width, scrollable */}
+      <div style={{ overflowX: "auto", borderRadius: "0 0 10px 10px", border: `1px solid ${C.brd}`, marginTop: 12 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
           <thead>
             <tr style={{ background: C.card, borderBottom: `2px solid ${C.brd}` }}>
               {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Priority","Status","Due Date","Notes","Linear"].map((h, i) => (
-                <th key={i} style={{ fontSize: 10, fontWeight: 700, color: C.sub, textAlign: "left", padding: "8px 10px", whiteSpace: "nowrap", borderRight: `1px solid ${C.brd}` }}>{h}</th>
+                <th key={i} style={{ position: "sticky", top: 0, background: C.card, fontSize: 10, fontWeight: 700, color: C.sub, textAlign: "left", padding: "8px 10px", whiteSpace: "nowrap", borderRight: `1px solid ${C.brd}`, borderBottom: `2px solid ${C.brd}`, zIndex: 10 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -1362,7 +1368,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
       </div>
 
       {/* Body */}
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "24px 32px" }}>
+      <div style={{ maxWidth: tab === "tasks" ? "none" : 1000, margin: "0 auto", padding: tab === "tasks" ? "0 16px 24px" : "24px 32px" }}>
         {err && (
           <div style={{ background: C.redBg, border: `1px solid ${C.red}`, borderRadius: 8, padding: "10px 14px", color: C.red, fontSize: 13, marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
             {err}<button onClick={() => setErr(null)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer" }}>✕</button>

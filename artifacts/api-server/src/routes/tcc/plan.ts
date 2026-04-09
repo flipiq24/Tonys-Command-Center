@@ -1,13 +1,45 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { planItemsTable } from "../../lib/schema-v2";
-import { eq, and, asc, isNull, inArray } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type PlanItem = typeof planItemsTable.$inferSelect;
+
+// ─── Sprint ID helper ─────────────────────────────────────────────────────────
+
+const CAT_PREFIX: Record<string, string> = {
+  adaptation: "ADP",
+  sales:      "SLS",
+  tech:       "TCH",
+  capital:    "CAP",
+  team:       "TME",
+};
+
+function assignSprintIds(tasks: PlanItem[]): (PlanItem & { sprintId: string })[] {
+  // Group by category, sort by priorityOrder within each
+  const byCategory: Record<string, PlanItem[]> = {};
+  for (const t of tasks) {
+    const cat = t.category || "misc";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(t);
+  }
+  for (const cat of Object.keys(byCategory)) {
+    byCategory[cat].sort((a, b) => (a.priorityOrder ?? 999) - (b.priorityOrder ?? 999));
+  }
+  return tasks.map(t => {
+    const cat = t.category || "misc";
+    const idx = (byCategory[cat] || []).findIndex(x => x.id === t.id);
+    const prefix = CAT_PREFIX[cat] || cat.slice(0, 3).toUpperCase();
+    const sprintId = `${prefix}-${String(idx + 1).padStart(2, "0")}`;
+    return { ...t, sprintId };
+  });
+}
+
+const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2, High: 1, Low: 3 };
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 
@@ -51,7 +83,6 @@ const SEED_SUBCATEGORIES: { category: string; title: string; priorityOrder: numb
   { category: "team", title: "SOW Updates",            priorityOrder: 5 },
 ];
 
-// Tasks per subcategory (seeded from spec + reasonable placeholders)
 const SEED_TASKS: {
   category: string; subcategory: string; title: string; owner: string;
   priority: string; dueDate: string; weekNumber: number; month: string;
@@ -177,26 +208,26 @@ const SEED_TASKS: {
   // Team: PM/Engineer Hire (4 tasks)
   { category:"team", subcategory:"PM/Engineer Hire", title:"Ethan: PM/Engineer job spec finalized", owner:"Ethan", priority:"P0", dueDate:"2026-04-14", weekNumber:1, month:"2026-04", atomicKpi:"PM hire frees Tony 20-30% of sales time", source:"TCC", executionTier:"Strategic" },
   { category:"team", subcategory:"PM/Engineer Hire", title:"Ethan: PM/Engineer candidates sourced (3+)", owner:"Ethan", priority:"P0", dueDate:"2026-04-21", weekNumber:3, month:"2026-04", atomicKpi:"PM removes Tony from engineering overhead", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"PM/Engineer Hire", title:"Tony: PM/Engineer interview 2 candidates", owner:"Tony", priority:"P1", dueDate:"2026-04-25", weekNumber:3, month:"2026-04", atomicKpi:"Right PM = Tony focused on deals", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"PM/Engineer Hire", title:"Ethan: PM/Engineer offer extended", owner:"Ethan", priority:"P1", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"PM hired = Tony back on sales 100%", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"PM/Engineer Hire", title:"Tony: PM/Engineer interviews (final round)", owner:"Tony", priority:"P0", dueDate:"2026-04-28", weekNumber:4, month:"2026-04", atomicKpi:"PM hired = AAA starts on time", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"PM/Engineer Hire", title:"Ethan: PM offer letter sent", owner:"Ethan", priority:"P0", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"PM offer = engineering ownership transferred", source:"TCC", executionTier:"Strategic" },
 
   // Team: Onboarding Manager (3 tasks)
-  { category:"team", subcategory:"Onboarding Manager", title:"Ethan: Onboarding Manager JD posted", owner:"Ethan", priority:"P1", dueDate:"2026-04-18", weekNumber:2, month:"2026-04", atomicKpi:"Onboarding Manager = Ramy not single point of failure", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"Onboarding Manager", title:"Ramy: Onboarding Manager process documented", owner:"Ramy", priority:"P1", dueDate:"2026-04-25", weekNumber:3, month:"2026-04", atomicKpi:"Documented process = scalable onboarding", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"Onboarding Manager", title:"Ethan: Onboarding Manager hire decision", owner:"Ethan", priority:"P1", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"OM hired = Ramy has backup for CS ops", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"Onboarding Manager", title:"Ethan: onboarding manager job spec", owner:"Ethan", priority:"P1", dueDate:"2026-04-21", weekNumber:3, month:"2026-04", atomicKpi:"Onboarding manager = Ramy single-point risk eliminated", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"Onboarding Manager", title:"Ethan: onboarding manager candidates sourced", owner:"Ethan", priority:"P1", dueDate:"2026-04-28", weekNumber:4, month:"2026-04", atomicKpi:"Dedicated onboarding = faster operator activation", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"Onboarding Manager", title:"Tony: onboarding manager interview", owner:"Tony", priority:"P2", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"Hire = operaror onboarding scales without Ramy", source:"TCC", executionTier:"Strategic" },
 
   // Team: Adaptation Manager (3 tasks)
-  { category:"team", subcategory:"Adaptation Manager", title:"Ethan: Adaptation Manager JD posted", owner:"Ethan", priority:"P1", dueDate:"2026-04-21", weekNumber:3, month:"2026-04", atomicKpi:"AM = proactive feature adoption without Ramy", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"Adaptation Manager", title:"Ramy: AM scope defined (does/doesn't)", owner:"Ramy", priority:"P1", dueDate:"2026-04-25", weekNumber:3, month:"2026-04", atomicKpi:"Clear scope = effective AM hire", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"Adaptation Manager", title:"Ethan: AM hire decision", owner:"Ethan", priority:"P2", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"AM hired = scale adaptation without Ramy alone", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"Adaptation Manager", title:"Ethan: adaptation manager job spec", owner:"Ethan", priority:"P1", dueDate:"2026-04-21", weekNumber:3, month:"2026-04", atomicKpi:"Adaptation manager = proactive churn prevention", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"Adaptation Manager", title:"Ethan: adaptation manager candidates sourced", owner:"Ethan", priority:"P2", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"Dedicated AM = AA feature adoption scales", source:"TCC", executionTier:"Strategic" },
+  { category:"team", subcategory:"Adaptation Manager", title:"Tony: adaptation manager interview", owner:"Tony", priority:"P2", dueDate:"2026-04-30", weekNumber:4, month:"2026-04", atomicKpi:"AM hire = Ramy not single point of failure", source:"TCC", executionTier:"Strategic" },
 
-  // Team: Nate Transition (3 tasks)
-  { category:"team", subcategory:"Nate Transition", title:"Nate: resolve 29 orphaned Linear issues (Mar 6)", owner:"Nate", priority:"P0", dueDate:"2026-04-14", weekNumber:1, month:"2026-04", atomicKpi:"Orphaned issues resolved = no P0 tech debt blocking AAs", source:"Linear", executionTier:"Sprint" },
-  { category:"team", subcategory:"Nate Transition", title:"Nate: PM knowledge transfer document", owner:"Nate", priority:"P0", dueDate:"2026-04-21", weekNumber:3, month:"2026-04", atomicKpi:"Knowledge transfer = PM hire succeeds faster", source:"TCC", executionTier:"Strategic" },
-  { category:"team", subcategory:"Nate Transition", title:"Ethan: Nate transition plan signed off", owner:"Ethan", priority:"P1", dueDate:"2026-04-25", weekNumber:3, month:"2026-04", atomicKpi:"Smooth transition = no engineering gaps", source:"TCC", executionTier:"Strategic" },
+  // Team: Nate Transition (4 tasks)
+  { category:"team", subcategory:"Nate Transition", title:"Nate: foundation knowledge transfer to Haris", owner:"Nate", priority:"P0", dueDate:"2026-04-14", weekNumber:1, month:"2026-04", atomicKpi:"Haris owns foundation = Nate at SLA only", source:"OAP", executionTier:"Strategic" },
+  { category:"team", subcategory:"Nate Transition", title:"Nate: PM knowledge transfer plan", owner:"Nate", priority:"P0", dueDate:"2026-04-21", weekNumber:3, month:"2026-04", atomicKpi:"PM inherits Nate context = seamless transition", source:"OAP", executionTier:"Strategic" },
+  { category:"team", subcategory:"Nate Transition", title:"Ethan: Nate SLA terms confirmed in writing", owner:"Ethan", priority:"P1", dueDate:"2026-04-14", weekNumber:1, month:"2026-04", atomicKpi:"Written SLA = no open-ended Nate commitments", source:"OAP", executionTier:"Strategic" },
+  { category:"team", subcategory:"Nate Transition", title:"Nate: 29 orphaned issues triaged with Ethan", owner:"Nate", priority:"P0", dueDate:"2026-04-14", weekNumber:1, month:"2026-04", atomicKpi:"No P0 issues orphaned = risk eliminated", source:"TCC", executionTier:"Sprint" },
 
-  // Team: SOW Updates (4 tasks)
-  { category:"team", subcategory:"SOW Updates", title:"Ethan: all SOWs updated to April scope", owner:"Ethan", priority:"P0", dueDate:"2026-04-14", weekNumber:1, month:"2026-04", atomicKpi:"Clear SOWs = team execution without Tony oversight", source:"TCC", executionTier:"Strategic" },
+  // Team: SOW Updates (3 tasks)
   { category:"team", subcategory:"SOW Updates", title:"Tony: review Ramy SOW with Ethan", owner:"Tony", priority:"P1", dueDate:"2026-04-11", weekNumber:1, month:"2026-04", atomicKpi:"Ramy SOW clarity = CS runs without Tony", source:"TCC", executionTier:"Strategic" },
   { category:"team", subcategory:"SOW Updates", title:"Ethan: weekly SOW accountability check (Fridays)", owner:"Ethan", priority:"P1", dueDate:"2026-04-11", weekNumber:1, month:"2026-04", atomicKpi:"Accountability = team delivers on deals per month", source:"TCC", executionTier:"Maintenance" },
   { category:"team", subcategory:"SOW Updates", title:"Ethan: Friday accountability report to Tony", owner:"Ethan", priority:"P1", dueDate:"2026-04-11", weekNumber:1, month:"2026-04", atomicKpi:"Tony knows team status without daily check-ins", source:"TCC", executionTier:"Maintenance" },
@@ -209,7 +240,6 @@ async function seedPlanIfEmpty(): Promise<void> {
     .from(planItemsTable).limit(1);
   if (existing.length > 0) return;
 
-  // Insert categories
   const categoryRows = await db.insert(planItemsTable).values(
     SEED_CATEGORIES.map(c => ({
       level: "category" as const,
@@ -222,7 +252,6 @@ async function seedPlanIfEmpty(): Promise<void> {
 
   const catByKey = Object.fromEntries(categoryRows.map(r => [r.category, r]));
 
-  // Insert subcategories
   const subcatRows = await db.insert(planItemsTable).values(
     SEED_SUBCATEGORIES.map(s => ({
       level: "subcategory" as const,
@@ -239,7 +268,6 @@ async function seedPlanIfEmpty(): Promise<void> {
     subcatRows.map(r => [`${r.category}:${r.title}`, r])
   );
 
-  // Insert tasks
   await db.insert(planItemsTable).values(
     SEED_TASKS.map((t, i) => ({
       level: "task" as const,
@@ -263,7 +291,6 @@ async function seedPlanIfEmpty(): Promise<void> {
   console.log("[plan] Seeded plan_items: 5 categories, 25 subcategories, %d tasks", SEED_TASKS.length);
 }
 
-// Auto-seed on startup
 seedPlanIfEmpty().catch(e => console.warn("[plan] Seed failed:", e.message));
 
 // ─── Parent completion check ──────────────────────────────────────────────────
@@ -280,7 +307,6 @@ async function checkParentCompletion(taskId: string): Promise<void> {
     await db.update(planItemsTable).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
       .where(eq(planItemsTable.id, task.parentId));
 
-    // Check grandparent (category)
     const [subcat] = await db.select().from(planItemsTable).where(eq(planItemsTable.id, task.parentId));
     if (subcat?.parentId) {
       const parentSiblings = await db.select().from(planItemsTable)
@@ -294,13 +320,41 @@ async function checkParentCompletion(taskId: string): Promise<void> {
   }
 }
 
+// ─── Linear sync helper ───────────────────────────────────────────────────────
+
+async function syncLinearComplete(linearId: string, complete: boolean): Promise<void> {
+  const key = process.env.LINEAR_API_KEY;
+  if (!key || !linearId) return;
+
+  // Get states for the issue's team, find completed state
+  const statesResp = await fetch("https://api.linear.app/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": key },
+    body: JSON.stringify({
+      query: `query { issue(id: "${linearId}") { team { states { nodes { id type } } } } }`
+    })
+  }).then(r => r.json()).catch(() => null);
+
+  const states = statesResp?.data?.issue?.team?.states?.nodes || [];
+  const targetType = complete ? "completed" : "started";
+  const targetState = states.find((s: any) => s.type === targetType);
+  if (!targetState) return;
+
+  await fetch("https://api.linear.app/graphql", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": key },
+    body: JSON.stringify({
+      query: `mutation { issueUpdate(id: "${linearId}", input: { stateId: "${targetState.id}" }) { success } }`
+    })
+  }).catch(() => null);
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
-// GET /plan/categories — categories with subcategories and task counts
+// GET /plan/categories — full hierarchy for 411 plan view
 router.get("/plan/categories", async (_req, res): Promise<void> => {
   try {
     const all = await db.select().from(planItemsTable).orderBy(asc(planItemsTable.priorityOrder), asc(planItemsTable.createdAt));
-
     const categories = all.filter(i => i.level === "category");
     const subcategories = all.filter(i => i.level === "subcategory");
     const tasks = all.filter(i => i.level === "task");
@@ -314,7 +368,7 @@ router.get("/plan/categories", async (_req, res): Promise<void> => {
       return {
         ...cat,
         subcategories: mySubs.map(sub => {
-          const subTasks = tasks.filter(t => t.parentId === sub.id);
+          const subTasks = tasks.filter(t => t.parentId === sub.id).sort((a, b) => (a.priorityOrder ?? 999) - (b.priorityOrder ?? 999));
           return {
             ...sub,
             tasks: subTasks,
@@ -333,7 +387,7 @@ router.get("/plan/categories", async (_req, res): Promise<void> => {
   }
 });
 
-// GET /plan — same as categories (alias)
+// GET /plan — alias
 router.get("/plan", async (_req, res): Promise<void> => {
   try {
     const all = await db.select().from(planItemsTable).orderBy(asc(planItemsTable.priorityOrder), asc(planItemsTable.createdAt));
@@ -351,7 +405,6 @@ router.get("/plan/weekly/:month", async (req, res): Promise<void> => {
       .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.month, month)))
       .orderBy(asc(planItemsTable.weekNumber), asc(planItemsTable.priorityOrder));
 
-    // Group by owner and week
     const byOwner: Record<string, Record<number, PlanItem[]>> = {};
     for (const task of tasks) {
       const owner = task.owner || "Unassigned";
@@ -367,6 +420,39 @@ router.get("/plan/weekly/:month", async (req, res): Promise<void> => {
   }
 });
 
+// GET /plan/tasks — flat task list with sprintIds for master table
+router.get("/plan/tasks", async (req, res): Promise<void> => {
+  try {
+    const filters: any[] = [eq(planItemsTable.level, "task")];
+    if (req.query.category) filters.push(eq(planItemsTable.category, req.query.category as string));
+    if (req.query.owner) filters.push(eq(planItemsTable.owner, req.query.owner as string));
+    if (req.query.status) filters.push(eq(planItemsTable.status, req.query.status as string));
+
+    const tasks = await db.select().from(planItemsTable)
+      .where(and(...filters))
+      .orderBy(asc(planItemsTable.category), asc(planItemsTable.priorityOrder));
+
+    const tasksWithSprintIds = assignSprintIds(tasks);
+
+    res.json({ tasks: tasksWithSprintIds, total: tasks.length });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /plan/subcategories/:category — return subcategory list for a category
+router.get("/plan/subcategories/:category", async (req, res): Promise<void> => {
+  try {
+    const { category } = req.params;
+    const subs = await db.select().from(planItemsTable)
+      .where(and(eq(planItemsTable.level, "subcategory"), eq(planItemsTable.category, category)))
+      .orderBy(asc(planItemsTable.priorityOrder));
+    res.json({ subcategories: subs });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // POST /plan/task/:id/complete
 router.post("/plan/task/:id/complete", async (req, res): Promise<void> => {
   try {
@@ -375,7 +461,6 @@ router.post("/plan/task/:id/complete", async (req, res): Promise<void> => {
     if (!item) { res.status(404).json({ error: "Not found" }); return; }
 
     if (item.level !== "task") {
-      // Count incomplete tasks under this item
       const subItems = await db.select().from(planItemsTable)
         .where(and(eq(planItemsTable.parentId, id), eq(planItemsTable.status, "active")));
       if (subItems.length > 0) {
@@ -390,6 +475,10 @@ router.post("/plan/task/:id/complete", async (req, res): Promise<void> => {
 
     if (item.level === "task") {
       await checkParentCompletion(id);
+      // Sync to Linear if configured
+      if (item.linearId) {
+        syncLinearComplete(item.linearId, true).catch(e => console.warn("[plan] Linear sync failed:", e.message));
+      }
     }
 
     res.json({ ok: true, item: updated });
@@ -402,12 +491,13 @@ router.post("/plan/task/:id/complete", async (req, res): Promise<void> => {
 router.post("/plan/task/:id/uncomplete", async (req, res): Promise<void> => {
   try {
     const { id } = req.params;
+    const [item] = await db.select().from(planItemsTable).where(eq(planItemsTable.id, id));
+    if (!item) { res.status(404).json({ error: "Not found" }); return; }
+
     const [updated] = await db.update(planItemsTable)
       .set({ status: "active", completedAt: null, completedBy: null, updatedAt: new Date() })
       .where(eq(planItemsTable.id, id)).returning();
-    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
 
-    // Re-open all ancestors
     if (updated.parentId) {
       await db.update(planItemsTable).set({ status: "active", completedAt: null, updatedAt: new Date() })
         .where(eq(planItemsTable.id, updated.parentId));
@@ -416,6 +506,11 @@ router.post("/plan/task/:id/uncomplete", async (req, res): Promise<void> => {
         await db.update(planItemsTable).set({ status: "active", completedAt: null, updatedAt: new Date() })
           .where(eq(planItemsTable.id, parent.parentId));
       }
+    }
+
+    // Sync to Linear
+    if (item.linearId) {
+      syncLinearComplete(item.linearId, false).catch(e => console.warn("[plan] Linear sync failed:", e.message));
     }
 
     res.json({ ok: true, item: updated });
@@ -428,10 +523,10 @@ router.post("/plan/task/:id/uncomplete", async (req, res): Promise<void> => {
 router.patch("/plan/item/:id", async (req, res): Promise<void> => {
   try {
     const { id } = req.params;
-    const allowed = ["title","owner","priority","dueDate","weekNumber","status","workNotes","atomicKpi","source","executionTier","linearId"];
+    const allowed = ["title","owner","priority","dueDate","weekNumber","status","workNotes","atomicKpi","source","executionTier","linearId","subcategory"];
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
-      if (req.body[key] !== undefined) updates[key === "dueDate" ? "dueDate" : key] = req.body[key];
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     const [updated] = await db.update(planItemsTable).set(updates).where(eq(planItemsTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Not found" }); return; }
@@ -441,19 +536,168 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
   }
 });
 
-// GET /plan/tasks — flat task list for master task view
-router.get("/plan/tasks", async (req, res): Promise<void> => {
+// POST /plan/task — create a new task with smart priority placement
+router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const filters: Parameters<typeof and>[] = [eq(planItemsTable.level, "task")];
-    if (req.query.category) filters.push(eq(planItemsTable.category, req.query.category as string) as any);
-    if (req.query.owner) filters.push(eq(planItemsTable.owner, req.query.owner as string) as any);
-    if (req.query.status) filters.push(eq(planItemsTable.status, req.query.status as string) as any);
+    const { category, subcategoryName, title, owner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes } = req.body;
 
-    const tasks = await db.select().from(planItemsTable)
-      .where(and(...(filters as any[])))
-      .orderBy(asc(planItemsTable.category), asc(planItemsTable.priorityOrder));
+    if (!category || !title) {
+      res.status(400).json({ error: "category and title are required" });
+      return;
+    }
 
-    res.json({ tasks, total: tasks.length });
+    // Find parent subcategory
+    const [subcatRow] = await db.select().from(planItemsTable).where(and(
+      eq(planItemsTable.level, "subcategory"),
+      eq(planItemsTable.category, category),
+      eq(planItemsTable.title, subcategoryName)
+    ));
+
+    // Find parent category
+    const [catRow] = await db.select().from(planItemsTable).where(and(
+      eq(planItemsTable.level, "category"),
+      eq(planItemsTable.category, category)
+    ));
+    if (!catRow) { res.status(400).json({ error: "Category not found" }); return; }
+
+    // Get all tasks in this category sorted by priority+order
+    const existingTasks = await db.select().from(planItemsTable)
+      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.category, category)))
+      .orderBy(asc(planItemsTable.priorityOrder));
+
+    // Find insertion position based on priority rank
+    const newRank = PRIORITY_RANK[priority] ?? 2;
+    let insertAfterOrder = -1;
+    for (const t of existingTasks) {
+      const tRank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
+      if (tRank <= newRank) insertAfterOrder = t.priorityOrder ?? 0;
+    }
+
+    const insertOrder = insertAfterOrder + 0.5;
+
+    // Create the task
+    const [created] = await db.insert(planItemsTable).values({
+      level: "task" as const,
+      category,
+      subcategory: subcategoryName || null,
+      title,
+      owner: owner || null,
+      priority: priority || "P2",
+      dueDate: dueDate || null,
+      weekNumber: weekNumber ? parseInt(weekNumber) : null,
+      month: month || "2026-04",
+      atomicKpi: atomicKpi || null,
+      source: source || "manual",
+      executionTier: executionTier || "Sprint",
+      workNotes: workNotes || null,
+      parentId: subcatRow?.id || catRow.id,
+      priorityOrder: insertOrder,
+      status: "active",
+    }).returning();
+
+    // Re-normalize priority orders (make them sequential integers)
+    const allTasksAfter = await db.select({ id: planItemsTable.id })
+      .from(planItemsTable)
+      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.category, category)))
+      .orderBy(asc(planItemsTable.priorityOrder));
+
+    for (let i = 0; i < allTasksAfter.length; i++) {
+      await db.update(planItemsTable).set({ priorityOrder: i })
+        .where(eq(planItemsTable.id, allTasksAfter[i].id));
+    }
+
+    // Compute sprint position
+    const taskIdx = allTasksAfter.findIndex(t => t.id === created.id);
+    const prefix = CAT_PREFIX[category] || category.slice(0, 3).toUpperCase();
+    const sprintId = `${prefix}-${String(taskIdx + 1).padStart(2, "0")}`;
+
+    // Find neighbors
+    const prevTask = taskIdx > 0 ? existingTasks[taskIdx - 1] : null;
+    const nextTask = taskIdx < allTasksAfter.length - 1 ? existingTasks[taskIdx] : null;
+
+    res.json({
+      ok: true,
+      task: { ...created, sprintId },
+      sprintId,
+      position: taskIdx + 1,
+      total: allTasksAfter.length,
+      prevTask: prevTask ? { title: prevTask.title, sprintId: `${prefix}-${String(taskIdx).padStart(2,"0")}` } : null,
+      nextTask: nextTask ? { title: nextTask.title, sprintId: `${prefix}-${String(taskIdx + 2).padStart(2,"0")}` } : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /plan/reorder — bulk update priority orders (after drag-drop)
+router.post("/plan/reorder", async (req, res): Promise<void> => {
+  try {
+    const { items } = req.body as { items: { id: string; priorityOrder: number }[] };
+    if (!Array.isArray(items)) { res.status(400).json({ error: "items must be array" }); return; }
+
+    for (const item of items) {
+      await db.update(planItemsTable)
+        .set({ priorityOrder: item.priorityOrder, updatedAt: new Date() })
+        .where(eq(planItemsTable.id, item.id));
+    }
+
+    res.json({ ok: true, updated: items.length });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// DELETE /plan/task/:id — delete a task
+router.delete("/plan/task/:id", async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params;
+    await db.delete(planItemsTable).where(eq(planItemsTable.id, id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// POST /plan/linear-webhook — receive Linear webhook events
+router.post("/plan/linear-webhook", async (req, res): Promise<void> => {
+  try {
+    const { action, type, data } = req.body;
+
+    if (type !== "Issue" || action !== "update") {
+      res.json({ ok: true, skipped: true });
+      return;
+    }
+
+    const linearId = data?.id;
+    const stateType = data?.state?.type;
+
+    if (!linearId || !stateType) {
+      res.json({ ok: true, skipped: true });
+      return;
+    }
+
+    // Find matching task
+    const [task] = await db.select().from(planItemsTable)
+      .where(and(eq(planItemsTable.linearId, linearId), eq(planItemsTable.level, "task")));
+
+    if (!task) {
+      res.json({ ok: true, skipped: true, reason: "no matching task" });
+      return;
+    }
+
+    if (stateType === "completed" && task.status !== "completed") {
+      await db.update(planItemsTable)
+        .set({ status: "completed", completedAt: new Date(), completedBy: "Linear", updatedAt: new Date() })
+        .where(eq(planItemsTable.id, task.id));
+      await checkParentCompletion(task.id);
+      console.log(`[plan] Linear webhook: marked ${task.title} completed`);
+    } else if ((stateType === "started" || stateType === "unstarted") && task.status === "completed") {
+      await db.update(planItemsTable)
+        .set({ status: "active", completedAt: null, completedBy: null, updatedAt: new Date() })
+        .where(eq(planItemsTable.id, task.id));
+    }
+
+    res.json({ ok: true, taskId: task.id });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

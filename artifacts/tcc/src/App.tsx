@@ -23,11 +23,12 @@ import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
 type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "tasks" | "chat" | "business";
-
+type BusinessTab = "goals" | "team" | "tasks" | "plan";
 
 export default function App() {
   const [view, setView] = useState<View>("dashboard");
   const [prevView, setPrevView] = useState<View>("emails");
+  const [businessTab, setBusinessTab] = useState<BusinessTab>("goals");
   const [clock, setClock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
   const [loading, setLoading] = useState(true);
 
@@ -413,7 +414,15 @@ export default function App() {
       slackItems={(brief?.slackItems || []) as SlackItem[]}
       linearItems={activeLinearItems}
       meetingWarning={meetingWarning}
-      onSetView={v => persistView(v as View)}
+      onSetView={v => {
+        if (v.startsWith("business:")) {
+          const tab = v.split(":")[1] as BusinessTab;
+          setBusinessTab(tab);
+          persistView("business");
+        } else {
+          persistView(v as View);
+        }
+      }}
       onToggleCal={() => setCalSide(s => !s)}
       onShowIdea={() => setShowIdea(true)}
       onShowChat={() => { setChatContext(null); persistView("chat"); }}
@@ -626,7 +635,11 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
       {sharedModals}
-      <BusinessView onBack={() => persistView("dashboard")} />
+      <BusinessView
+        defaultTab={businessTab}
+        onTabChange={setBusinessTab}
+        onBack={() => persistView("dashboard")}
+      />
     </div>
   );
 

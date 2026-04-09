@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, asc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, contactsTable } from "@workspace/db";
-import { chatThreadsTable, chatMessagesTable, communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2";
+import { chatThreadsTable, chatMessagesTable, communicationLogTable, contactIntelligenceTable, companyGoalsTable, teamRolesTable } from "../../lib/schema-v2";
 import { createLinearIssue } from "../../lib/linear";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
@@ -396,6 +396,45 @@ async function buildSystemPrompt(contextType?: string, contextId?: string): Prom
   const [brainRow] = await db.select().from(systemInstructionsTable).where(eq(systemInstructionsTable.section, "email_brain"));
   const brainSection = brainRow?.content ? `\n\nEMAIL BRAIN:\n${brainRow.content}` : "";
 
+  // Load live 411 goals and team roster for context injection
+  let goalsSection = "";
+  let teamSection = "";
+  try {
+    const [activeGoals, team] = await Promise.all([
+      db.select().from(companyGoalsTable)
+        .where(eq(companyGoalsTable.status, "active"))
+        .orderBy(asc(companyGoalsTable.position))
+        .limit(25),
+      db.select().from(teamRolesTable)
+        .orderBy(asc(teamRolesTable.position))
+        .limit(20),
+    ]);
+    if (activeGoals.length > 0) {
+      const HORIZONS = ["5yr", "1yr", "quarterly", "monthly", "weekly", "daily"];
+      const grouped: Record<string, typeof activeGoals> = {};
+      for (const h of HORIZONS) grouped[h] = [];
+      for (const g of activeGoals) {
+        const h = g.horizon || "other";
+        if (!grouped[h]) grouped[h] = [];
+        grouped[h].push(g);
+      }
+      const lines: string[] = ["\n\nFLIPIQ 411 GOAL CASCADE (active):"];
+      for (const h of HORIZONS) {
+        const items = grouped[h];
+        if (!items || items.length === 0) continue;
+        lines.push(`${h.toUpperCase()}: ${items.map((g: typeof activeGoals[0]) => `${g.title} (${g.owner || "Tony"})`).join(" | ")}`);
+      }
+      goalsSection = lines.join("\n");
+    }
+    if (team.length > 0) {
+      const lines: string[] = ["\n\nFLIPIQ TEAM:"];
+      for (const m of team) {
+        lines.push(`${m.name} — ${m.role}${m.currentFocus ? ` | Focus: ${m.currentFocus}` : ""}${m.slackId ? ` | Slack: ${m.slackId}` : ""}${m.email ? ` | ${m.email}` : ""}`);
+      }
+      teamSection = lines.join("\n");
+    }
+  } catch { /* non-blocking */ }
+
   let contextSection = "";
   if (contextType === "contact" && contextId) {
     const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, contextId)).limit(1);
@@ -433,7 +472,7 @@ KNOWN RESOURCES (always use these direct links — do not search Drive for these
 - FlipIQ Business Master Sheet: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE
 - FlipIQ Master Contact List: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE
 
-BE BRIEF. Tony doesn't like to read. Bullet points, not paragraphs.${brainSection}${contextSection}`;
+BE BRIEF. Tony doesn't like to read. Bullet points, not paragraphs.${brainSection}${goalsSection}${teamSection}${contextSection}`;
 }
 
 async function autoTitle(threadId: string, firstMessage: string): Promise<void> {

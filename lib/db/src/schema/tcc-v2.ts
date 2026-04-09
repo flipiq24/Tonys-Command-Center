@@ -180,11 +180,12 @@ export const companyGoalsTable = pgTable("company_goals", {
   status: text("status").default("active"),
   dueDate: date("due_date"),
   position: integer("position").default(0),
-  sheetRowRef: text("sheet_row_ref"),
+  sheetRowRef: text("sheet_row_ref").unique(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => [
+  uniqueIndex("idx_cg_horizon_title").on(table.horizon, table.title),
   index("idx_cg_horizon").on(table.horizon),
   index("idx_cg_owner").on(table.owner),
   index("idx_cg_status").on(table.status),
@@ -193,7 +194,7 @@ export const companyGoalsTable = pgTable("company_goals", {
 
 export const teamRolesTable = pgTable("team_roles", {
   id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name").notNull(),
+  name: text("name").notNull().unique(),
   slackId: text("slack_id"),
   email: text("email"),
   role: text("role").notNull(),

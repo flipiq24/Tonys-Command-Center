@@ -1239,10 +1239,6 @@ Be concise and action-oriented. Tony has ADHD — make it scannable.`;
 
     case "get_411_plan": {
       try {
-        const params = new URLSearchParams();
-        if (input.horizon) params.set("horizon", String(input.horizon));
-        if (input.owner) params.set("owner", String(input.owner));
-        if (input.status) params.set("status", String(input.status));
         const goals = await db.select().from(companyGoalsTable)
           .orderBy(asc(companyGoalsTable.position), asc(companyGoalsTable.createdAt));
         let filtered = goals;

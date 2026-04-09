@@ -128,12 +128,24 @@ interface TaskAlerts {
   missingDueDates: TaskAlert[];
 }
 
+type PlanTask = {
+  id: string; title: string; category: string; subcategory?: string | null;
+  owner?: string | null; priority?: string | null; sprintId?: string;
+  status?: string | null; dueDate?: string | null; priorityOrder?: number | null;
+};
+const CAT_KEYS_TV = ["adaptation", "sales", "tech", "capital", "team"] as const;
+type CatKey = typeof CAT_KEYS_TV[number];
+const CAT_LABEL_TV: Record<CatKey, string> = { adaptation: "Adaptation", sales: "Sales", tech: "Tech", capital: "Capital", team: "Team" };
+const CAT_COLOR_TV: Record<CatKey, string> = { adaptation: "#92400E", sales: "#166534", tech: "#1D4ED8", capital: "#6D28D9", team: "#374151" };
+
 export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, onBackToSchedule, onPrint }: Props) {
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
   const [alerts, setAlerts] = useState<TaskAlerts>({ outOfSequence: [], missingDueDates: [] });
-  const [pillarFilter, setPillarFilter] = useState<string | null>(null);
+  const [catFilter, setCatFilter] = useState<CatKey | null>(null);
+  const [planItems, setPlanItems] = useState<PlanTask[]>([]);
+  const [expandedCards, setExpandedCards] = useState<Set<CatKey>>(new Set());
   const [workNoteTask, setWorkNoteTask] = useState<TaskItem | null>(null);
   const [workNoteText, setWorkNoteText] = useState("");
   const [workNextSteps, setWorkNextSteps] = useState("");
@@ -171,15 +183,31 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
     }
   }, []);
 
+  const loadPlanItems = useCallback(async () => {
+    try {
+      const d = await get<{ tasks: PlanTask[] }>("/plan/tasks");
+      setPlanItems(d.tasks || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const handlePlanToggle = useCallback(async (id: string, complete: boolean) => {
+    try {
+      if (complete) await post(`/plan/task/${id}/complete`, {});
+      else await post(`/plan/task/${id}/uncomplete`, {});
+      await loadPlanItems();
+    } catch { /* ignore */ }
+  }, [loadPlanItems]);
+
   useEffect(() => {
     loadLocalTasks(false);
+    loadPlanItems();
     get<WorkNote[]>("/tasks/work-notes-today").then(notes => {
       const map: Record<string, WorkNote> = {};
       for (const n of notes) map[n.taskId] = n;
       setTodayNotes(map);
     }).catch(() => {});
     get<TaskAlerts>("/tasks/alerts").then(setAlerts).catch(() => {});
-  }, [loadLocalTasks]);
+  }, [loadLocalTasks, loadPlanItems]);
 
   // Close drive picker on outside click
   useEffect(() => {
@@ -299,22 +327,33 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   };
 
   const pct = parseInt(workNotePct) || 0;
-  const PILLAR_KEYWORDS: Record<string, string[]> = {
-    "Adaptation": ["adapt"],
-    "Sales": ["sales"],
-    "Foundation": ["found", "infra", "core", "data", "flipiq", "db"],
-    "COO Dashboard": ["coo", "dashboard", "ethan", "ramy", "accountability"],
+
+  // Category filter — map plan category key to TaskItem.cat / task text
+  const CAT_KEYWORDS: Record<CatKey, string[]> = {
+    adaptation: ["adapt"],
+    sales: ["sales"],
+    tech: ["tech", "infra", "core", "data", "flipiq", "api", "engineer"],
+    capital: ["capital", "fund", "invest", "xander", "vc", "diligence"],
+    team: ["team", "ethan", "ramy", "kyle", "haris", "faisal"],
   };
-  const matchesPillar = (t: TaskItem): boolean => {
-    if (!pillarFilter) return true;
-    if (pillarFilter === "Sales" && t.sales) return true;
-    const kws = PILLAR_KEYWORDS[pillarFilter] ?? [];
+  const matchesCat = (t: TaskItem): boolean => {
+    if (!catFilter) return true;
+    if (catFilter === "sales" && t.sales) return true;
+    const kws = CAT_KEYWORDS[catFilter] ?? [];
     const hay = `${t.cat ?? ""} ${t.text}`.toLowerCase();
     return kws.some(k => hay.includes(k));
   };
 
-  const activeTasks   = tasks.filter(t => !tDone[t.id] && matchesPillar(t));
-  const doneTasks     = tasks.filter(t => tDone[t.id] && matchesPillar(t));
+  const activeTasks = tasks.filter(t => !tDone[t.id] && matchesCat(t));
+  const doneTasks   = tasks.filter(t => tDone[t.id] && matchesCat(t));
+
+  // Per-category data from plan_items for the 5 cards
+  const catCards = CAT_KEYS_TV.map(k => {
+    const all = planItems.filter(t => t.category === k);
+    const active = all.filter(t => t.status !== "completed").sort((a, b) => (a.priorityOrder ?? 999) - (b.priorityOrder ?? 999));
+    const done = all.filter(t => t.status === "completed").length;
+    return { key: k, label: CAT_LABEL_TV[k], color: CAT_COLOR_TV[k], all, active, done, total: all.length };
+  });
   const activeLocals  = localTasks.filter(t => t.status !== "done" && !localDone.has(t.id));
   const totalTasks    = tasks.length + activeLocals.length;
   const totalDone     = Object.values(tDone).filter(Boolean).length + (localTasks.length - activeLocals.length);
@@ -391,38 +430,113 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         </div>
 
-        {/* ── 90 Day Focus ── */}
-        <div style={{ margin: "16px 0 14px" }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>🎯 90-Day Focus</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            {[
-              { num: "01", label: "Adaptation", desc: "Systems, processes & team alignment" },
-              { num: "02", label: "Sales", desc: "Pipeline growth & 10-call daily cadence" },
-              { num: "03", label: "Foundation", desc: "Data integrity, infra & FlipIQ core" },
-              { num: "04", label: "COO Dashboard", desc: "Ethan & Ramy accountability loop" },
-            ].map(({ num, label, desc }) => {
-              const active = pillarFilter === label;
-              return (
-              <div
-                key={label}
-                onClick={() => setPillarFilter(active ? null : label)}
-                style={{
-                  border: `${active ? 2 : 1}px solid ${active ? C.tx : C.brd}`,
-                  borderRadius: 8, padding: "12px 14px",
-                  background: active ? C.tx : C.card,
-                  display: "flex", flexDirection: "column", gap: 4,
-                  cursor: "pointer", userSelect: "none",
-                  transition: "all 0.12s",
-                }}
-              >
-                <div style={{ fontSize: 10, fontWeight: 800, color: active ? "#fff8" : "#bbb", letterSpacing: 1 }}>{num}</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: active ? "#fff" : C.tx, lineHeight: 1.2 }}>{label}</div>
-                <div style={{ fontSize: 10, color: active ? "#ffffff99" : C.mut, lineHeight: 1.4, marginTop: 2 }}>{desc}</div>
-              </div>
-            );})}
+        {/* ── 5 Category Cards ── */}
+        {planItems.length > 0 && (
+          <div style={{ margin: "16px 0 14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+              {catCards.map(cat => {
+                const isActive = catFilter === cat.key;
+                const isExpanded = expandedCards.has(cat.key);
+                const shownTasks = isExpanded ? cat.active : cat.active.slice(0, 5);
+                const barPct = cat.total > 0 ? Math.round((cat.done / cat.total) * 100) : 0;
 
+                return (
+                  <div key={cat.key} style={{
+                    borderRadius: 10, border: `2px solid ${isActive ? cat.color : C.brd}`,
+                    overflow: "hidden", background: "#fff",
+                    boxShadow: isActive ? `0 2px 12px ${cat.color}30` : "0 1px 4px rgba(0,0,0,0.06)",
+                    transition: "all 0.15s",
+                  }}>
+                    {/* Header */}
+                    <button
+                      onClick={() => setCatFilter(isActive ? null : cat.key)}
+                      style={{
+                        width: "100%", border: "none", cursor: "pointer", textAlign: "left",
+                        background: isActive ? cat.color : "#FAFAFA",
+                        padding: "9px 11px 7px", borderBottom: `1px solid ${C.brd}`,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: isActive ? "#fff" : cat.color, textTransform: "uppercase", letterSpacing: 0.5 }}>{cat.label}</span>
+                        <span style={{
+                          fontSize: 9, fontWeight: 700,
+                          color: isActive ? cat.color : "#fff",
+                          background: isActive ? "rgba(255,255,255,0.9)" : cat.color,
+                          borderRadius: 10, padding: "1px 6px",
+                        }}>{cat.done}/{cat.total}</span>
+                      </div>
+                      <div style={{ height: 3, borderRadius: 2, background: isActive ? "rgba(255,255,255,0.3)" : "#E5E7EB", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${barPct}%`, background: isActive ? "#fff" : cat.color, borderRadius: 2, transition: "width 0.4s" }} />
+                      </div>
+                    </button>
+
+                    {/* Task list */}
+                    <div style={{ padding: "4px 0" }}>
+                      {shownTasks.length === 0 ? (
+                        <div style={{ padding: "8px 11px", fontSize: 11, color: C.mut, fontStyle: "italic" }}>
+                          {cat.active.length === 0 ? "✓ All done!" : "No tasks"}
+                        </div>
+                      ) : (
+                        shownTasks.map((t, i) => {
+                          const done = t.status === "completed";
+                          return (
+                            <div key={t.id} style={{
+                              display: "flex", alignItems: "flex-start", gap: 6,
+                              padding: "4px 11px",
+                              borderBottom: i < shownTasks.length - 1 ? `1px solid ${C.brd}` : "none",
+                              background: i === 0 ? cat.color + "08" : "transparent",
+                            }}>
+                              <button
+                                onClick={() => handlePlanToggle(t.id, !done)}
+                                style={{
+                                  width: 12, height: 12, borderRadius: 3, flexShrink: 0, marginTop: 2,
+                                  border: `1.5px solid ${done ? C.grn : cat.color}`,
+                                  background: done ? C.grn : "transparent",
+                                  color: "#fff", fontSize: 7, cursor: "pointer",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  padding: 0,
+                                }}
+                              >{done ? "✓" : ""}</button>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{
+                                  fontSize: 10, fontWeight: i === 0 ? 700 : 500,
+                                  color: done ? C.mut : C.tx,
+                                  textDecoration: done ? "line-through" : "none",
+                                  lineHeight: 1.35,
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>{t.title.replace(/^[^:]+:\s*/, "")}</div>
+                                {t.sprintId && <div style={{ fontSize: 8, fontWeight: 700, color: cat.color, fontFamily: "monospace" }}>{t.sprintId}</div>}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Expand footer */}
+                    {cat.active.length > 5 && (
+                      <button
+                        onClick={() => setExpandedCards(prev => {
+                          const next = new Set(prev);
+                          next.has(cat.key) ? next.delete(cat.key) : next.add(cat.key);
+                          return next;
+                        })}
+                        style={{
+                          width: "100%", border: "none", borderTop: `1px solid ${C.brd}`,
+                          background: "#FAFAFA", padding: "5px", cursor: "pointer",
+                          fontSize: 9, fontWeight: 700, color: cat.color,
+                          fontFamily: F, textAlign: "center",
+                        }}
+                      >
+                        {isExpanded ? "▲ Show less" : `▼ ${cat.active.length - 5} more`}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
 
         {/* My Tasks (local) */}
@@ -472,13 +586,17 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
           </div>
         )}
 
-        {/* Pillar filter indicator */}
-        {pillarFilter && (
+        {/* Category filter indicator */}
+        {catFilter && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0 4px" }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: C.tx, background: C.tx + "12", border: `1px solid ${C.tx}22`, borderRadius: 6, padding: "2px 8px" }}>
-              Filtered: {pillarFilter}
+            <span style={{
+              fontSize: 11, fontWeight: 700, color: CAT_COLOR_TV[catFilter],
+              background: CAT_COLOR_TV[catFilter] + "18", border: `1px solid ${CAT_COLOR_TV[catFilter]}44`,
+              borderRadius: 6, padding: "2px 8px",
+            }}>
+              {CAT_LABEL_TV[catFilter]}
             </span>
-            <button onClick={() => setPillarFilter(null)} style={{ fontSize: 11, color: C.mut, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: F }}>× Clear</button>
+            <button onClick={() => setCatFilter(null)} style={{ fontSize: 11, color: C.mut, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: F }}>× Clear</button>
           </div>
         )}
 

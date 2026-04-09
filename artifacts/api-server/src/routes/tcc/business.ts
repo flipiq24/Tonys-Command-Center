@@ -52,6 +52,7 @@ router.post("/business/goals", async (req, res): Promise<void> => {
       horizon, title, description, owner: owner || "Tony",
       status: status || "active", dueDate: dueDate || null,
     }).returning();
+    push411ToSheet().catch(() => {});
     res.json(goal);
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -106,6 +107,7 @@ router.post("/business/goals/reorder", async (req, res): Promise<void> => {
     await Promise.all(orderedIds.map((id, pos) =>
       db.update(companyGoalsTable).set({ position: pos, updatedAt: new Date() }).where(eq(companyGoalsTable.id, id))
     ));
+    push411ToSheet().catch(() => {});
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -251,20 +253,29 @@ export async function sync411FromSheet(): Promise<void> {
       const description = descIdx >= 0 ? String(row[descIdx] || "").trim() || null : null;
       const dueDate = dueDateIdx >= 0 ? String(row[dueDateIdx] || "").trim() || null : null;
       const sheetRowRef = String(i + 1);
+      const rowData = {
+        horizon: finalHorizon, title, description, owner, status,
+        dueDate: dueDate || null, position: i - 1, sheetRowRef,
+      };
 
-      await db.insert(companyGoalsTable).values({
-        horizon: finalHorizon,
-        title,
-        description,
-        owner,
-        status,
-        dueDate: dueDate || null,
-        position: i - 1,
-        sheetRowRef,
-      }).onConflictDoUpdate({
-        target: [companyGoalsTable.horizon, companyGoalsTable.title],
-        set: { description, owner, status, dueDate: dueDate || null, position: i - 1, sheetRowRef, updatedAt: new Date() },
-      });
+      // Use sheetRowRef as the stable identity: update if exists, otherwise insert.
+      // This avoids a unique-violation on sheetRowRef when a sheet row's title changes.
+      const existing = await db.select({ id: companyGoalsTable.id })
+        .from(companyGoalsTable)
+        .where(eq(companyGoalsTable.sheetRowRef, sheetRowRef))
+        .limit(1);
+
+      if (existing.length > 0) {
+        await db.update(companyGoalsTable)
+          .set({ ...rowData, updatedAt: new Date() })
+          .where(eq(companyGoalsTable.id, existing[0].id));
+      } else {
+        await db.insert(companyGoalsTable).values(rowData)
+          .onConflictDoUpdate({
+            target: [companyGoalsTable.horizon, companyGoalsTable.title],
+            set: { description, owner, status, dueDate: dueDate || null, position: i - 1, sheetRowRef, updatedAt: new Date() },
+          });
+      }
       synced++;
     }
     console.log(`[business] sync411FromSheet: ${synced} goals synced from sheet`);

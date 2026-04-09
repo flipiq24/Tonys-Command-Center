@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { get, post } from "@/lib/api";
+import { get, post, patch } from "@/lib/api";
 import { C, F } from "@/components/tcc/constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -725,6 +725,150 @@ function AddTaskModal({
   );
 }
 
+// ─── Task Detail Modal ───────────────────────────────────────────────────────
+
+function TaskDetailModal({ task, onClose, onSaved }: {
+  task: PlanItem & { sprintId?: string };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    workNotes: task.workNotes || "",
+    atomicKpi: task.atomicKpi || "",
+    dueDate: task.dueDate || "",
+    owner: task.owner || "",
+    priority: task.priority || "",
+    title: task.title || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const catColor = CAT_COLOR[task.category] ?? "#555";
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await patch(`/plan/item/${task.id}`, form);
+      setSaved(true);
+      setTimeout(() => { onSaved(); onClose(); }, 600);
+    } catch { /**/ }
+    finally { setSaving(false); }
+  }
+
+  const inp: React.CSSProperties = {
+    width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`,
+    fontFamily: F, fontSize: 13, background: "#fafafa", boxSizing: "border-box",
+  };
+  const lbl: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      {/* Backdrop */}
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.25)" }} onClick={onClose} />
+
+      {/* Slide-in panel */}
+      <div style={{
+        position: "relative", zIndex: 1, width: 480, height: "100vh",
+        background: "#fff", boxShadow: "-8px 0 32px rgba(0,0,0,0.15)",
+        display: "flex", flexDirection: "column", overflowY: "auto",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px 16px", borderBottom: `2px solid ${C.brd}`, background: "#FAFAFA" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {task.sprintId && <span style={{ fontSize: 11, fontWeight: 800, color: catColor, background: catColor + "15", borderRadius: 5, padding: "2px 8px", fontFamily: "monospace" }}>{task.sprintId}</span>}
+              {task.priority && <PriorityBadge p={task.priority} />}
+              {task.status && <StatusPill s={task.status} />}
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: C.mut, lineHeight: 1 }}>✕</button>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: C.tx, lineHeight: 1.4, marginBottom: 6 }}>{task.title}</div>
+          <div style={{ fontSize: 11, color: C.sub }}>
+            <span style={{ fontWeight: 600, color: catColor, textTransform: "capitalize" }}>{task.category}</span>
+            {task.subcategory && <span> · {task.subcategory}</span>}
+            {task.owner && <span> · <span style={{ fontWeight: 600 }}>{task.owner}</span></span>}
+          </div>
+          {task.completedAt && (
+            <div style={{ marginTop: 6, fontSize: 11, color: C.grn, fontWeight: 600 }}>
+              ✓ Completed {new Date(task.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            </div>
+          )}
+        </div>
+
+        {/* Editable fields */}
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
+
+          <div>
+            <label style={lbl}>Task title</label>
+            <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} style={inp} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={lbl}>Owner</label>
+              <select value={form.owner} onChange={e => setForm(p => ({ ...p, owner: e.target.value }))} style={inp}>
+                <option value="">—</option>
+                {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Priority</label>
+              <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} style={inp}>
+                <option value="">—</option>
+                <option value="P0">P0 — Critical</option>
+                <option value="P1">P1 — High</option>
+                <option value="P2">P2 — Standard</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={lbl}>Due date</label>
+            <input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} style={inp} />
+          </div>
+
+          <div>
+            <label style={lbl}>Atomic KPI</label>
+            <input value={form.atomicKpi} onChange={e => setForm(p => ({ ...p, atomicKpi: e.target.value }))} placeholder="What does done look like?" style={inp} />
+          </div>
+
+          <div>
+            <label style={lbl}>Work notes / context</label>
+            <textarea
+              value={form.workNotes}
+              onChange={e => setForm(p => ({ ...p, workNotes: e.target.value }))}
+              placeholder="Blockers, links, context, decisions…"
+              rows={6}
+              style={{ ...inp, resize: "vertical", lineHeight: 1.5 }}
+            />
+          </div>
+
+          {task.linearId && (
+            <div>
+              <label style={lbl}>Linear</label>
+              <a href={`https://linear.app/issue/${task.linearId}`} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 13, color: C.blu }}>{task.linearId}</a>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.brd}`, display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.sub, fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving || saved} style={{
+            flex: 2, padding: "10px", borderRadius: 8, border: "none",
+            background: saved ? C.grn : "#F97316", color: "#fff",
+            fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer", fontFamily: F,
+          }}>
+            {saved ? "✓ Saved" : saving ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Master Task Table ────────────────────────────────────────────────────────
 
 function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void; categories: CategoryWithSubs[] }) {
@@ -739,6 +883,10 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [editId, setEditId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragTaskRef = useRef<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<(PlanItem & { sprintId?: string }) | null>(null);
+  type HoverInfo = { task: PlanItem & { sprintId?: string }; x: number; y: number };
+  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -911,13 +1059,26 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                   onDragOver={e => onDragOver(e, task.id)}
                   onDragLeave={onDragLeave}
                   onDrop={e => onDrop(e, task.id)}
-                  style={{ background: rowBg, borderBottom: `1px solid ${C.brd}`, borderTop: isDraggingOver ? `2px solid ${C.blu}` : undefined, transition: "background 0.1s" }}
+                  onClick={() => setSelectedTask(task)}
+                  onMouseEnter={e => {
+                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                    const x = e.clientX; const y = e.clientY;
+                    hoverTimer.current = setTimeout(() => setHoverInfo({ task, x, y }), 500);
+                  }}
+                  onMouseMove={e => {
+                    if (hoverInfo) setHoverInfo(h => h ? { ...h, x: e.clientX, y: e.clientY } : null);
+                  }}
+                  onMouseLeave={() => {
+                    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+                    setHoverInfo(null);
+                  }}
+                  style={{ background: rowBg, borderBottom: `1px solid ${C.brd}`, borderTop: isDraggingOver ? `2px solid ${C.blu}` : undefined, transition: "background 0.1s", cursor: "pointer" }}
                 >
                   {/* Drag + checkbox combined */}
-                  <td style={{ padding: "6px 8px", textAlign: "center", cursor: "grab", color: C.mut, fontSize: 14, whiteSpace: "nowrap" }}>
+                  <td onClick={e => e.stopPropagation()} style={{ padding: "6px 8px", textAlign: "center", cursor: "grab", color: C.mut, fontSize: 14, whiteSpace: "nowrap" }}>
                     <span style={{ marginRight: 4, opacity: 0.4 }}>⠿</span>
                     <button
-                      onClick={() => handleToggle(task.id, !done)}
+                      onClick={e => { e.stopPropagation(); handleToggle(task.id, !done); }}
                       style={{ width: 15, height: 15, borderRadius: 3, border: `1.5px solid ${done ? C.grn : "#d1d5db"}`, background: done ? C.grn : "transparent", color: "#fff", fontSize: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
                     >{done ? "✓" : ""}</button>
                   </td>
@@ -983,6 +1144,62 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
         />
       )}
       {placementToast && <Toast msg={placementToast} onDismiss={() => setPlacementToast(null)} />}
+
+      {/* Hover tooltip — shows after 500ms hover */}
+      {hoverInfo && !selectedTask && (() => {
+        const t = hoverInfo.task;
+        const catColor = CAT_COLOR[t.category] ?? "#555";
+        const wx = typeof window !== "undefined" ? window.innerWidth : 1400;
+        const wy = typeof window !== "undefined" ? window.innerHeight : 800;
+        const left = hoverInfo.x + 20 + 320 > wx ? hoverInfo.x - 340 : hoverInfo.x + 20;
+        const top = Math.min(hoverInfo.y - 10, wy - 280);
+        return (
+          <div style={{
+            position: "fixed", left, top, zIndex: 8000,
+            width: 320, background: "#fff", borderRadius: 10,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)", border: `1px solid ${C.brd}`,
+            pointerEvents: "none",
+          }}>
+            <div style={{ background: catColor, borderRadius: "10px 10px 0 0", padding: "10px 14px" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.75)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>
+                {t.sprintId && `${t.sprintId} · `}{t.category}{t.subcategory ? ` · ${t.subcategory}` : ""}
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", lineHeight: 1.4 }}>{t.title}</div>
+            </div>
+            <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {t.priority && <PriorityBadge p={t.priority} />}
+                {t.status && <StatusPill s={t.status} />}
+                {t.owner && <span style={{ fontSize: 10, fontWeight: 700, color: catColor }}>{t.owner}</span>}
+              </div>
+              {t.dueDate && <div style={{ fontSize: 11, color: C.mut }}>Due: <strong>{t.dueDate}</strong></div>}
+              {t.completedAt && <div style={{ fontSize: 11, color: C.grn, fontWeight: 600 }}>✓ Completed {new Date(t.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>}
+              {t.atomicKpi && (
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>Atomic KPI</div>
+                  <div style={{ fontSize: 12, color: C.tx, marginTop: 2 }}>{t.atomicKpi}</div>
+                </div>
+              )}
+              {t.workNotes && (
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>Notes</div>
+                  <div style={{ fontSize: 12, color: C.tx, marginTop: 2, lineHeight: 1.5 }}>{t.workNotes}</div>
+                </div>
+              )}
+              {!t.atomicKpi && !t.workNotes && <div style={{ fontSize: 11, color: C.mut, fontStyle: "italic" }}>Click to add notes →</div>}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Click-to-edit detail panel */}
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onSaved={() => { loadTasks(); onRefreshAll(); }}
+        />
+      )}
     </div>
   );
 }

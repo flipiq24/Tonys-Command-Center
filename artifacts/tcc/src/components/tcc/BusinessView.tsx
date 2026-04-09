@@ -966,7 +966,7 @@ function TeamTab() {
                     <span style={{ fontSize: 14, fontWeight: 700, color: C.tx, fontFamily: F }}>{member.name}</span>
                     {member.hiring && <span style={{ fontSize: 10, fontWeight: 700, background: C.ambBg, color: C.amb, borderRadius: 10, padding: "2px 8px" }}>HIRING</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: C.sub }}>{member.role} · {member.salary}</div>
+                  <div style={{ fontSize: 12, color: C.sub }}>{member.role}</div>
                 </div>
                 <span style={{ color: C.mut }}>{isExpanded ? "▲" : "▼"}</span>
               </button>

@@ -1372,6 +1372,26 @@ async function buildSystemPrompt(): Promise<string> {
     }
   } catch {}
 
+  // Load team roster from DB for parity with chat-threads context
+  let teamRosterSection = "";
+  try {
+    const teamMembers = await db.select().from(teamRolesTable)
+      .orderBy(asc(teamRolesTable.position), asc(teamRolesTable.name))
+      .limit(20);
+    if (teamMembers.length > 0) {
+      const lines: string[] = ["\n\nFLIPIQ TEAM ROSTER (from Business Brain):"];
+      for (const m of teamMembers) {
+        const responsibilities = Array.isArray(m.responsibilities)
+          ? (m.responsibilities as string[]).join(", ")
+          : typeof m.responsibilities === "string"
+            ? m.responsibilities
+            : "";
+        lines.push(`${m.name} (${m.role})${m.email ? ` — ${m.email}` : ""}${m.slackId ? ` | Slack: ${m.slackId}` : ""}${m.currentFocus ? ` | Focus: ${m.currentFocus}` : ""}${responsibilities ? ` | Resp: ${responsibilities}` : ""}`);
+      }
+      teamRosterSection = lines.join("\n");
+    }
+  } catch {}
+
   return `You are Tony Diaz's UNRESTRICTED Command Center AI — his personal daily operating system for running FlipIQ.
 
 ABOUT TONY:
@@ -1476,7 +1496,7 @@ Reports: send_eod_report
 
 SCRIPTURE ANCHORS:
 - "Seek first the kingdom of God" — Matthew 6:33
-- "Commit your work to the Lord" — Proverbs 16:3${brainSection}${businessPlanSection}${plan90Section}${goalsSection}`;
+- "Commit your work to the Lord" — Proverbs 16:3${brainSection}${businessPlanSection}${plan90Section}${goalsSection}${teamRosterSection}`;
 }
 
 const router: IRouter = Router();

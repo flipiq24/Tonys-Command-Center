@@ -354,19 +354,6 @@ function GPSCards() {
           </div>
         </div>
       </div>
-      <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: 10, padding: "10px 16px", display: "flex", gap: 24, alignItems: "center" }}>
-        {[
-          { label: "Break Even", value: "~$50K/mo", when: "March 2026", color: C.grn },
-          { label: "Phase 1", value: "$100K/mo", when: "Apr–May 2026", color: "#185FA5" },
-          { label: "Scale", value: "$250K+/mo", when: "Q3 2026", color: "#7B2D8B" },
-        ].map(m => (
-          <div key={m.label} style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: m.color, fontFamily: F }}>{m.value}</div>
-            <div style={{ fontSize: 10, color: C.sub, fontFamily: F }}>{m.label}</div>
-            <div style={{ fontSize: 10, color: C.mut, fontFamily: F }}>{m.when}</div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "jvXcqky4pDpq5au_wEQ6x"
+uri = "file://attached_assets/TCC_Developer_Handoff_v3.md"
+type = "text"
+title = "TCC Developer Handoff v3 — April 2026"

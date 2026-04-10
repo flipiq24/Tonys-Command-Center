@@ -374,7 +374,7 @@ function CategoryGrid({
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 48px", marginBottom: 32 }}>
       {categories.map((cat) => {
         const slots = Array.from({ length: 5 }, (_, i) => cat.subcategories[i] || null);
-        const colorKey = (cat.category || cat.title.replace(/^\d+\s*/, "").toLowerCase()) as keyof typeof CAT_COLORS;
+        const colorKey = (cat.category || "") as keyof typeof CAT_COLORS;
         const colors = CAT_COLORS[colorKey] || { accent: "#00007A" };
         const accent = colors.accent;
         const catPct = cat.totalTasks > 0 ? Math.round((cat.completedTasks / cat.totalTasks) * 100) : 0;
@@ -386,11 +386,9 @@ function CategoryGrid({
               <div style={{ fontSize: 22, fontWeight: 800, color: accent, fontFamily: F }}>
                 {cat.title}
               </div>
-              {cat.totalTasks > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 600, color: accent, fontFamily: F, opacity: 0.85, whiteSpace: "nowrap", marginLeft: 8 }}>
-                  {cat.completedTasks}/{cat.totalTasks} · {catPct}% done
-                </span>
-              )}
+              <span style={{ fontSize: 11, fontWeight: 600, color: accent, fontFamily: F, opacity: 0.85, whiteSpace: "nowrap", marginLeft: 8 }}>
+                {cat.completedTasks}/{cat.totalTasks} · {catPct}% done
+              </span>
             </div>
             {/* Thick underline in category color */}
             <div style={{ height: 3, background: accent, marginBottom: 8 }} />
@@ -398,24 +396,22 @@ function CategoryGrid({
             {/* Numbered slots 1-5 */}
             {slots.map((sub, i) => {
               const done = sub?.status === "completed";
-              const subPct = sub && sub.totalTasks > 0 ? Math.round((sub.completedTasks / sub.totalTasks) * 100) : null;
+              const subPct = sub ? (sub.totalTasks > 0 ? Math.round((sub.completedTasks / sub.totalTasks) * 100) : 0) : null;
               return (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #ccc", padding: "5px 0", minHeight: 28 }}>
                   <span style={{ fontSize: 12, color: "#999", width: 14, flexShrink: 0, fontFamily: F }}>{i + 1}</span>
                   {sub ? (
                     <>
                       <span style={{
-                        fontSize: 13, color: done ? "#888" : accent, fontFamily: F,
+                        fontSize: 13, color: accent, fontFamily: F,
                         textDecoration: done ? "line-through" : "none",
                         fontWeight: 500, flex: 1,
                       }}>
                         {sub.title}
                       </span>
-                      {sub.totalTasks > 0 && (
-                        <span style={{ fontSize: 10, fontWeight: 600, color: done ? "#888" : accent, fontFamily: F, opacity: 0.75, whiteSpace: "nowrap", flexShrink: 0 }}>
-                          {sub.completedTasks}/{sub.totalTasks} · {subPct}%
-                        </span>
-                      )}
+                      <span style={{ fontSize: 10, fontWeight: 600, color: accent, fontFamily: F, opacity: 0.75, whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {sub.completedTasks}/{sub.totalTasks} · {subPct}%
+                      </span>
                     </>
                   ) : null}
                 </div>

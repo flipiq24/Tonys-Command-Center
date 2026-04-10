@@ -217,6 +217,15 @@ function TrainingModal({
   const [submitting, setSubmitting] = useState(false);
   const [aiReflection, setAiReflection] = useState<string | null>(null);
 
+  const movedUp = data.toPos < data.fromPos;
+  const headingEmoji = movedUp ? "⬆️" : "⬇️";
+  const headingText = movedUp ? "Why Is This More Important?" : "Why Is This Less Important?";
+  const directionLabel = movedUp ? "up" : "down";
+  const displacedLabel = movedUp ? "Jumped ahead of:" : "Now ranked below:";
+  const placeholderText = movedUp
+    ? "Why does this take priority? (e.g. 'This unlocks SLS pipeline — must go before tech tasks')"
+    : "Why is this lower priority right now? (e.g. 'Blocked on Ethan — can't start until tech layer is live')";
+
   const handleSave = async () => {
     setSubmitting(true);
     try {
@@ -254,14 +263,15 @@ function TrainingModal({
         boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
       }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: C.tx ?? "#1e293b", marginBottom: 4, fontFamily: F }}>
-          🧠 Why This Rank?
+          {headingEmoji} {headingText}
         </div>
         <div style={{ fontSize: 12, color: C.mut ?? "#94a3b8", marginBottom: 12 }}>
-          Moved <strong>{data.movedTask.title}</strong> from #{data.fromPos} → #{data.toPos}
+          Moved <strong>{data.movedTask.title}</strong> {directionLabel} — #{data.fromPos} → #{data.toPos}
         </div>
         {data.displacedTasks.length > 0 && (
           <div style={{ fontSize: 11, color: C.sub ?? "#64748b", marginBottom: 12, lineHeight: 1.6 }}>
-            Leapfrogged: {data.displacedTasks.slice(0, 4).map(t => t.title).join(", ")}
+            <strong>{displacedLabel}</strong>{" "}
+            {data.displacedTasks.slice(0, 4).map(t => t.title).join(", ")}
             {data.displacedTasks.length > 4 ? ` +${data.displacedTasks.length - 4} more` : ""}
           </div>
         )}
@@ -270,7 +280,7 @@ function TrainingModal({
           value={explanation}
           onChange={e => setExplanation(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSave(); }}
-          placeholder="Why does this rank here? (e.g. 'This unlocks SLS pipeline — must go before tech tasks')"
+          placeholder={placeholderText}
           autoFocus
           disabled={!!aiReflection}
           style={{

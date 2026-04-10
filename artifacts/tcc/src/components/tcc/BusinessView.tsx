@@ -975,6 +975,9 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     const toIdx = tasks.findIndex(t => t.id === targetId);
     if (fromIdx === -1 || toIdx === -1) return;
 
+    // Block cross-category moves — tasks can only be reordered within their own category
+    if (tasks[fromIdx].category !== tasks[toIdx].category) return;
+
     const prevTasks = [...tasks];
     const newTasks = [...tasks];
     const [moved] = newTasks.splice(fromIdx, 1);
@@ -1380,23 +1383,27 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
           <div style={{ background: C.card, borderRadius: 16, padding: 32, width: 520, maxWidth: "94vw", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${C.brd}` }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>🧠 Brain Training</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.tx, fontFamily: F, marginBottom: 4 }}>
-              Moving <span style={{ color: C.blu }}>"{pendingDrop.movedTask.title}"</span>
+              Moving <span style={{ color: pendingDrop.toIdx < pendingDrop.fromIdx ? C.blu : C.mut }}>"{pendingDrop.movedTask.title}"</span>
             </div>
             {pendingDrop.displacedTasks.length > 0 && (
               <div style={{ fontSize: 12, color: C.mut, marginBottom: 16 }}>
-                <span>above </span>
+                <span>{pendingDrop.toIdx < pendingDrop.fromIdx ? "above " : "below "}</span>
                 {pendingDrop.displacedTasks.slice(0, 3).map((t, i) => (
                   <span key={t.id}>{i > 0 ? ", " : ""}<em style={{ color: C.tx }}>"{t.title}"</em></span>
                 ))}
                 {pendingDrop.displacedTasks.length > 3 && <span> +{pendingDrop.displacedTasks.length - 3} more</span>}
               </div>
             )}
-            <div style={{ fontSize: 13, color: C.tx, marginBottom: 10, fontWeight: 600 }}>Why is it more important right now?</div>
+            <div style={{ fontSize: 13, color: pendingDrop.toIdx < pendingDrop.fromIdx ? C.blu : C.mut, marginBottom: 10, fontWeight: 700 }}>
+              {pendingDrop.toIdx < pendingDrop.fromIdx ? "⬆️ Why is it MORE important right now?" : "⬇️ Why is it LESS important right now?"}
+            </div>
             <textarea
               autoFocus
               value={trainingExplanation}
               onChange={e => setTrainingExplanation(e.target.value)}
-              placeholder="e.g. This unblocks our biggest deal this week. Revenue before process."
+              placeholder={pendingDrop.toIdx < pendingDrop.fromIdx
+                ? "e.g. This unblocks our biggest deal this week. Revenue before process."
+                : "e.g. Operator stability is more urgent. This can wait until next sprint."}
               rows={4}
               style={{
                 width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.brd}`,

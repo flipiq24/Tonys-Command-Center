@@ -33,3 +33,4 @@ channel = "stable-25_05"
 
 [userenv.shared]
 BUSINESS_MASTER_SHEET_ID = "1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE"
+SUPABASE_DATABASE_URL = "postgresql://postgres.oqhizuvtgixmcnrwvvvj:command-center123.%40@aws-1-us-west-1.pooler.supabase.com:5432/postgres?sslmode=require"

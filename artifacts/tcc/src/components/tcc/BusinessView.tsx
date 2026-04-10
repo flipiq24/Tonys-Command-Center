@@ -1010,6 +1010,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   async function submitTraining() {
     if (!pendingDrop || !trainingExplanation.trim()) return;
     setSubmittingTraining(true);
+    const movedUp = pendingDrop.toIdx < pendingDrop.fromIdx;
     const updates = pendingDrop.newTasks.map((t, i) => ({ id: t.id, priorityOrder: i }));
     try {
       const result = await post<{ ok: boolean; aiReflection?: string }>("/plan/reorder", {
@@ -1021,6 +1022,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
         displacedItemIds: pendingDrop.displacedTasks.map(t => t.id),
         displacedItemTitles: pendingDrop.displacedTasks.map(t => t.title),
         explanation: trainingExplanation.trim(),
+        direction: movedUp ? "up" : "down",
       });
       if (result.aiReflection) {
         setAiReflection(result.aiReflection);
@@ -1434,10 +1436,15 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
       {/* ─── AI Reflection (after training log submit) ───────────────────── */}
       {pendingDrop && aiReflection && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9001 }}>
-          <div style={{ background: C.card, borderRadius: 16, padding: 32, width: 480, maxWidth: "94vw", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${C.brd}` }}>
+          <div style={{ background: C.card, borderRadius: 16, padding: 32, width: 500, maxWidth: "94vw", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${C.brd}` }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>🧠 Brain reflection</div>
-            <div style={{ fontSize: 14, color: C.tx, lineHeight: 1.7, marginBottom: 20, fontStyle: "italic", borderLeft: `3px solid ${C.blu}`, paddingLeft: 14 }}>{aiReflection}</div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <div style={{ fontSize: 14, color: C.tx, lineHeight: 1.7, marginBottom: 8, fontStyle: "italic", borderLeft: `3px solid ${C.blu}`, paddingLeft: 14 }}>{aiReflection}</div>
+            <div style={{ fontSize: 11, color: C.mut, marginBottom: 20 }}>Not quite right? Edit your reasoning and resubmit to refine the reflection.</div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setAiReflection(null)}
+                style={{ padding: "9px 18px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.sub, fontSize: 13, cursor: "pointer", fontFamily: F }}
+              >✏️ Re-correct</button>
               <button onClick={closePendingDrop} style={{ padding: "9px 24px", borderRadius: 8, border: "none", background: C.blu, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}>Got it ✓</button>
             </div>
           </div>

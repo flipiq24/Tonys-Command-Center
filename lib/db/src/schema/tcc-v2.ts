@@ -224,6 +224,7 @@ export const planItemsTable = pgTable("plan_items", {
   title: text("title").notNull(),
   description: text("description"),
   owner: text("owner"),
+  coOwner: text("co_owner"),
   priority: text("priority"),
   status: text("status").default("active"),
   priorityOrder: integer("priority_order").default(0),
@@ -247,4 +248,20 @@ export const planItemsTable = pgTable("plan_items", {
   index("idx_pi_parent_id").on(table.parentId),
   index("idx_pi_month").on(table.month),
   index("idx_pi_status").on(table.status),
+]);
+
+export const brainTrainingLogTable = pgTable("brain_training_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  movedItemId: uuid("moved_item_id").references(() => planItemsTable.id, { onDelete: "cascade" }),
+  movedItemTitle: text("moved_item_title"),
+  fromPosition: integer("from_position"),
+  toPosition: integer("to_position"),
+  displacedItemIds: uuid("displaced_item_ids").array(),
+  displacedItemTitles: text("displaced_item_titles").array(),
+  tonyExplanation: text("tony_explanation").notNull(),
+  aiReflection: text("ai_reflection"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (table) => [
+  index("idx_btl_moved").on(table.movedItemId),
+  index("idx_btl_created").on(table.createdAt),
 ]);

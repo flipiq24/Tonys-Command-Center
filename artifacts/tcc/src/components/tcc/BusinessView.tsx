@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { get, post, patch } from "@/lib/api";
+import { get, post, patch, put } from "@/lib/api";
 import { C, F } from "@/components/tcc/constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -11,6 +11,7 @@ type PlanItem = {
   subcategory?: string | null;
   title: string;
   owner?: string | null;
+  coOwner?: string | null;
   priority?: string | null;
   status?: string | null;
   dueDate?: string | null;
@@ -871,7 +872,38 @@ function TaskDetailModal({ task, onClose, onSaved }: {
   );
 }
 
+// ─── Sprint ID recalculator (client-side, mirrors server logic) ──────────────
+
+const CAT_PREFIX_CLIENT: Record<string, string> = {
+  adaptation: "ADP", sales: "SLS", tech: "TCH", capital: "CAP", team: "TME",
+};
+
+function recalcSprintIds(taskList: (PlanItem & { sprintId?: string })[]): (PlanItem & { sprintId: string })[] {
+  const catCounter: Record<string, number> = {};
+  return taskList.map(t => {
+    const cat = t.category || "misc";
+    if (!catCounter[cat]) catCounter[cat] = 0;
+    catCounter[cat]++;
+    const prefix = CAT_PREFIX_CLIENT[cat] || cat.slice(0, 3).toUpperCase();
+    return { ...t, sprintId: `${prefix}-${String(catCounter[cat]).padStart(2, "0")}` };
+  });
+}
+
 // ─── Master Task Table ────────────────────────────────────────────────────────
+
+type PendingDrop = {
+  movedTask: PlanItem & { sprintId?: string };
+  displacedTasks: (PlanItem & { sprintId?: string })[];
+  fromIdx: number;
+  toIdx: number;
+  newTasks: (PlanItem & { sprintId?: string })[];
+  prevTasks: (PlanItem & { sprintId?: string })[];
+};
+
+type OrganizePreview = {
+  newOrder: (PlanItem & { sprintId?: string })[];
+  currentOrder: (PlanItem & { sprintId?: string })[];
+};
 
 function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void; categories: CategoryWithSubs[] }) {
   const [tasks, setTasks] = useState<(PlanItem & { sprintId?: string })[]>([]);
@@ -889,6 +921,17 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   type HoverInfo = { task: PlanItem & { sprintId?: string }; x: number; y: number };
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Training modal state
+  const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
+  const [trainingExplanation, setTrainingExplanation] = useState("");
+  const [submittingTraining, setSubmittingTraining] = useState(false);
+  const [aiReflection, setAiReflection] = useState<string | null>(null);
+
+  // AI Organize state
+  const [organizing, setOrganizing] = useState(false);
+  const [organizePreview, setOrganizePreview] = useState<OrganizePreview | null>(null);
+  const [confirmingOrganize, setConfirmingOrganize] = useState(false);
 
   const loadTasks = useCallback(async () => {
     setLoading(true);
@@ -917,12 +960,12 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     } catch { /**/ }
   }
 
-  // Drag to reorder
+  // Drag to reorder — now shows Training Modal instead of immediately saving
   function onDragStart(id: string) { dragTaskRef.current = id; }
   function onDragOver(e: React.DragEvent, id: string) { e.preventDefault(); setDragOverId(id); }
   function onDragLeave() { setDragOverId(null); }
 
-  async function onDrop(e: React.DragEvent, targetId: string) {
+  function onDrop(e: React.DragEvent, targetId: string) {
     e.preventDefault();
     setDragOverId(null);
     const fromId = dragTaskRef.current;
@@ -932,13 +975,97 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     const toIdx = tasks.findIndex(t => t.id === targetId);
     if (fromIdx === -1 || toIdx === -1) return;
 
+    const prevTasks = [...tasks];
     const newTasks = [...tasks];
     const [moved] = newTasks.splice(fromIdx, 1);
     newTasks.splice(toIdx, 0, moved);
-    setTasks(newTasks);
 
-    const updates = newTasks.map((t, i) => ({ id: t.id, priorityOrder: i }));
-    try { await post("/plan/reorder", { items: updates }); } catch { await loadTasks(); }
+    // Re-calculate sprint IDs immediately for visual update
+    const withNewIds = recalcSprintIds(newTasks.map((t, i) => ({ ...t, priorityOrder: i })));
+    setTasks(withNewIds);
+
+    // Determine displaced tasks (tasks that were leapfrogged)
+    const lo = Math.min(fromIdx, toIdx);
+    const hi = Math.max(fromIdx, toIdx);
+    const displacedTasks = fromIdx > toIdx
+      ? prevTasks.slice(toIdx, fromIdx)     // moved up: leapfrogged tasks between toIdx and fromIdx
+      : prevTasks.slice(fromIdx + 1, toIdx + 1); // moved down
+
+    // Show Training Modal
+    setPendingDrop({
+      movedTask: moved,
+      displacedTasks: displacedTasks.slice(0, 5),
+      fromIdx,
+      toIdx,
+      newTasks: withNewIds,
+      prevTasks,
+    });
+    setTrainingExplanation("");
+    setAiReflection(null);
+  }
+
+  async function submitTraining() {
+    if (!pendingDrop || !trainingExplanation.trim()) return;
+    setSubmittingTraining(true);
+    const updates = pendingDrop.newTasks.map((t, i) => ({ id: t.id, priorityOrder: i }));
+    try {
+      const result = await post<{ ok: boolean; aiReflection?: string }>("/plan/reorder", {
+        items: updates,
+        movedItemId: pendingDrop.movedTask.id,
+        movedItemTitle: pendingDrop.movedTask.title,
+        fromPosition: pendingDrop.fromIdx,
+        toPosition: pendingDrop.toIdx,
+        displacedItemIds: pendingDrop.displacedTasks.map(t => t.id),
+        displacedItemTitles: pendingDrop.displacedTasks.map(t => t.title),
+        explanation: trainingExplanation.trim(),
+      });
+      if (result.aiReflection) {
+        setAiReflection(result.aiReflection);
+      } else {
+        closePendingDrop();
+      }
+    } catch {
+      // Revert on error
+      setTasks(pendingDrop.prevTasks);
+      closePendingDrop();
+    }
+    setSubmittingTraining(false);
+  }
+
+  function cancelTraining() {
+    if (pendingDrop) setTasks(pendingDrop.prevTasks);
+    closePendingDrop();
+  }
+
+  function closePendingDrop() {
+    setPendingDrop(null);
+    setTrainingExplanation("");
+    setAiReflection(null);
+    setSubmittingTraining(false);
+  }
+
+  async function runAiOrganize() {
+    setOrganizing(true);
+    try {
+      const data = await get<{ tasks: (PlanItem & { sprintId?: string })[] }>("/plan/brain/order");
+      if (data.tasks && data.tasks.length > 0) {
+        const newOrderWithIds = recalcSprintIds(data.tasks.map((t, i) => ({ ...t, priorityOrder: i })));
+        setOrganizePreview({ newOrder: newOrderWithIds, currentOrder: tasks });
+      }
+    } catch { /**/ }
+    setOrganizing(false);
+  }
+
+  async function confirmAiOrganize() {
+    if (!organizePreview) return;
+    setConfirmingOrganize(true);
+    const updates = organizePreview.newOrder.map((t, i) => ({ id: t.id, priorityOrder: i }));
+    try {
+      await post("/plan/reorder", { items: updates });
+      setTasks(organizePreview.newOrder);
+      setOrganizePreview(null);
+    } catch { loadTasks(); }
+    setConfirmingOrganize(false);
   }
 
   function handleAddCreated(result: any) {
@@ -1005,7 +1132,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
           })}
         </div>
 
-        {/* ── Filter dropdowns row ── */}
+        {/* ── Filter row ── */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={selStyle}>
             <option value="">All categories</option>
@@ -1015,21 +1142,49 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
             <option value="">All owners</option>
             {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
-          <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} style={selStyle}>
-            <option value="">All priorities</option>
-            <option value="P0">P0 — Critical</option>
-            <option value="P1">P1 — High</option>
-            <option value="P2">P2 — Standard</option>
-          </select>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={selStyle}>
-            <option value="">All statuses</option>
-            <option value="active">Active</option>
-            <option value="completed">Completed</option>
-          </select>
+          {/* Priority chips */}
+          {[["", "All"], ["P0", "P0"], ["P1", "P1"], ["P2", "P2"]].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setFilterPriority(val)}
+              style={{
+                padding: "4px 11px", borderRadius: 20, border: `1px solid ${filterPriority === val ? C.blu : C.brd}`,
+                background: filterPriority === val ? C.bluBg : "transparent",
+                color: filterPriority === val ? C.blu : C.sub, fontSize: 11, fontWeight: 600,
+                cursor: "pointer", fontFamily: F, whiteSpace: "nowrap",
+              }}
+            >{label}</button>
+          ))}
+          {/* Status chips */}
+          {[["", "All"], ["pending", "Not Started"], ["active", "Active"], ["completed", "Done"]].map(([val, label]) => (
+            <button
+              key={val}
+              onClick={() => setFilterStatus(val)}
+              style={{
+                padding: "4px 11px", borderRadius: 20,
+                border: `1px solid ${filterStatus === val ? (val === "completed" ? C.grn : val === "pending" ? C.amb : val === "active" ? C.blu : C.brd) : C.brd}`,
+                background: filterStatus === val ? (val === "completed" ? C.grnBg : val === "pending" ? C.ambBg : val === "active" ? C.bluBg : C.card) : "transparent",
+                color: filterStatus === val ? (val === "completed" ? C.grn : val === "pending" ? C.amb : val === "active" ? C.blu : C.tx) : C.sub,
+                fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F, whiteSpace: "nowrap",
+              }}
+            >{label}</button>
+          ))}
           <span style={{ marginLeft: "auto", fontSize: 11, color: C.mut }}>
             {loading ? "Loading…" : `${displayed.length} tasks`}
           </span>
-          <span style={{ fontSize: 10, color: C.mut, fontFamily: F }}>⠿ drag to reorder</span>
+          <span style={{ fontSize: 10, color: C.mut, fontFamily: F }}>⠿ drag rows to reorder</span>
+          <button
+            onClick={runAiOrganize}
+            disabled={organizing || loading}
+            style={{
+              padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.blu}`,
+              background: organizing ? C.bluBg : C.bluBg, color: C.blu,
+              fontSize: 12, fontWeight: 700, cursor: organizing ? "wait" : "pointer", fontFamily: F,
+              display: "flex", alignItems: "center", gap: 5,
+            }}
+          >
+            {organizing ? "🧠 Thinking…" : "🧠 AI Organize"}
+          </button>
           <button onClick={() => setShowAdd(true)} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#F97316", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>+ Add task</button>
         </div>
       </div>
@@ -1039,7 +1194,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
           <thead>
             <tr style={{ background: C.card, borderBottom: `2px solid ${C.brd}` }}>
-              {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Priority","Status","Due Date","Completed","Notes","Linear"].map((h, i) => (
+              {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Co-Owner","Source","Priority","Status","Due Date","Completed","Notes","Linear"].map((h, i) => (
                 <th key={i} style={{ position: "sticky", top: 0, background: C.card, fontSize: 10, fontWeight: 700, color: C.sub, textAlign: "left", padding: "8px 10px", whiteSpace: "nowrap", borderRight: `1px solid ${C.brd}`, borderBottom: `2px solid ${C.brd}`, zIndex: 10 }}>{h}</th>
               ))}
             </tr>
@@ -1103,6 +1258,23 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                   <td style={{ padding: "8px 10px" }}>
                     {task.owner && <span style={{ fontSize: 11, fontWeight: 700, color: pc, background: pc + "18", borderRadius: 8, padding: "1px 7px", whiteSpace: "nowrap" }}>{task.owner}</span>}
                   </td>
+                  {/* Co-Owner — inline editable */}
+                  <td onClick={e => e.stopPropagation()} style={{ padding: "4px 8px", minWidth: 80 }}>
+                    <input
+                      defaultValue={task.coOwner || ""}
+                      placeholder="—"
+                      onBlur={async e => {
+                        const val = e.target.value.trim();
+                        const prev = task.coOwner || "";
+                        if (val === prev) return;
+                        try { await patch(`/plan/item/${task.id}`, { coOwner: val || null }); } catch { /**/ }
+                      }}
+                      style={{ width: 72, fontSize: 11, background: "transparent", border: "none", outline: "none", color: C.tx, cursor: "text", padding: "2px 4px", borderRadius: 4 }}
+                      onFocus={e => { e.target.style.background = C.card; e.target.style.border = `1px solid ${C.brd}`; }}
+                    />
+                  </td>
+                  {/* Source */}
+                  <td style={{ padding: "8px 10px", fontSize: 11, color: C.mut, whiteSpace: "nowrap" }}>{task.source || "—"}</td>
                   {/* Priority */}
                   <td style={{ padding: "8px 10px" }}>{task.priority && <PriorityBadge p={task.priority} />}</td>
                   {/* Status */}
@@ -1200,6 +1372,115 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
           onClose={() => setSelectedTask(null)}
           onSaved={() => { loadTasks(); onRefreshAll(); }}
         />
+      )}
+
+      {/* ─── Training Modal ─────────────────────────────────────────────── */}
+      {pendingDrop && !aiReflection && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 }}>
+          <div style={{ background: C.card, borderRadius: 16, padding: 32, width: 520, maxWidth: "94vw", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${C.brd}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>🧠 Brain Training</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.tx, fontFamily: F, marginBottom: 4 }}>
+              Moving <span style={{ color: C.blu }}>"{pendingDrop.movedTask.title}"</span>
+            </div>
+            {pendingDrop.displacedTasks.length > 0 && (
+              <div style={{ fontSize: 12, color: C.mut, marginBottom: 16 }}>
+                <span>above </span>
+                {pendingDrop.displacedTasks.slice(0, 3).map((t, i) => (
+                  <span key={t.id}>{i > 0 ? ", " : ""}<em style={{ color: C.tx }}>"{t.title}"</em></span>
+                ))}
+                {pendingDrop.displacedTasks.length > 3 && <span> +{pendingDrop.displacedTasks.length - 3} more</span>}
+              </div>
+            )}
+            <div style={{ fontSize: 13, color: C.tx, marginBottom: 10, fontWeight: 600 }}>Why is it more important right now?</div>
+            <textarea
+              autoFocus
+              value={trainingExplanation}
+              onChange={e => setTrainingExplanation(e.target.value)}
+              placeholder="e.g. This unblocks our biggest deal this week. Revenue before process."
+              rows={4}
+              style={{
+                width: "100%", boxSizing: "border-box", background: C.bg, border: `1px solid ${C.brd}`,
+                borderRadius: 8, padding: "10px 12px", color: C.tx, fontSize: 13, fontFamily: F,
+                resize: "vertical", outline: "none",
+              }}
+              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitTraining(); }}
+            />
+            <div style={{ fontSize: 10, color: C.mut, marginTop: 4, marginBottom: 20 }}>⌘/Ctrl+Enter to submit · Your reasoning trains the AI</div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={cancelTraining} disabled={submittingTraining} style={{ padding: "9px 20px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.mut, fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel (revert)</button>
+              <button
+                onClick={submitTraining}
+                disabled={!trainingExplanation.trim() || submittingTraining}
+                style={{
+                  padding: "9px 24px", borderRadius: 8, border: "none",
+                  background: !trainingExplanation.trim() || submittingTraining ? C.brd : C.blu,
+                  color: "#fff", fontSize: 13, fontWeight: 700, cursor: !trainingExplanation.trim() ? "not-allowed" : "pointer", fontFamily: F,
+                }}
+              >
+                {submittingTraining ? "Saving + reflecting…" : "Log & Save →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── AI Reflection (after training log submit) ───────────────────── */}
+      {pendingDrop && aiReflection && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9001 }}>
+          <div style={{ background: C.card, borderRadius: 16, padding: 32, width: 480, maxWidth: "94vw", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${C.brd}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>🧠 Brain reflection</div>
+            <div style={{ fontSize: 14, color: C.tx, lineHeight: 1.7, marginBottom: 20, fontStyle: "italic", borderLeft: `3px solid ${C.blu}`, paddingLeft: 14 }}>{aiReflection}</div>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button onClick={closePendingDrop} style={{ padding: "9px 24px", borderRadius: 8, border: "none", background: C.blu, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}>Got it ✓</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── AI Organize Preview ─────────────────────────────────────────── */}
+      {organizePreview && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.70)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9002 }}>
+          <div style={{ background: C.card, borderRadius: 16, padding: 28, width: 640, maxWidth: "96vw", maxHeight: "85vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 80px rgba(0,0,0,0.5)", border: `1px solid ${C.brd}` }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 4 }}>🧠 AI Organize Preview</div>
+            <div style={{ fontSize: 13, color: C.mut, marginBottom: 16 }}>
+              Claude re-ranked your tasks based on revenue impact, urgency, and your training history.
+              <span style={{ marginLeft: 12, color: C.grn, fontWeight: 600 }}>▲ moved up</span>
+              <span style={{ marginLeft: 8, color: C.amb, fontWeight: 600 }}>▼ moved down</span>
+            </div>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              {organizePreview.newOrder.slice(0, 40).map((t, i) => {
+                const oldIdx = organizePreview.currentOrder.findIndex(c => c.id === t.id);
+                const moved = oldIdx - i;
+                const upColor = C.grn;
+                const dnColor = C.amb;
+                const moveBadge = moved > 0 ? (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: upColor, background: C.grnBg, borderRadius: 4, padding: "1px 5px" }}>▲{moved}</span>
+                ) : moved < 0 ? (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: dnColor, background: C.ambBg, borderRadius: 4, padding: "1px 5px" }}>▼{Math.abs(moved)}</span>
+                ) : null;
+                const catColor = CAT_COLORS[t.category as keyof typeof CAT_COLORS]?.accent || C.mut;
+                return (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderBottom: `1px solid ${C.brd}`, background: moved > 2 ? `${upColor}10` : moved < -2 ? `${dnColor}10` : "transparent", borderRadius: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 10, color: C.mut, width: 22, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: catColor, width: 50, flexShrink: 0 }}>{t.sprintId || t.category?.slice(0, 3).toUpperCase()}</span>
+                    <span style={{ flex: 1, fontSize: 12, color: C.tx }}>{t.title}</span>
+                    {moveBadge && <span style={{ flexShrink: 0 }}>{moveBadge}</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20, borderTop: `1px solid ${C.brd}`, paddingTop: 16 }}>
+              <button onClick={() => setOrganizePreview(null)} style={{ padding: "9px 20px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.mut, fontSize: 13, cursor: "pointer", fontFamily: F }}>Discard</button>
+              <button
+                onClick={confirmAiOrganize}
+                disabled={confirmingOrganize}
+                style={{ padding: "9px 24px", borderRadius: 8, border: "none", background: C.blu, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}
+              >
+                {confirmingOrganize ? "Applying…" : "Apply AI Order ✓"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1648,18 +1929,86 @@ This plan resets July 4, 2026.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 function BusinessPlanTab() {
-  const [activeDoc, setActiveDoc] = useState<"bp" | "oap">("bp");
+  const [activeDoc, setActiveDoc] = useState<"bp" | "oap" | "brain">("bp");
+  const [brainContent, setBrainContent] = useState("");
+  const [brainSaving, setBrainSaving] = useState(false);
+  const [brainSaved, setBrainSaved] = useState(false);
+  const [brainLoading, setBrainLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeDoc === "brain") {
+      setBrainLoading(true);
+      get<{ content: string }>("/plan/brain/context")
+        .then(d => { setBrainContent(d.content || ""); })
+        .catch(() => {})
+        .finally(() => setBrainLoading(false));
+    }
+  }, [activeDoc]);
+
+  async function saveBrainContext() {
+    if (!brainContent.trim()) return;
+    setBrainSaving(true);
+    try {
+      await put("/plan/brain/context", { content: brainContent });
+      setBrainSaved(true);
+      setTimeout(() => setBrainSaved(false), 2500);
+    } catch { /**/ }
+    setBrainSaving(false);
+  }
+
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
         <button onClick={() => setActiveDoc("bp")} style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.brd}`, background: activeDoc === "bp" ? "#F97316" : C.card, color: activeDoc === "bp" ? "#fff" : C.sub, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>📋 Business Plan</button>
-        <button onClick={() => setActiveDoc("oap")} style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.brd}`, background: activeDoc === "oap" ? "#F97316" : C.card, color: activeDoc === "oap" ? "#fff" : C.sub, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>🗓 90-Day OAP — Narrative</button>
+        <button onClick={() => setActiveDoc("oap")} style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.brd}`, background: activeDoc === "oap" ? "#F97316" : C.card, color: activeDoc === "oap" ? "#fff" : C.sub, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>🗓 90-Day OAP</button>
+        <button onClick={() => setActiveDoc("brain")} style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${activeDoc === "brain" ? C.blu : C.brd}`, background: activeDoc === "brain" ? C.bluBg : C.card, color: activeDoc === "brain" ? C.blu : C.sub, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>🧠 Brain Context</button>
       </div>
-      <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 12, padding: "24px 28px" }}>
-        <pre style={{ fontSize: 12, color: C.tx, fontFamily: "ui-monospace, monospace", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
-          {activeDoc === "bp" ? BUSINESS_PLAN : OAP_NARRATIVE}
-        </pre>
-      </div>
+
+      {activeDoc === "brain" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: C.bluBg, border: `1px solid ${C.blu}40`, borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.blu, marginBottom: 4 }}>🧠 Brain Context Document</div>
+            <div style={{ fontSize: 12, color: C.tx, lineHeight: 1.6 }}>
+              This document gives the AI context when organizing your sprint. Describe your current priorities, constraints, relationships, and business logic that doesn't fit in a task. Be direct and specific — Tony-style.
+            </div>
+          </div>
+          {brainLoading ? (
+            <div style={{ fontSize: 13, color: C.mut, padding: 24 }}>Loading…</div>
+          ) : (
+            <textarea
+              value={brainContent}
+              onChange={e => setBrainContent(e.target.value)}
+              placeholder={`Example:\n\n- Capital is the #1 constraint. Anything that doesn't directly move revenue or reduce burn is noise.\n- DBTM operator is our showcase client — never let them wait.\n- Bondilyn has been waiting 2 weeks for sales materials. That's a P0.\n- Engineering is solid. Don't micromanage Faisal or Haris.\n- Tony's most productive hours are 6–10am. Don't schedule calls before 10am.`}
+              rows={18}
+              style={{
+                width: "100%", boxSizing: "border-box", background: C.card, border: `1px solid ${C.brd}`,
+                borderRadius: 10, padding: "16px 18px", color: C.tx, fontSize: 13, fontFamily: "ui-monospace, monospace",
+                lineHeight: 1.7, resize: "vertical", outline: "none",
+              }}
+            />
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
+            {brainSaved && <span style={{ fontSize: 12, color: C.grn, fontWeight: 600 }}>✓ Saved</span>}
+            <button
+              onClick={saveBrainContext}
+              disabled={brainSaving || !brainContent.trim()}
+              style={{
+                padding: "9px 24px", borderRadius: 8, border: "none",
+                background: brainSaving || !brainContent.trim() ? C.brd : C.blu,
+                color: "#fff", fontSize: 13, fontWeight: 700, cursor: brainContent.trim() ? "pointer" : "not-allowed", fontFamily: F,
+              }}
+            >
+              {brainSaving ? "Saving…" : "Save Brain Context"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 12, padding: "24px 28px" }}>
+          <pre style={{ fontSize: 12, color: C.tx, fontFamily: "ui-monospace, monospace", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+            {activeDoc === "bp" ? BUSINESS_PLAN : OAP_NARRATIVE}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

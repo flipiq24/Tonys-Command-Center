@@ -656,7 +656,7 @@ router.post("/plan/task", async (req, res): Promise<void> => {
 // Optionally accepts explanation + displacedIds to log training data and get AI reflection
 router.post("/plan/reorder", async (req, res): Promise<void> => {
   try {
-    const { items, explanation, movedItemId, movedItemTitle, fromPosition, toPosition, displacedItemIds, displacedItemTitles } = req.body as {
+    const { items, explanation, movedItemId, movedItemTitle, fromPosition, toPosition, displacedItemIds, displacedItemTitles, direction } = req.body as {
       items: { id: string; priorityOrder: number }[];
       explanation?: string;
       movedItemId?: string;
@@ -665,6 +665,7 @@ router.post("/plan/reorder", async (req, res): Promise<void> => {
       toPosition?: number;
       displacedItemIds?: string[];
       displacedItemTitles?: string[];
+      direction?: "up" | "down";
     };
     if (!Array.isArray(items)) { res.status(400).json({ error: "items must be array" }); return; }
 
@@ -677,16 +678,22 @@ router.post("/plan/reorder", async (req, res): Promise<void> => {
     let aiReflection: string | null = null;
 
     if (explanation?.trim() && movedItemId) {
+      const movedDown = direction === "down";
       const displacedList = (displacedItemTitles || []).slice(0, 5).map((t, i) => `${i + 1}. ${t}`).join("\n");
-      const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Tony just moved a task above others and explained why.
+      const directionLine = movedDown
+        ? `Tony moved this task DOWN — meaning it is now LESS important than the tasks it was placed below.`
+        : `Tony moved this task UP — meaning it is now MORE important than the tasks it leapfrogged over.`;
+      const displacedLabel = movedDown ? "NOW RANKED ABOVE IT (more important):" : "LEAPFROGGED OVER (now less important):";
+      const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Tony just reordered a task and explained why.
 
-MOVED: "${movedItemTitle || "Unknown"}"
-LEAPFROGGED OVER:
-${displacedList || "(no displaced tasks listed)"}
+TASK: "${movedItemTitle || "Unknown"}"
+DIRECTION: ${directionLine}
+${displacedLabel}
+${displacedList || "(none listed)"}
 
 TONY'S EXPLANATION: "${explanation}"
 
-Write a concise 2-3 sentence reflection (under 80 words) acknowledging Tony's reasoning. Be direct and affirming — no fluff. Confirm the logic or note a key tradeoff if relevant. Start with "Got it —" or similar.`;
+Write a concise 2-3 sentence reflection (under 80 words) that is relevant to the direction Tony moved the task. If moved DOWN (less important), acknowledge what is more urgent and why deprioritizing makes sense. If moved UP (more important), confirm the reasoning or note a tradeoff. Be direct — no fluff. Start with "Got it —" or similar.`;
 
       try {
         const msg = await anthropic.messages.create({

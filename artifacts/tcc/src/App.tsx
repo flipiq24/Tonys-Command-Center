@@ -18,11 +18,10 @@ import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
 import { DashboardView } from "@/components/tcc/DashboardView";
 import { BusinessView } from "@/components/tcc/BusinessView";
-import { BrainView } from "@/components/tcc/BrainView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business" | "brain";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business";
 type BusinessTab = "goals" | "team" | "tasks" | "plan";
 
 export default function App() {
@@ -248,7 +247,7 @@ export default function App() {
           setCk(loaded);
 
           if (journal?.formattedText || journal?.rawText) {
-            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "sales-morning", "brain"];
+            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "sales-morning", "business"];
             const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
             const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "dashboard";
             setView(restoredView);
@@ -584,7 +583,7 @@ export default function App() {
         calSide={calSide}
         onAttempt={c => setAttempt(c)}
         onConnected={name => handleLogCall(name, "connected")}
-        onSwitchToTasks={() => persistView("brain")}
+        onSwitchToTasks={() => { setBusinessTab("tasks"); persistView("business"); }}
         onBackToSchedule={() => persistView("schedule")}
         onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
         onConnectedCall={c => setConnectedCall(c)}
@@ -605,7 +604,7 @@ export default function App() {
         onConnectedCall={c => setConnectedCall(c)}
         onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
         onOpenChat={openChatWithContext}
-        onSwitchToTasks={() => persistView("brain")}
+        onSwitchToTasks={() => { setBusinessTab("tasks"); persistView("business"); }}
         onBackToSchedule={() => persistView("schedule")}
         onSwitchToFullSales={() => persistView("sales")}
       />
@@ -625,15 +624,6 @@ export default function App() {
     </div>
   );
 
-  // ═══ BRAIN VIEW ═══
-  if (view === "brain") return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      {sharedHeader}
-      {sharedModals}
-      <BrainView />
-    </div>
-  );
-
   // ═══ SCHEDULE VIEW (default) ═══
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
@@ -643,7 +633,7 @@ export default function App() {
       <ScheduleView
         items={brief?.calendarData || []}
         onEnterSales={() => { persistView("sales"); setCalSide(true); }}
-        onEnterTasks={() => { persistView("brain"); setCalSide(true); }}
+        onEnterTasks={() => { setBusinessTab("tasks"); persistView("business"); setCalSide(true); }}
         onRefresh={() => refreshBrief(["calendar"])}
       />
     </div>

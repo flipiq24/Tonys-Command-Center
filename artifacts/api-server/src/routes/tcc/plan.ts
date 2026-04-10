@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { planItemsTable } from "../../lib/schema-v2";
-import { eq, and, asc } from "drizzle-orm";
+import { planItemsTable, brainTrainingLogTable, businessContextTable } from "../../lib/schema-v2";
+import { eq, and, asc, desc } from "drizzle-orm";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
 
@@ -430,7 +431,7 @@ router.get("/plan/tasks", async (req, res): Promise<void> => {
 
     const tasks = await db.select().from(planItemsTable)
       .where(and(...filters))
-      .orderBy(asc(planItemsTable.category), asc(planItemsTable.priorityOrder));
+      .orderBy(asc(planItemsTable.priorityOrder), asc(planItemsTable.category));
 
     const tasksWithSprintIds = assignSprintIds(tasks);
 
@@ -545,7 +546,7 @@ router.post("/plan/task/:id/uncomplete", async (req, res): Promise<void> => {
 router.patch("/plan/item/:id", async (req, res): Promise<void> => {
   try {
     const { id } = req.params;
-    const allowed = ["title","owner","priority","dueDate","weekNumber","status","workNotes","atomicKpi","source","executionTier","linearId","subcategory"];
+    const allowed = ["title","owner","coOwner","priority","dueDate","weekNumber","status","workNotes","atomicKpi","source","executionTier","linearId","subcategory"];
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -652,9 +653,19 @@ router.post("/plan/task", async (req, res): Promise<void> => {
 });
 
 // POST /plan/reorder — bulk update priority orders (after drag-drop)
+// Optionally accepts explanation + displacedIds to log training data and get AI reflection
 router.post("/plan/reorder", async (req, res): Promise<void> => {
   try {
-    const { items } = req.body as { items: { id: string; priorityOrder: number }[] };
+    const { items, explanation, movedItemId, movedItemTitle, fromPosition, toPosition, displacedItemIds, displacedItemTitles } = req.body as {
+      items: { id: string; priorityOrder: number }[];
+      explanation?: string;
+      movedItemId?: string;
+      movedItemTitle?: string;
+      fromPosition?: number;
+      toPosition?: number;
+      displacedItemIds?: string[];
+      displacedItemTitles?: string[];
+    };
     if (!Array.isArray(items)) { res.status(400).json({ error: "items must be array" }); return; }
 
     for (const item of items) {
@@ -663,7 +674,184 @@ router.post("/plan/reorder", async (req, res): Promise<void> => {
         .where(eq(planItemsTable.id, item.id));
     }
 
-    res.json({ ok: true, updated: items.length });
+    let aiReflection: string | null = null;
+
+    if (explanation?.trim() && movedItemId) {
+      const displacedList = (displacedItemTitles || []).slice(0, 5).map((t, i) => `${i + 1}. ${t}`).join("\n");
+      const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Tony just moved a task above others and explained why.
+
+MOVED: "${movedItemTitle || "Unknown"}"
+LEAPFROGGED OVER:
+${displacedList || "(no displaced tasks listed)"}
+
+TONY'S EXPLANATION: "${explanation}"
+
+Write a concise 2-3 sentence reflection (under 80 words) acknowledging Tony's reasoning. Be direct and affirming — no fluff. Confirm the logic or note a key tradeoff if relevant. Start with "Got it —" or similar.`;
+
+      try {
+        const msg = await anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 200,
+          messages: [{ role: "user", content: prompt }],
+        });
+        const block = msg.content[0];
+        if (block.type === "text") aiReflection = block.text.trim();
+      } catch (e) {
+        console.warn("[plan/reorder] Claude reflection failed:", e);
+      }
+
+      await db.insert(brainTrainingLogTable).values({
+        movedItemId,
+        movedItemTitle: movedItemTitle || null,
+        fromPosition: fromPosition ?? null,
+        toPosition: toPosition ?? null,
+        displacedItemIds: displacedItemIds || [],
+        displacedItemTitles: displacedItemTitles || [],
+        tonyExplanation: explanation.trim(),
+        aiReflection,
+      });
+    }
+
+    res.json({ ok: true, updated: items.length, aiReflection });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /plan/brain/order — ask Claude to re-rank all active tasks
+router.get("/plan/brain/order", async (req, res): Promise<void> => {
+  try {
+    const activeTasks = await db.select().from(planItemsTable)
+      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.status, "active")))
+      .orderBy(asc(planItemsTable.priorityOrder));
+
+    if (activeTasks.length === 0) {
+      res.json({ priorityOrder: [], tasks: [] });
+      return;
+    }
+
+    const recentLogs = await db.select().from(brainTrainingLogTable)
+      .orderBy(desc(brainTrainingLogTable.createdAt))
+      .limit(20);
+
+    let brainContext = "";
+    try {
+      const [ctx] = await db.select().from(businessContextTable)
+        .where(eq(businessContextTable.documentType, "brain_context"));
+      if (ctx?.content) brainContext = ctx.content;
+    } catch { /**/ }
+
+    let businessPlanCtx = "";
+    try {
+      const [bp] = await db.select().from(businessContextTable)
+        .where(eq(businessContextTable.documentType, "business_plan"));
+      if (bp?.content) businessPlanCtx = bp.content.substring(0, 3000);
+    } catch { /**/ }
+
+    const taskList = activeTasks.map((t, i) => {
+      const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
+      const prank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
+      return `${i + 1}. [${t.id}] ${t.category}/${t.subcategory || "—"} | "${t.title}" | Owner:${t.owner || "?"} | Priority:${t.priority || "?"} (rank ${prank}) | Due:${t.dueDate || "none"} | Source:${t.source || "?"}`;
+    }).join("\n");
+
+    const trainingHistory = recentLogs.length > 0
+      ? recentLogs.map(l => `- Moved "${l.movedItemTitle}" above ${(l.displacedItemTitles || []).slice(0, 3).join(", ")} because: "${l.tonyExplanation}"`).join("\n")
+      : "No training history yet.";
+
+    const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Your job is to determine the optimal work priority order for all active tasks.
+
+NORTH STAR METRIC: Every Acquisition Associate closes 2 deals/month. If it doesn't move an AA toward 2 deals/month, it is noise.
+
+BUSINESS CONTEXT:
+${brainContext || businessPlanCtx || "Sales-first business. Break-even goal: $50K/month. P0 > revenue, P1 > speed, P2 > quality."}
+
+TRAINING HISTORY (Tony's past reorder decisions):
+${trainingHistory}
+
+ACTIVE TASKS (current order, positions 1 to ${activeTasks.length}):
+${taskList}
+
+Re-rank ALL ${activeTasks.length} tasks in optimal sprint priority order. Consider:
+1. Priority field (P0 > P1 > P2)
+2. Due date urgency
+3. Revenue / AA deal impact (higher = earlier)
+4. Training history (respect Tony's established patterns)
+5. Owner availability patterns
+6. Dependencies (don't block downstream tasks)
+
+Return ONLY a JSON object with the key "priorityOrder" containing an array of ALL task IDs in optimal order (no markdown, no explanation):
+{"priorityOrder": ["id1","id2","id3",...]}`;
+
+    const msg = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 4000,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const block = msg.content[0];
+    if (block.type !== "text") {
+      res.status(500).json({ error: "Claude returned unexpected response" });
+      return;
+    }
+
+    const raw = block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+    const parsed = JSON.parse(raw) as { priorityOrder: string[] };
+
+    const validIds = new Set(activeTasks.map(t => t.id));
+    const ordered = parsed.priorityOrder.filter(id => validIds.has(id));
+    const missing = activeTasks.filter(t => !ordered.includes(t.id)).map(t => t.id);
+    const fullOrder = [...ordered, ...missing];
+
+    const tasksInNewOrder = fullOrder.map(id => activeTasks.find(t => t.id === id)!).filter(Boolean);
+
+    res.json({ priorityOrder: fullOrder, tasks: tasksInNewOrder });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /plan/brain/logs — recent training log entries
+router.get("/plan/brain/logs", async (req, res): Promise<void> => {
+  try {
+    const logs = await db.select().from(brainTrainingLogTable)
+      .orderBy(desc(brainTrainingLogTable.createdAt))
+      .limit(50);
+    res.json({ logs });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// PUT /plan/brain/context — save the brain context document
+router.put("/plan/brain/context", async (req, res): Promise<void> => {
+  try {
+    const { content } = req.body as { content: string };
+    if (!content?.trim()) { res.status(400).json({ error: "content is required" }); return; }
+    const existing = await db.select().from(businessContextTable)
+      .where(eq(businessContextTable.documentType, "brain_context"));
+    if (existing.length > 0) {
+      await db.update(businessContextTable)
+        .set({ content: content.trim(), lastUpdated: new Date() })
+        .where(eq(businessContextTable.documentType, "brain_context"));
+    } else {
+      await db.insert(businessContextTable).values({
+        documentType: "brain_context",
+        content: content.trim(),
+        summary: "Tony's brain context for AI sprint prioritization",
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /plan/brain/context — load the brain context document
+router.get("/plan/brain/context", async (req, res): Promise<void> => {
+  try {
+    const [ctx] = await db.select().from(businessContextTable)
+      .where(eq(businessContextTable.documentType, "brain_context"));
+    res.json({ content: ctx?.content || "", lastUpdated: ctx?.lastUpdated || null });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -680,46 +868,181 @@ router.delete("/plan/task/:id", async (req, res): Promise<void> => {
   }
 });
 
+// ─── Brain scoring helper for new Linear tasks ───────────────────────────────
+async function brainScoreNewTask(title: string, category: string, priority: string): Promise<number> {
+  try {
+    const activeTasks = await db.select({ id: planItemsTable.id, title: planItemsTable.title, category: planItemsTable.category, priority: planItemsTable.priority, priorityOrder: planItemsTable.priorityOrder })
+      .from(planItemsTable)
+      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.status, "active")))
+      .orderBy(asc(planItemsTable.priorityOrder));
+
+    if (activeTasks.length === 0) return 0;
+
+    const recentLogs = await db.select().from(brainTrainingLogTable)
+      .orderBy(desc(brainTrainingLogTable.createdAt))
+      .limit(10);
+
+    let brainContext = "";
+    try {
+      const [ctx] = await db.select().from(businessContextTable)
+        .where(eq(businessContextTable.documentType, "brain_context"));
+      if (ctx?.content) brainContext = ctx.content.substring(0, 1000);
+    } catch { /**/ }
+
+    const taskList = activeTasks.map((t, i) => `${i}: [${t.category}] ${t.title} (${t.priority || "P2"})`).join("\n");
+    const trainingContext = recentLogs.length > 0
+      ? recentLogs.map(l => `- Moved "${l.movedItemTitle}" above: "${(l.displacedItemTitles || []).slice(0, 2).join(", ")}" because: "${l.tonyExplanation}"`).join("\n")
+      : "";
+
+    const prompt = `You are Tony Diaz's sprint brain for FlipIQ. A new task was just added from Linear and needs to be inserted at the right priority position.
+
+NEW TASK: "${title}" | Category: ${category} | Priority: ${priority || "P1"}
+
+BRAIN CONTEXT: ${brainContext || "Sales-first business. P0 > revenue, P1 > speed, P2 > quality."}
+
+TRAINING PATTERNS:
+${trainingContext || "None yet."}
+
+CURRENT TASK ORDER (index: task):
+${taskList.substring(0, 2000)}
+
+At which index (0 = top) should the new task be inserted? Consider:
+1. Its priority (${priority}) vs surrounding tasks
+2. Its category alignment (${category}) with Tony's patterns
+3. Business impact (does it unblock sales or operators?)
+
+Return ONLY a JSON object: {"insertAt": <number>}`;
+
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 100,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const block = msg.content[0];
+    if (block.type !== "text") return Math.floor(activeTasks.length / 2);
+    const parsed = JSON.parse(block.text.trim()) as { insertAt: number };
+    return Math.min(Math.max(0, parsed.insertAt), activeTasks.length);
+  } catch (e) {
+    console.warn("[plan] brainScoreNewTask failed:", e);
+    return 0; // Default to top if brain scoring fails
+  }
+}
+
 // POST /plan/linear-webhook — receive Linear webhook events
 router.post("/plan/linear-webhook", async (req, res): Promise<void> => {
   try {
     const { action, type, data } = req.body;
 
-    if (type !== "Issue" || action !== "update") {
+    if (type !== "Issue") {
       res.json({ ok: true, skipped: true });
       return;
     }
 
     const linearId = data?.id;
-    const stateType = data?.state?.type;
 
-    if (!linearId || !stateType) {
+    if (!linearId) {
       res.json({ ok: true, skipped: true });
       return;
     }
 
-    // Find matching task
-    const [task] = await db.select().from(planItemsTable)
-      .where(and(eq(planItemsTable.linearId, linearId), eq(planItemsTable.level, "task")));
+    // ── Handle new issue creation ─────────────────────────────────────────
+    if (action === "create") {
+      const title = data?.title;
+      if (!title?.trim()) {
+        res.json({ ok: true, skipped: true, reason: "no title" });
+        return;
+      }
 
-    if (!task) {
-      res.json({ ok: true, skipped: true, reason: "no matching task" });
+      // Check if already imported
+      const [existing] = await db.select().from(planItemsTable)
+        .where(and(eq(planItemsTable.linearId, linearId), eq(planItemsTable.level, "task")));
+      if (existing) {
+        res.json({ ok: true, skipped: true, reason: "already exists" });
+        return;
+      }
+
+      // Infer category from Linear team/label if available
+      const teamName: string = (data?.team?.name || "").toLowerCase();
+      let category = "tech";
+      if (teamName.includes("sales") || teamName.includes("growth")) category = "sales";
+      else if (teamName.includes("ops") || teamName.includes("adapt")) category = "adaptation";
+      else if (teamName.includes("cap") || teamName.includes("finance")) category = "capital";
+      else if (teamName.includes("team") || teamName.includes("hr")) category = "team";
+
+      // Linear priority: 0 = no priority, 1 = urgent, 2 = high, 3 = medium, 4 = low
+      const priority = data?.priority === 1 ? "P0" : data?.priority === 2 ? "P1" : "P2";
+      const dueDate = data?.dueDate?.substring(0, 10) || null;
+      const assignee = data?.assignee?.name || null;
+
+      // Brain scoring: find optimal priority order position
+      const insertAt = await brainScoreNewTask(title, category, priority);
+
+      // Shift existing tasks down to make room
+      const activeTasks = await db.select({ id: planItemsTable.id, priorityOrder: planItemsTable.priorityOrder })
+        .from(planItemsTable)
+        .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.status, "active")))
+        .orderBy(asc(planItemsTable.priorityOrder));
+
+      for (const t of activeTasks) {
+        if ((t.priorityOrder ?? 0) >= insertAt) {
+          await db.update(planItemsTable)
+            .set({ priorityOrder: (t.priorityOrder ?? 0) + 1, updatedAt: new Date() })
+            .where(eq(planItemsTable.id, t.id));
+        }
+      }
+
+      const [newTask] = await db.insert(planItemsTable).values({
+        level: "task",
+        category,
+        title: title.trim(),
+        owner: assignee,
+        priority,
+        status: "active",
+        priorityOrder: insertAt,
+        linearId,
+        source: "Linear",
+        dueDate: dueDate || undefined,
+      }).returning();
+
+      console.log(`[plan] Linear webhook: inserted "${title}" at position ${insertAt} (brain-scored)`);
+      res.json({ ok: true, taskId: newTask.id, insertedAt: insertAt, action: "created" });
       return;
     }
 
-    if (stateType === "completed" && task.status !== "completed") {
-      await db.update(planItemsTable)
-        .set({ status: "completed", completedAt: new Date(), completedBy: "Linear", updatedAt: new Date() })
-        .where(eq(planItemsTable.id, task.id));
-      await checkParentCompletion(task.id);
-      console.log(`[plan] Linear webhook: marked ${task.title} completed`);
-    } else if ((stateType === "started" || stateType === "unstarted") && task.status === "completed") {
-      await db.update(planItemsTable)
-        .set({ status: "active", completedAt: null, completedBy: null, updatedAt: new Date() })
-        .where(eq(planItemsTable.id, task.id));
+    // ── Handle status updates ─────────────────────────────────────────────
+    if (action === "update") {
+      const stateType = data?.state?.type;
+      if (!stateType) {
+        res.json({ ok: true, skipped: true });
+        return;
+      }
+
+      const [task] = await db.select().from(planItemsTable)
+        .where(and(eq(planItemsTable.linearId, linearId), eq(planItemsTable.level, "task")));
+
+      if (!task) {
+        res.json({ ok: true, skipped: true, reason: "no matching task" });
+        return;
+      }
+
+      if (stateType === "completed" && task.status !== "completed") {
+        await db.update(planItemsTable)
+          .set({ status: "completed", completedAt: new Date(), completedBy: "Linear", updatedAt: new Date() })
+          .where(eq(planItemsTable.id, task.id));
+        await checkParentCompletion(task.id);
+        console.log(`[plan] Linear webhook: marked ${task.title} completed`);
+      } else if ((stateType === "started" || stateType === "unstarted") && task.status === "completed") {
+        await db.update(planItemsTable)
+          .set({ status: "active", completedAt: null, completedBy: null, updatedAt: new Date() })
+          .where(eq(planItemsTable.id, task.id));
+      }
+
+      res.json({ ok: true, taskId: task.id, action: "updated" });
+      return;
     }
 
-    res.json({ ok: true, taskId: task.id });
+    res.json({ ok: true, skipped: true, reason: "unhandled action" });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

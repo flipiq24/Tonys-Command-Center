@@ -69,6 +69,63 @@ const PRI_COLOR: Record<string, string> = {
   P0: "#ef4444", P1: "#f59e0b", P2: "#22c55e",
 };
 
+// ─── Sliding pill segmented control ──────────────────────────────────────────
+
+function SliderFilter({
+  options,
+  value,
+  onChange,
+  accentColor = "#3b82f6",
+}: {
+  options: { val: string; label: string; color?: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  accentColor?: string;
+}) {
+  const activeIdx = Math.max(0, options.findIndex(o => o.val === value));
+  const count = options.length;
+  const activePillColor = options[activeIdx]?.color ?? accentColor;
+
+  return (
+    <div style={{
+      position: "relative", display: "inline-flex",
+      background: C.bg ?? "#f1f5f9",
+      border: `1px solid ${C.brd ?? "#e2e8f0"}`,
+      borderRadius: 11, padding: 3,
+    }}>
+      {/* Animated sliding pill */}
+      <div style={{
+        position: "absolute",
+        top: 3, bottom: 3,
+        left: `calc(3px + ${activeIdx} * (100% - 6px) / ${count})`,
+        width: `calc((100% - 6px) / ${count})`,
+        background: activePillColor,
+        borderRadius: 8,
+        transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1), background 0.18s ease",
+        pointerEvents: "none",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+      }} />
+      {options.map(({ val, label }) => (
+        <button
+          key={val}
+          onClick={() => onChange(val)}
+          style={{
+            position: "relative", zIndex: 1,
+            padding: "5px 13px", border: "none", borderRadius: 8,
+            background: "transparent",
+            color: value === val ? "#fff" : (C.sub ?? "#64748b"),
+            fontSize: 11, fontWeight: value === val ? 700 : 500,
+            cursor: "pointer", fontFamily: F,
+            transition: "color 0.18s", whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Inline text edit cell ────────────────────────────────────────────────────
 
 function InlineEdit({ value, placeholder, onSave, minWidth = 70 }: {
@@ -616,35 +673,33 @@ export function BrainView() {
           </div>
         </div>
 
-        {/* Category filter chips */}
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
-          {[["", "All"], ...CAT_KEYS.map(k => [k, CAT_LABEL[k]])].map(([val, label]) => (
-            <button key={val} onClick={() => setFilterCat(val)} style={{
-              padding: "3px 10px", borderRadius: 20,
-              border: `1px solid ${filterCat === val ? (CAT_COLOR[val] ?? "#3b82f6") : (C.brd ?? "#e2e8f0")}`,
-              background: filterCat === val ? (CAT_COLOR[val] ?? "#3b82f6") + "20" : "transparent",
-              color: filterCat === val ? (CAT_COLOR[val] ?? "#3b82f6") : (C.sub ?? "#64748b"),
-              fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-            }}>{label}</button>
-          ))}
-        </div>
+        {/* Category slider */}
+        <SliderFilter
+          value={filterCat}
+          onChange={setFilterCat}
+          accentColor="#3b82f6"
+          options={[
+            { val: "", label: "All" },
+            { val: "sales",      label: "Sales",      color: CAT_COLOR.sales },
+            { val: "adaptation", label: "Adaptation", color: CAT_COLOR.adaptation },
+            { val: "tech",       label: "Tech",       color: CAT_COLOR.tech },
+            { val: "capital",    label: "Capital",    color: CAT_COLOR.capital },
+            { val: "team",       label: "Team",       color: CAT_COLOR.team },
+          ]}
+        />
 
-        {/* Status chips */}
-        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-          {[["", "All"], ["active", "Active"], ["pending", "Not Started"], ["completed", "Done"]].map(([val, label]) => {
-            const s = STA_STYLE[val] ?? null;
-            const isActive = filterStatus === val;
-            return (
-              <button key={val} onClick={() => setFilterStatus(val)} style={{
-                padding: "3px 10px", borderRadius: 20,
-                border: `1px solid ${isActive && s ? s.color : (C.brd ?? "#e2e8f0")}`,
-                background: isActive && s ? s.bg : "transparent",
-                color: isActive && s ? s.color : (C.sub ?? "#64748b"),
-                fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
-              }}>{label}</button>
-            );
-          })}
-        </div>
+        {/* Status slider */}
+        <SliderFilter
+          value={filterStatus}
+          onChange={setFilterStatus}
+          accentColor="#3b82f6"
+          options={[
+            { val: "",          label: "All",         color: "#64748b" },
+            { val: "active",    label: "Active",      color: STA_STYLE.active.color },
+            { val: "pending",   label: "Not Started", color: STA_STYLE.pending.color },
+            { val: "completed", label: "Done",        color: "#16a34a" },
+          ]}
+        />
 
         {/* Actions */}
         <button

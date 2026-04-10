@@ -888,8 +888,6 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
-
   const loadTasks = useCallback(async () => {
     setLoading(true);
     try {
@@ -956,128 +954,8 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     return acc;
   }, {});
 
-  // Per-category card data (always from full task list, not filtered)
-  const catCards = CAT_KEYS.map(k => {
-    const all = tasks.filter(t => t.category === k);
-    const active = all.filter(t => t.status !== "completed").sort((a, b) => (a.priorityOrder ?? 999) - (b.priorityOrder ?? 999));
-    const done = all.filter(t => t.status === "completed").length;
-    return { key: k, label: CAT_LABELS[k], color: CAT_COLOR[k] ?? "#555", all, active, done, total: all.length };
-  });
-
   return (
     <div>
-      {/* ── Category Task Cards ── */}
-      {tasks.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 16, marginTop: 8 }}>
-          {catCards.map(cat => {
-            const isActive = filterCat === cat.key;
-            const isExpanded = expandedCards.has(cat.key);
-            const shownTasks = isExpanded ? cat.active : cat.active.slice(0, 5);
-            const pct = cat.total > 0 ? Math.round((cat.done / cat.total) * 100) : 0;
-
-            return (
-              <div key={cat.key} style={{
-                borderRadius: 10, border: `2px solid ${isActive ? cat.color : C.brd}`,
-                overflow: "hidden", background: "#fff",
-                boxShadow: isActive ? `0 2px 12px ${cat.color}30` : "0 1px 4px rgba(0,0,0,0.06)",
-                transition: "all 0.15s",
-              }}>
-                {/* Card header — click to filter */}
-                <button
-                  onClick={() => setFilterCat(isActive ? "" : cat.key)}
-                  style={{
-                    width: "100%", border: "none", cursor: "pointer", textAlign: "left",
-                    background: isActive ? cat.color : "#FAFAFA",
-                    padding: "10px 12px 8px", borderBottom: `1px solid ${C.brd}`,
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: isActive ? "#fff" : cat.color, textTransform: "uppercase", letterSpacing: 0.5 }}>{cat.label}</span>
-                    <span style={{
-                      fontSize: 10, fontWeight: 700,
-                      color: isActive ? cat.color : "#fff",
-                      background: isActive ? "rgba(255,255,255,0.9)" : cat.color,
-                      borderRadius: 10, padding: "1px 7px",
-                    }}>{cat.done}/{cat.total}</span>
-                  </div>
-                  {/* Progress bar */}
-                  <div style={{ height: 3, borderRadius: 2, background: isActive ? "rgba(255,255,255,0.3)" : "#E5E7EB", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${pct}%`, background: isActive ? "#fff" : cat.color, borderRadius: 2, transition: "width 0.4s" }} />
-                  </div>
-                </button>
-
-                {/* Task list */}
-                <div style={{ padding: "6px 0" }}>
-                  {shownTasks.length === 0 ? (
-                    <div style={{ padding: "10px 12px", fontSize: 11, color: C.mut, fontStyle: "italic" }}>
-                      {cat.active.length === 0 ? "✓ All done!" : "No tasks"}
-                    </div>
-                  ) : (
-                    shownTasks.map((t, i) => {
-                      const done = t.status === "completed";
-                      return (
-                        <div
-                          key={t.id}
-                          onClick={() => setSelectedTask(t)}
-                          style={{
-                            display: "flex", alignItems: "flex-start", gap: 7,
-                            padding: "5px 12px",
-                            borderBottom: i < shownTasks.length - 1 ? `1px solid ${C.brd}` : "none",
-                            cursor: "pointer", transition: "background 0.1s",
-                            background: i === 0 ? cat.color + "08" : "transparent",
-                          }}
-                          onMouseEnter={e => (e.currentTarget.style.background = cat.color + "12")}
-                          onMouseLeave={e => (e.currentTarget.style.background = i === 0 ? cat.color + "08" : "transparent")}
-                        >
-                          <button
-                            onClick={e => { e.stopPropagation(); handleToggle(t.id, !done); }}
-                            style={{
-                              width: 13, height: 13, borderRadius: 3, flexShrink: 0, marginTop: 1,
-                              border: `1.5px solid ${done ? C.grn : cat.color}`,
-                              background: done ? C.grn : "transparent",
-                              color: "#fff", fontSize: 7, cursor: "pointer",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                            }}
-                          >{done ? "✓" : ""}</button>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{
-                              fontSize: 11, fontWeight: i === 0 ? 700 : 500,
-                              color: done ? C.mut : C.tx,
-                              textDecoration: done ? "line-through" : "none",
-                              lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            }}>{t.title.replace(/^[^:]+:\s*/, "")}</div>
-                            {t.sprintId && <div style={{ fontSize: 8, fontWeight: 700, color: cat.color, fontFamily: "monospace", marginTop: 1 }}>{t.sprintId}</div>}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                {/* Expand / collapse footer */}
-                {cat.active.length > 5 && (
-                  <button
-                    onClick={() => setExpandedCards(prev => {
-                      const next = new Set(prev);
-                      next.has(cat.key) ? next.delete(cat.key) : next.add(cat.key);
-                      return next;
-                    })}
-                    style={{
-                      width: "100%", border: "none", borderTop: `1px solid ${C.brd}`,
-                      background: "#FAFAFA", padding: "6px", cursor: "pointer",
-                      fontSize: 10, fontWeight: 700, color: cat.color,
-                      fontFamily: F, textAlign: "center",
-                    }}
-                  >
-                    {isExpanded ? "▲ Show less" : `▼ Show all ${cat.active.length}`}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       {/* Sticky header: nav bar + filter row */}
       <div style={{
         position: "sticky", top: 0, zIndex: 30,

@@ -1284,236 +1284,364 @@ function TeamTab() {
 
 // ─── Business Plan Tab ────────────────────────────────────────────────────────
 
-const BUSINESS_PLAN = `FLIPIQ, INC. — BUSINESS PLAN
-April 2026 | Confidential | Tony Diaz, CEO
+const BUSINESS_PLAN = `FLIPIQ OPERATING BRAIN
+The source of truth for every decision. Updated April 9, 2026.
+
+If a task, idea, or meeting cannot be justified by this document — it is noise.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 1 — COMPANY OVERVIEW
+WHO WE ARE
 
-FlipIQ, Inc. builds the operating system for real estate acquisition. The platform gives investor-operators the data, workflows, and automation tools their Acquisition Associates need to reliably close 2 deals per month — per AA. The business is in revenue, has a paying customer base, and is executing against a structured 90-day plan to reach $50K/month break-even.
-
-The product has two commercial surfaces: FlipIQ Command (the primary AA operations platform) and the USale Marketplace (under development). Command is the product driving current revenue. Marketplace is the scale vehicle for 2027+.
+FlipIQ is an AI-powered acquisition intelligence platform for experienced real estate investor-operators. We make operators more efficient by providing transaction intelligence: which agents close, which investors are active, where deals are. We do not teach people to flip. We arm experienced teams with better data and smarter automation.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 2 — THE PROBLEM
+WHAT WE BUILD
 
-The real estate investment business is built on Acquisition Associates — the people who find, contact, and close off-market deals. The top 1% of real estate investors close 8–10 deals per month per associate. The average closes 0.3.
+Command — CRM and deal management. Operator dashboard, pipeline, agent relationships, offers, communication. What operators live in daily.
 
-The gap is entirely operational. AAs waste time on bad leads, incomplete data, and broken follow-up systems. Operators (the businesses that employ AAs) have no real-time visibility into AA activity, no way to know who is actually working, and no automated system to surface the best opportunities at the right time.
+DispoPro — Disposition tools in Command. List acquired properties, find buyers through agent networks.
 
-There is no purpose-built operating platform for this market. FlipIQ is building it.
+USale Marketplace — Free off-market platform. Operators post deals, buyers get notified, transactions happen direct. Launching July 1, 2026.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+USale Seller Direct — Co-op brand. Operators pool resources for low-cost 'sell your house as-is' leads. Feeds inventory into Marketplace. Target $100K/mo by Dec 2026.
 
-SECTION 3 — THE SOLUTION
+AAA — Acquisition Intelligence System. AI layer on Command. Continuous scoring, automated matching, offer generation. AA opens app → prioritized opportunities already analyzed → approve and send. End state: fully autonomous.
 
-FlipIQ Command is a real-time intelligence and workflow platform for real estate acquisition teams. It is not a CRM. It is not a dialer. It is the system of record for every AA action, every property opportunity, and every operator decision.
-
-Core capabilities (current):
-• MLS-integrated property intelligence — real-time data sync, agent pipeline, property scoring
-• Template Health — outreach quality monitoring across all AA campaigns
-• MyStats — individual AA performance dashboards (deals, activity, pipeline velocity)
-• COO Dashboard — executive visibility into every operator, AA, and deal in the system
-• OMS (Operator Management System) — three-level onboarding and activation tracking
-• Autotracker — AA activity logging and accountability
-
-Under development:
-• AAA (Acquisition Agent Automation) — AI agent layer that scores every property the moment data changes. Runs continuously. Surfaces only high-probability opportunities. Target: 20+ offers/day per AA with no manual triage.
-• USale Marketplace — the off-market property network connecting operators, AAs, buyers, and title companies at scale.
+TCC — CEO operating system. Morning check-in, email triage, sales CRM, task management, accountability. Keeps the CEO on sales, not in engineering.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 4 — REVENUE MODEL
+NORTH STAR
 
-FlipIQ earns revenue across four streams:
+Atomic KPI: Every AA closes 2 deals per month. Each operator has 4 full-time AAs.
 
-1. Platform subscription — operators pay a monthly fee per seat. Subsidized early-adopter pricing of $10K setup + monthly seat fees during the current growth phase. Target: $5K–$10K/month per operator at scale.
+The math: 2 flips + 6 wholesales per operator per month = $10,370 in FlipIQ revenue. At 375 operators = $3.9M/month.
 
-2. Success fees — FlipIQ earns a percentage of each deal closed through the platform. Target: $500–$2,000 per deal at volume.
-
-3. Loan brokerage — via the Kiavi broker partnership, FlipIQ earns origination fees on investor loans placed through the platform. Each loan = $2K–$10K brokerage fee. Two acquisitions per week happening now. $0 currently tracked in P&L — immediate priority.
-
-4. DBTM (Deal by the Month) acquisitions — structured acquisition program generating consistent deal flow. Revenue not yet recognized in financial model.
-
-Revenue milestones:
-• Break even: ~$50K/month — March/April 2026 (Tony-led sales)
-• Phase 1: $100K/month — April/May 2026 (Tony + Ethan)
-• Scale: $250K+/month — Q3 2026 (full team)
+Decision filter: Does this move an AA toward 2 deals/month? If no — it is noise.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 5 — GO-TO-MARKET STRATEGY
+WHERE WE ARE GOING
 
-FlipIQ sells to investor-operators — businesses that employ real estate Acquisition Associates. The ICP is a real estate investing business with 2–10 AAs, active in at least one metro, and generating at least $50K/year in deal revenue.
+This year (2026): Get all 7 current operators to atomic KPI. Prove the model works. Launch Marketplace by July 1. Seller Direct generating $100K/mo by December. Raise $400K for 6-month runway. Hire PM, Onboarding Manager, Adaptation Manager.
 
-Sales tiers:
+3 years: 375 operators across 75 metros. $1.5M/month run rate at 50% forecast. $16.2M cumulative. Command 2.0 + AAA fully deployed. Self-funding from loan brokerage + success fees.
 
-Tier 1 — Investor-Friendly Agents: Agents who actively sell deals to investors. Entry: free early marketplace access. Close: agent network feeds AA deal pipeline.
-
-Tier 2 — Investor-Brokers: Owner-operators with their own agent teams. Entry: investor + agent playbook bundle, title company warm intro. Close: $25K–$100K setup fee + monthly success fees.
-
-Tier 3 — Brokerages: Offices with 10+ investor-friendly agents. Entry: agent adoption first, then broker-level Command pitch. Close: setup fee once agents are active in system.
-
-Tony leads all sales personally for the next 90 days. Target: 5 demos/week, 15+ active prospects, 3 new operators/month closed. At $10K average setup fee, 3 operators = $30K/month in new recurring. Combined with existing base, break-even is achievable by end of April.
-
-Bondilyn Jolly supports with sales materials, outreach databases, pitch decks, and content. Affiliate playbook is the scale mechanism — once proven, third-party networks recruit operators on commission.
+5 years: USale Marketplace = largest off-market RE platform. Seller Direct = largest sell-as-is brand. 1,875 users (375 operators × 5 each). 7,500 deals/month. Revenue stack: Command + loans + title + escrow = $100M ARR. Exit at $1B (10x).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 6 — PRODUCT ROADMAP
+HOW WE MAKE MONEY
 
-Q1 2026 (current — April):
-• Command 1.5 close-out: zero open Critical/High bugs
-• Foundation stability: MLS accuracy, agent pipeline, DispoPro integration
-• COO Dashboard: MyStats, Template Health, SMS compliance
-• Operator adaptation: contact all operators, classify, activate
-• Loan brokerage: Kiavi agreement signed, first deal submitted
+Source                              Amount              Per operator/month
+Flip loan brokerage (0.5%)          $1,285 per flip     $2,570 (2 flips)
+Wholesale success fee (10%)         $1,300 per deal     $7,800 (6 wholesales)
+Setup fee (subsidized by lender)    $10,000 one-time    —
+TOTAL                               —                   $10,370/month
 
-Q2 2026 (May–June):
-• AAA (Acquisition Agent Automation): 30-day build starting end of April
-  — Week 1: Infrastructure (Event Engine, PropertyRadar sync, real-time scorer)
-  — Week 2: Intelligence (Continuous Priority Engine, auto-script injection)
-  — Week 3: Phase 2 Intelligence (Comps Matrix, Investment Analysis, My Stats enhanced)
-  — Week 4: Integration + Deploy (end-to-end test, UAT with live AAs)
-  — Target: 20+ offers/day per AA
-• PM/Engineer hired and operational — removes Tony from all engineering overhead
-• Three hiring roles filled: PM/Engineer, Onboarding Manager, Adaptation Manager
+Setup fee is $50K. Sponsoring lender subsidizes it to $10K. Cheapest in market. Operator must use our lending partner (Kiavi) — that's how we earn the half-point. If they don't use our lender: full $50K.
 
-Q3 2026 (July–September):
-• USale Marketplace v1 launch — off-market property network, agent + buyer connection
-• Scale to 30+ operators across 10 metros
-• $250K+/month revenue run rate
-• Series A preparation
+Future: loans + title + escrow at scale → $100M ARR.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 7 — TEAM
+GROWTH PLAN
 
-Tony Diaz — CEO. Owns sales, capital, and product vision. 60%+ of time on revenue-generating activities during the 90-day sprint. Author of this plan.
+Phase     Months    Pace             End operators    Run rate
+Setup     1–6       Prove with 7     7                $18K/mo
+Crawl     7–12      1 new/week       31               $67K/mo
+Walk      13–18     2/week           85               $231K/mo
+Jog       19–24     3/week           163              $542K/mo
+Run       25–30     4/week           265              $977K/mo
+Sprint    31–36     5/week           375              $1.5M/mo
 
-Ethan Jolly — COO/CFO. Owns internal accountability, P&L, hiring, and engineering management. Tony never discovers a missed commitment on his own — if he does, Ethan's system has failed.
-
-Ramy — CS Manager. Owns user adaptation, OMS onboarding, and operator health. Single source of truth for what's working and what isn't on the operator side.
-
-Faisal Nazik — Command Engineer. Owns the Command dashboard sprint delivery. Zero Critical/High bugs at sprint close. 40+ story points per cycle minimum.
-
-Haris Aqeel — Foundation Engineer. Owns MLS accuracy, agent pipeline, data sync, and DispoPro integration.
-
-Nate Worcester — CTO Advisory (SLA). Part-time strategic capacity. All scopes estimate-first, approve-first, bill-after. Hard dates only — Ethan enforces.
-
-Bondilyn Jolly — Marketing/Sales Support. Owns all sales materials, scripts, outreach databases, content, and the affiliate playbook.
-
-Hiring (April–May): PM/Engineer ($6K/mo), Onboarding Manager ($2.5K/mo), Adaptation Manager ($2.5K/mo).
+All numbers at 50% forecast (conservative). Even at 25% = $11.7M/year at scale.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SECTION 8 — FINANCIAL SUMMARY
+WHAT WE SPEND
 
-Current monthly burn: ~$36K/month (team compensation only)
-Current MRR: Ramping (break-even pursuit in progress)
-Break-even target: ~$50K/month (April 2026)
+Monthly burn: ~$64K. 6-month need (May–Oct): $400K. Revenue forecast ~$200K reduces gap.
 
-Capital strategy:
-• Bridge loan vs. growth loan decision — April 14 deadline (Tony + Ethan)
-• Kiavi broker agreement — revenue from loan origination on every investor deal placed
-• DBTM revenue recognition — 2 acquisitions/week, $0 in current P&L (immediate fix)
-• Nema partnership — additional revenue per deal closed
-• Investor meetings: 2 booked by April 30, pitch deck updated
+Role/cost                Monthly    Notes
+CEO                      $5K
+COO/CFO                  $10K
+CTO (advisory)           $6K        SLA model
+Engineers (2)            $5K        Faisal $3K + Haris $2K
+CS Manager               $5K        Ramy
+Marketing                $5K        Bondilyn
+PM/Engineer (hire)       $6K        Target May
+2 CX hires               $5K        $2.5K each
+AWS                      $5K        Target $2–3K after reduction
+Data/MLS/AI              $4.5K
+Legal/misc               $2.5K
 
-Long-term: $1B exit via USale Marketplace at 375 operators × 5 users × 75 metros.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CAPITAL STRATEGY
+
+Path A (preferred): Bootstrap. Tony signs as Kiavi broker. Half-point per loan, no dependency. 20 commitments at $10K = $200K. Chris Wesser + advisors fund the $400K gap.
+
+Path B (fallback): Lender partnership. Nema/Lightning Docs or RCN invests $400K–$1M for exclusive lending distribution. Risk: they control the loan relationship.
+
+Decision by: May 15, 2026. Pursue both simultaneously until then.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FIVE PRIORITIES FOR 2026
+
+In order. If #1 and #2 aren't working, nothing else matters.
+
+01 ADAPTATION
+1. Assess each of the 7 operators individually
+2. Finalize Customer Success Dashboard
+3. Contact every user — classify engaged vs dead weight, suspend non-performers
+4. Document DBTM success model — replicate to all operators
+5. Deploy success workflow to all AAs
+
+02 SALES
+1. Lock $10K pricing with sponsoring lender
+2. Get 20 commitments at $10K
+3. Demo workflow: lender + title company lined up
+4. Deliver sales materials: presentation, script, databases
+5. Pipeline: 5 demos/week, 15+ prospects, 3 new operators/month
+
+03 TECH
+1. Finalize CS Dashboard
+2. Finalize Foundation + DispoPro
+3. AWS cost reduction + Google Cloud credits/grant
+4. Build AAA
+5. Deploy USale Marketplace by July 1
+
+04 CAPITAL
+1. Decide: Kiavi broker vs lender buy-in
+2. Finalize 6-month financial plan ($400K)
+3. Present plan to Chris Wesser + Rick Sharga
+4. Kiavi broker application signed
+5. Nema/Lightning Docs as option B
+
+05 TEAM
+1. Hire PM/Engineer at $6K
+2. Hire Onboarding Manager at $2.5K
+3. Hire Adaptation Manager at $2.5K
+4. Clarify CTO advisory role, reassign 29 issues
+5. SOW updates for all team members
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHO DOES WHAT
+
+Role                    Does                                                    Does not touch
+CEO                     Sales 60%+. Pricing. Capital. AAA spec. CS support.     Standups. Linear. QA. Onboarding. New frameworks.
+COO                     Accountability. Finance. Hiring. Dashboard oversight.    Engineering. Product. Sales demos. Training.
+CTO (SLA)               AWS cost. Architecture. AAA review. PM transfer.         Day-to-day engineering. Triage. Code without approval.
+CS Manager              Adaptation. User contact. Success workflow. Training.    Engineering. Sales. Finance. Feature changes.
+Command Engineer        Dashboard. QA. Sprint delivery. SMS UI.                  Foundation. Training. Operators. AWS.
+Foundation Engineer     MLS. Agent pipeline. DispoPro. Contact matching.         Command UI. Sprint planning. Customers.
+Marketing               Sales presentation. Scripts. Databases. Playbook.        Sales calls. Engineering. CS. Finance.
+PM (hire)               Linear audit. Sprints. Standups. Backend. AAA build.     CS. Sales. Strategy. Daily CEO updates after Wk 4.
+Onboarding Mgr (hire)   Intake. OMS checklist. First-contact quality.            Ongoing support. Sales. Engineering.
+Adaptation Mgr (hire)   Adoption tracking. Alerts. Outreach. Training.          Onboarding. Sales. Engineering.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+90-DAY RULES
+
+One system. 90 days. No modifications.
+
+Every item has an owner and a date. When a date passes, the owner flags it same day. COO surfaces all misses in Friday report. CEO responds same day with a specific correction — not a new plan.
+
+Every task in Linear. If not in Linear, it does not exist. Required fields: Status, Start Date, Due Date, Size, Assignee, Next Step. Sprint target: 80%+ of 40+ committed points.
+
+CEO scope: Sales, then CS support. Everything else pushed back.
+
+If CEO is doing engineering work: COO flags it. Correct that week.
+If CEO creates a new framework: Stop. This document is the system.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STOP DOING / DO INSTEAD
+
+Stop                                      Instead
+New framework                             Enforce this doc 90 days
+Soft accountability                       What, by when, what if missed
+Tech work instead of selling              COO flags → correct that week
+Delegate discomfort to a document         Say it directly, face to face
+New products before Command stable        List does not grow
+50 calls but 3 conversations              5 demos/week, tracked, verified
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW THE AI USES THIS DOCUMENT
+
+When evaluating any task, idea, meeting, or decision:
+
+1. Does it move an AA toward 2 deals/month? → If no: noise. Park it.
+2. Does it align with one of the 5 priorities? → If no: not this cycle.
+3. Is it in the 90-day plan? → If no: it's an idea. Assign a number. Say what's ahead of it.
+4. Who owns it? → If nobody: assign or kill.
+5. Does it have a date? → If no: it doesn't exist.
+
+Updated April 9, 2026. Next review: July 1, 2026.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-const OAP_NARRATIVE = `FLIPIQ OPERATIONAL ALIGNMENT PLAN — 90-DAY NARRATIVE
-Q1 2026 (April–June) | v4 | Confidential
+const OAP_NARRATIVE = `FLIPIQ 90-DAY PLAN
+April 7 — July 4, 2026
 
-This is not a task list. The tasks live in the 411 Master Task table. This is a description of what we are doing, why we are doing it, and what winning looks like across each of the five strategic pillars over the next 90 days.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PILLAR 1 — ADAPTATION: MAKING EVERY OPERATOR SUCCESSFUL
-
-The most important thing FlipIQ can do right now is make every current operator successful. Successful means their AAs are logging in, using the system, and closing deals. Any operator not moving toward that standard is either a priority rescue or a candidate for suspension.
-
-Ramy owns operator adaptation. His job for the next 90 days is to personally contact every operator, understand their current usage level, classify them (active / struggling / dead weight), and drive each one to a defined success threshold. The three-level classification maps to the OMS Client Status Checklist: Level 1 (Onboarding Started), Level 2 (System Usable), Level 3 (System Optimized). Ramy reports operator health to Ethan every Friday. Tony uses that report to make decisions — he does not contact operators about adaptation directly.
-
-The CS Dashboard gives Tony and Ethan visibility into every operator without needing to ask Ramy. Faisal builds the MyStats tab so Tony can see AA deal velocity per operator at a glance. Disengagement alerts trigger automatically at 3+ consecutive zero-activity days. Feature adoption dashboards trigger at 14 days of non-use. Ramy acts on both.
-
-Dead weight is real. Not every operator will make it. The suspension criteria — developed jointly by Tony and Ethan — set clear bars. Operators who cannot reach Level 2 (System Usable) within a defined window are suspended. This is not punitive. It protects platform quality. Every suspended operator frees bandwidth for a better-fit replacement.
-
-Autotracker training is Ramy's responsibility after a single Tony training session. Ramy records step-by-step video walkthroughs. Future operators onboard without Tony's involvement.
+This plan does not grow. It does not get modified. It gets executed. Every item has an owner. Every owner has a date. When a date passes without delivery, the owner flags it same day. If a new idea surfaces that isn't in this plan — it gets parked. If someone wants to add scope — the answer is no. 90 days.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PILLAR 2 — SALES: CLOSING THE REVENUE GAP
+WHERE WE ARE TODAY
 
-Tony's job for the next 90 days is sales. At least 60% of his calendar must be on revenue-generating activities. Ethan audits Tony's calendar every Monday. If the percentage drops below 60%, it is flagged immediately — not at the end of the week.
+FlipIQ has 7 active operator clients. The platform is live. Operators are using Command for acquisition management. But we have a problem: the operators are not consistently hitting the atomic KPI. Some are performing — DBTM is doing 2 acquisitions per week. Others are not engaging at all. We don't have clear visibility into who is active and who isn't because the Customer Success Dashboard doesn't exist yet.
 
-The target is 3 new operators closed per month. At subsidized early-adopter pricing, that is approximately $30K in new monthly recurring revenue per month. Combined with success fees, loan brokerage revenue, and DBTM acquisitions, break-even is achievable by end of April.
+The sales engine is stalled. The CEO has been building systems instead of selling. The pricing model is confirmed ($50K subsidized to $10K by the sponsoring lender) but zero new commitments have been signed. The sales materials are incomplete — Bondilyn has been waiting since March 31 for the broker presentation and USale script.
 
-Bondilyn Jolly is Tony's force multiplier. She builds the pitch decks, outreach databases, sales scripts, and content — but Tony closes. There is no ambiguity here. The affiliate playbook, once operational, is the long-term scale mechanism: third-party networks recruit operators on commission without Tony's direct involvement.
+The tech stack is functional but unfinished. Command 1.5 has open QA items that need shipping. Foundation (the data layer) is not complete. DispoPro is partially integrated. The admin panel hasn't been deployed to production. AWS costs are running at $5K/month, which is double what they should be.
 
-The pricing model is subsidized during the current growth phase. New operators pay a setup fee plus monthly seat fees calibrated to what their AA business can support. The standard price point is $10K setup plus monthly. Tony finalizes the model by April 11 and trains the team on it.
+The team is lean but has critical gaps. There is no PM — the CEO is still attending engineering meetings and doing Linear triage. Ramy is a single point of failure for all customer success. Nate stepped back from CTO on March 6 and left 29 Linear issues without owners. The 3 hiring positions (PM, Onboarding Manager, Adaptation Manager) are not yet posted.
 
-The sales funnel is straightforward: Tony does 10 outbound calls per day, books 5 demos per week, converts to 3 signed operators per month. HubSpot tracks the pipeline. Ethan has visibility every Friday. No manual status updates required.
+Capital: Ethan completed the 6-month financial analysis on April 9. The company needs $400K to fund operations May through October. Two capital paths exist: bootstrap through Kiavi loan brokerage, or bring in a lending partner. No decision has been made.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PILLAR 3 — TECHNOLOGY: BUILDING THE SYSTEM THAT CLOSES DEALS
-
-Engineering has three distinct lanes during this 90-day period. There is zero overlap between them. Ethan owns accountability for all three on Monday check-ins and the Friday Tech Report.
-
-Faisal owns the Command dashboard: completing the MyStats tab, shipping the Template Health tab, clearing all Critical and High bugs, and registering SMS compliance features. His output metric is simple: 40+ story points per sprint, zero Critical/High bugs at close. No new features until the PM is hired. Bugs and adaptation-related fixes only.
-
-Haris owns Foundation: MLS accuracy, agent pipeline stability, DispoPro integration (first week of April milestone), agent contact matching (closing the 15% gap), and cross-platform infrastructure. Foundation is the data layer that everything else depends on. If the foundation is unreliable, AAA cannot work. Haris's work this quarter makes AAA possible.
-
-Nate Worcester owns architecture decisions and the AWS cost reduction. The current AWS bill of $5K/month is unacceptable for a company at break-even stage. Nate delivers a cost reduction plan with a hard start date and hard end date — Ethan will not accept open-ended timelines. Nate also reviews the AAA architecture spec and integrates Tony's design into Command Light v2.0. All of Nate's work follows estimate-first, approve-first, bill-after structure. Tony approves all scopes in writing before work begins.
-
-The AAA (Acquisition Agent Automation) system is the most important technology build of the year. It starts 30 days after the PM is hired (end of April) and completes end of May. Build order is non-negotiable: Infrastructure → Intelligence → Bots → Integration. Week 1 delivers the Event Engine and real-time scorer (scorer fires within 3 seconds of any property event). Week 4 delivers a live AA using the system generating 20+ offers per day. This is the product that scales FlipIQ from 10 operators to 375.
+This is the starting point. Not where we want to be — where we actually are.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-PILLAR 4 — CAPITAL: FUNDING THE 90-DAY SPRINT
+PRIORITY 1: ADAPTATION — MAKE THE CURRENT OPERATORS WORK
 
-FlipIQ needs capital clarity to execute this plan. Two decisions must be made by April 14: whether to pursue a bridge loan or a growth loan, and how to structure the Nema partnership.
+Before we sell to new operators, the 7 we have need to be producing. If they're not hitting the atomic KPI (2 deals/month per AA), we can't prove the model to anyone else. This is not optional — it's the foundation everything else sits on.
 
-Ethan models both loan scenarios for Tony. Tony makes the call with Ethan's analysis in hand. The decision is not about what sounds best strategically — it is about what path gets to $50K/month with the lowest dilution and the most execution flexibility.
+The plan: Ramy contacts every single user by April 17. Not an email blast — actual conversations. Who is engaged? Who is struggling? Who has checked out? By the end of April, every operator is classified as active, struggling, or dead weight. Dead weight gets suspended — we are not carrying non-performers while we burn cash.
 
-The Kiavi broker agreement is a near-term revenue activation. Two DBTM acquisitions per week are already happening. Zero dollars are currently tracked in the P&L. This is an immediate fix with immediate revenue impact. The first Kiavi deal should be submitted by end of April.
+Simultaneously, Faisal ships the Customer Success Dashboard so we have real-time visibility. Tony assesses each operator individually — starting with DBTM (the one that works) and working through all 7 by end of Week 2. We document what DBTM is doing right and turn it into a success playbook that gets distributed to every AA.
 
-Investor meetings are support infrastructure, not the primary capital strategy. Tony books two meetings by April 30. Ethan drafts the investor update report. The pitch deck is updated to reflect the current plan and traction. Investor capital extends the runway if needed — but the primary goal is to reach break-even through revenue before drawing on outside capital.
+End of month 1: Every operator assessed. Engaged users getting support. Dead weight identified. Success workflow in every AA's hands.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-PILLAR 5 — TEAM: FILLING THE GAPS
-
-The single biggest operational risk at FlipIQ today is the absence of a PM. Tony loses 20–30% of his sales time to engineering overhead every week. At $100K/month revenue target, that gap costs approximately $20–30K in lost capacity. The PM hire is non-negotiable. Ethan drives the process: job spec by April 14, candidates by April 21, interviews by April 28, offer by April 30. The PM starts and immediately owns Linear, sprint planning, standups, and the AAA build.
-
-Ramy is a single point of failure. The Onboarding Manager and Adaptation Manager hires eliminate that risk. Both roles are scoped, posted, and filled before end of Q2. In the interim, Ramy is the system — but only Tony and Ethan know that. Operators do not feel the gap.
-
-Nate's transition from day-to-day engineering leadership to pure SLA advisory is the structural change that makes the rest of this plan possible. Nate hands off foundation context to Haris and engineering context to the incoming PM. The 29 orphaned issues from March are triaged with Ethan by April 14. No P0 issues remain orphaned.
-
-The SOW for every team member is locked for 90 days. No role changes, no scope drift, no new systems built outside this document. Ethan checks every Friday. Any role confusion is surfaced and resolved in the weekly report — it does not reach Tony as a surprise.
+End of 90 days: Active operators at 70%+ atomic KPI. All dead weight suspended. Adaptation Manager hired and cross-trained with Ramy.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-WHAT WINNING LOOKS LIKE AT DAY 90
+PRIORITY 2: SALES — START CLOSING
 
-By the end of June 2026, FlipIQ has:
-• Reached or exceeded $100K/month in revenue
-• Closed 6–9 new operators (3/month × 3 months)
-• Shipped AAA with at least 1 live AA generating 20+ offers/day
-• PM/Engineer hired and operating independently (no daily Tony involvement)
-• Onboarding Manager and Adaptation Manager hired and ramping
-• AWS costs reduced to under $2K/month
-• Kiavi broker generating consistent loan origination revenue
-• USale Marketplace architecture completed and Q3 launch scheduled
-• Zero Critical/High bugs in Command
-• Every current operator at Level 2 (System Usable) or higher — or suspended
+The CEO's job is to sell. 60% of his time, minimum. For the past several weeks, that hasn't been happening — system building, engineering oversight, and operational work have consumed the calendar. This plan stops that.
 
-This is not aspirational. This is the plan.
+Week 1: Tony is on the phone 10 calls per day. He responds to Bondilyn's requests for the broker presentation and USale script — she's been waiting since March 31. He starts the Kiavi broker application so we have loan revenue flowing without external dependency.
+
+By Week 2: Kiavi broker agreement is signed. 5 demos are completed. The pitch is simple: $50K platform subsidized to $10K by the sponsoring lender. Use our lender for flips, we earn a half-point. Don't want to use our lender? Full $50K. It's the cheapest and most advanced platform in the market.
+
+By end of April: 10+ operators in the pipeline. By end of May: 3 new commitments signed. By end of June: 20 total commitments at $10K each, representing $200K in near-term contracts.
+
+Enforcement: Ethan audits Tony's calendar every Monday. If Tony is in engineering meetings instead of selling, Ethan flags it. If Tony creates a new framework instead of making calls, Claude flags it. No exceptions.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PRIORITY 3: TECH — SHIP WHAT'S BUILT, START WHAT'S NEXT
+
+The engineering team has three lanes with zero overlap. Faisal owns Command 1.5: ship the QA items, deploy the admin panel, build the CS Dashboard. Haris owns Foundation: complete the data layer, integrate DispoPro, close the 15% agent matching gap. Nate (on SLA) owns architecture: AWS cost reduction, AAA spec, and knowledge transfer to the new PM.
+
+The first month is about finishing. Everything in QA ships. The admin panel goes to production. Foundation gets stable. AWS costs start coming down from $5K to the $2–3K target.
+
+The second month is about building. The PM is hired and ramped. AAA (the Acquisition Intelligence System) starts its 30-day build: infrastructure in Week 1, intelligence layer in Week 2, integration in Weeks 3–4. By end of May, AAA is in testing with 1–2 live AAs.
+
+The third month is about preparing for launch. AAA goes to production. The marketplace data layer is designed and development starts. By July 1 — the 91st day — USale Marketplace launches as a free off-market listing platform.
+
+Sprint discipline: 40+ points committed per cycle. 80%+ completion rate. Every ticket in Linear with Status, Start Date, Due Date, Size, Assignee, and Next Step. Ethan enforces on Monday. Reports on Friday.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PRIORITY 4: CAPITAL — SECURE THE RUNWAY
+
+The company needs $400K for the 6-month runway May through October. Two paths are being pursued simultaneously.
+
+Path A is the preferred approach: bootstrap. Tony signs up as Kiavi broker and earns a half-point on every flip loan flowing through our network. Combined with $10K setup fees from 20 operator commitments, this generates $200K+ in near-term revenue. The remaining gap is funded through Chris Wesser and advisor-connected investors at favorable terms.
+
+Path B is the fallback: a lending partner (Nema/Lightning Docs or similar) invests $400K–$1M in exchange for exclusive loan distribution through FlipIQ. This brings capital fast but gives the lender control over the loan relationship.
+
+The sequence: Ethan finalizes the P&L in Week 1. Tony and Ethan confirm the capital strategy (Kiavi broker vs lender) by Week 2. Chris Wesser gets the presentation by Week 3. By May 15, the decision is made and the capital path is locked.
+
+Non-negotiable: No investor conversations without Ethan's approval on the numbers. No commitments to lenders without Tony's written approval on the terms.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PRIORITY 5: TEAM — FILL THE GAPS
+
+Three positions need to be filled: PM/Engineer ($6K/month), Onboarding Manager ($2.5K), and Adaptation Manager ($2.5K). The PM is the most urgent — until this person is hired, Tony is stuck doing engineering oversight and the CEO can't sell full-time.
+
+Ethan owns hiring. PM job spec finalized Week 1, posted Week 3, interviews Week 4, offer by early May. The PM's first deliverable is a Linear workspace audit and sprint plan within 7 days of starting. By Day 30, the PM is fully autonomous — zero CEO involvement in daily engineering.
+
+The two CX hires (Onboarding Manager and Adaptation Manager) go under Ramy. They're posted in May and hired in June. Until then, Ramy handles both onboarding and adaptation alone — which is why he's classified as a single point of failure in the gap analysis.
+
+Nate's 29 orphaned issues from March 6 get reassigned immediately — to Faisal, Haris, or parked for the PM. SOW updates for every team member are completed by the end of April so there is zero ambiguity about who does what.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW THE TEAM IS ORGANIZED
+
+Three engineers. Three lanes. Zero overlap. Every other role has a clear scope.
+
+Role                   Lane                    Owns
+CEO                    Sales + Strategy        Demos, pricing, capital, AAA spec, Ramy support
+COO                    Accountability+Finance  Linear dates, Friday report, P&L, hiring
+CS Manager             Adaptation + OMS        User contact, classification, workflow, reports
+Command Engineer       Command 1.5             Dashboard, QA, sprint delivery, SMS UI
+Foundation Engineer    Foundation + DispoPro   MLS, agent pipeline, DispoPro, matching
+CTO (SLA)              Architecture            AWS, specs, reviews, PM transfer
+Marketing              Sales Support           Presentation, scripts, databases, playbooks
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW WE STAY ACCOUNTABLE
+
+Every task is in Linear. If it's not in Linear, it doesn't exist. Required fields: Status, Start Date, Due Date, Size, Assignee, Next Step. Sprint target: 80%+ of 40+ committed points.
+
+The COO never opens Linear to discover a missed commitment. If the CEO has to ask about a deadline, the accountability system has failed.
+
+Monday: COO checks all Linear tasks have dates and assignees.
+Friday: COO delivers Tech Report — what shipped, what missed, what's blocked. CEO responds same day with a specific correction.
+
+CTO SLA terms: Architecture questions: 24 hours. Emergencies: 4 hours. Feature specs: 48 hours. All scopes approved in writing before work begins. Estimate first, approve first, bill after.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT WE STOP DOING
+
+Creating a new framework instead of enforcing this plan. This document is the system. No new operating plans, accountability systems, or tracking frameworks. Enforce this one.
+
+Soft accountability with no deliverable. Every conversation ends with: what is being delivered, by when, and what happens if it's missed.
+
+The CEO doing tech work instead of selling. If the COO flags it, correct that week. If Claude flags it, correct that day.
+
+Delegating discomfort to a document. Don't write a doc when a direct conversation is needed. Say it to the person.
+
+Adding scope. This list does not grow. New ideas get parked with a number. The AI says what's ahead of it.
+
+Reporting activity instead of results. 50 calls means nothing if there are 3 real conversations. 5 demos per week, tracked, verified.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT DONE LOOKS LIKE — JULY 4, 2026
+
+Operators: All 7 assessed. Active ones at or near atomic KPI. Dead weight suspended. Success workflow adopted. DBTM model documented and replicated.
+
+Sales: 20+ commitments at $10K. $200K in signed contracts. Active pipeline of 15+ prospects. 5 demos per week sustained. Kiavi broker generating loan revenue.
+
+Revenue: On track for $100K/month. Success fees being collected. DBTM revenue tracked and in the P&L.
+
+Capital: $400K secured through Path A or B. Runway confirmed through October. Decision made, not still being discussed.
+
+Tech: Command 1.5 stable with zero critical bugs. Foundation complete. DispoPro integrated. CS Dashboard live. AAA deployed with 1–2 live AAs. AWS at $2–3K/month.
+
+Team: PM hired, ramped, and running sprints autonomously. Onboarding Manager and Adaptation Manager hired. All SOWs current. Nate's 29 issues resolved.
+
+Marketplace: Data layer designed. Architecture reviewed. Development underway. July 1 launch on track.
+
+If these outcomes are met, the next 90-day plan builds on success. If they're not, the next plan starts with an honest assessment of why — and the same five questions: does it move an AA toward 2 deals/month? Does it align with the priorities? Who owns it? When is it due?
+
+This plan resets July 4, 2026.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 

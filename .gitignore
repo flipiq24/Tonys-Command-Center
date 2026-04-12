@@ -49,6 +49,12 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Claude Code local settings (may contain secrets)
+.claude/settings.local.json
+
+# Replit config (may contain env vars)
+.replit
+
 # Replit
 .cache/
 .local/

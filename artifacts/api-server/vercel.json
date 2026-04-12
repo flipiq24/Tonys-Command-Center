@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @workspace/api-server build",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
+  ],
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/sheets-sync",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/eod",
+      "schedule": "30 23 * * *"
+    },
+    {
+      "path": "/api/cron/plan-ingest",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/demo-feedback",
+      "schedule": "0 16-1 * * *"
+    }
+  ]
+}

@@ -18,19 +18,22 @@ if (Number.isNaN(port) || port <= 0) {
 const server = app.listen(port, () => {
   logger.info({ port }, "Server listening");
 
-  // Start Business Master Sheet auto-sync (every 5 minutes)
-  import("./routes/tcc/sheets-sync").then(({ startAutoSync }) => {
-    startAutoSync();
-  }).catch(err => logger.warn({ err }, "Failed to start sheets auto-sync"));
+  // Schedulers only run in local dev — on Vercel they're triggered via cron endpoints
+  if (process.env.VERCEL !== "1") {
+    // Start Business Master Sheet auto-sync (every 5 minutes)
+    import("./routes/tcc/sheets-sync").then(({ startAutoSync }) => {
+      startAutoSync();
+    }).catch(err => logger.warn({ err }, "Failed to start sheets auto-sync"));
 
-  // Start server-side EOD scheduler (checks every 60s if it's past 4:30 PM Pacific)
-  startEodScheduler();
+    // Start server-side EOD scheduler (checks every 60s if it's past 4:30 PM Pacific)
+    startEodScheduler();
 
-  // Start business plan ingest scheduler (runs daily at 4 AM Pacific)
-  startBusinessPlanIngest();
+    // Start business plan ingest scheduler (runs daily at 4 AM Pacific)
+    startBusinessPlanIngest();
 
-  // Start demo feedback scanner (runs hourly between 9 AM – 6 PM Pacific)
-  startDemoFeedbackScanner();
+    // Start demo feedback scanner (runs hourly between 9 AM – 6 PM Pacific)
+    startDemoFeedbackScanner();
+  }
 });
 
 server.on("error", (err) => {

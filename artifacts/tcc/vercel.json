@@ -1,0 +1,12 @@
+{
+  "framework": "vite",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "buildCommand": "cd ../.. && pnpm --filter @workspace/tcc build",
+  "outputDirectory": "dist/public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://tcc-api.vercel.app/api/:path*"
+    }
+  ]
+}

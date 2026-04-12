@@ -1,24 +1,47 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
+const LINEAR_BASE = "https://api.linear.app";
 
-const connectors = new ReplitConnectors();
+function getApiKey(): string {
+  const key = process.env.LINEAR_API_KEY;
+  if (!key) throw new Error("LINEAR_API_KEY env var is required");
+  return key;
+}
 
 export async function linearRequest<T = unknown>(
   path: string,
   options: { method?: string; body?: unknown } = {}
 ): Promise<T> {
-  const res = await connectors.proxy("linear", path, {
+  const res = await fetch(`${LINEAR_BASE}${path}`, {
     method: options.method ?? "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": getApiKey(),
+    },
     ...(options.body ? { body: JSON.stringify(options.body) } : {}),
   });
-  return res as T;
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Linear API error: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<T>;
 }
 
 export async function linearGraphQL<T = unknown>(query: string, variables?: Record<string, unknown>): Promise<T> {
-  const res = await connectors.proxy("linear", "/graphql", {
+  const res = await fetch(`${LINEAR_BASE}/graphql`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": getApiKey(),
+    },
     body: JSON.stringify({ query, variables }),
   });
-  return (res as unknown as { data: T }).data;
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Linear GraphQL error: ${res.status} ${text}`);
+  }
+  const json = await res.json() as { data: T };
+  return json.data;
 }
 
 export type LinearIssueRaw = {

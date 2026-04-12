@@ -1,50 +1,14 @@
 import { google } from "googleapis";
+import { getGoogleAuth } from "./google-auth";
 
 const PARENT_FOLDER_NAME = "FlipIQ Command Center";
 
-let driveConnectionSettings: any;
-
-async function getDriveAccessToken() {
-  if (
-    driveConnectionSettings?.settings?.expires_at &&
-    new Date(driveConnectionSettings.settings.expires_at).getTime() > Date.now()
-  ) {
-    return driveConnectionSettings.settings.access_token as string;
-  }
-
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? "repl " + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-    ? "depl " + process.env.WEB_REPL_RENEWAL
-    : null;
-
-  if (!xReplitToken) throw new Error("X-Replit-Token not found");
-
-  driveConnectionSettings = await fetch(
-    `https://${hostname}/api/v2/connection?include_secrets=true&connector_names=google-drive`,
-    { headers: { Accept: "application/json", "X-Replit-Token": xReplitToken } }
-  )
-    .then((r) => r.json())
-    .then((d) => d.items?.[0]);
-
-  const accessToken =
-    driveConnectionSettings?.settings?.access_token ||
-    driveConnectionSettings?.settings?.oauth?.credentials?.access_token;
-
-  if (!accessToken) throw new Error("Google Drive not connected");
-  return accessToken as string;
-}
-
-async function getDrive() {
-  const accessToken = await getDriveAccessToken();
-  const auth = new google.auth.OAuth2();
-  auth.setCredentials({ access_token: accessToken });
-  return google.drive({ version: "v3", auth });
+function getDrive() {
+  return google.drive({ version: "v3", auth: getGoogleAuth() });
 }
 
 export async function createFolderIfNotExists(name: string, parentId?: string): Promise<string> {
-  const drive = await getDrive();
+  const drive = getDrive();
   const query = parentId
     ? `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
     : `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
@@ -70,7 +34,7 @@ export async function searchFiles(params: {
   mimeType?: string;
   maxResults?: number;
 }): Promise<{ id: string; name: string; modifiedTime: string }[]> {
-  const drive = await getDrive();
+  const drive = getDrive();
   const { folderId, nameContains, mimeType, maxResults = 50 } = params;
 
   let query = `'${folderId}' in parents and trashed=false`;
@@ -92,7 +56,7 @@ export async function searchFiles(params: {
 }
 
 export async function readGoogleDoc(documentId: string): Promise<string> {
-  const drive = await getDrive();
+  const drive = getDrive();
   const meta = await drive.files.get({ fileId: documentId, fields: "mimeType,name" });
   const mimeType = meta.data.mimeType || "";
   if (mimeType.startsWith("application/vnd.google-apps.")) {
@@ -111,7 +75,7 @@ export async function listDriveFiles(
   query: string,
   maxResults = 20
 ): Promise<{ id: string; name: string; mimeType: string; modifiedTime: string }[]> {
-  const drive = await getDrive();
+  const drive = getDrive();
   const res = await drive.files.list({
     q: query,
     pageSize: maxResults,

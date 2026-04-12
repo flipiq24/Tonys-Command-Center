@@ -1,18 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-if (!process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL) {
+// Supports both the old env var name and the new one for backwards compatibility
+const apiKey = process.env.ANTHROPIC_API_KEY || process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+
+if (!apiKey) {
   throw new Error(
-    "AI_INTEGRATIONS_ANTHROPIC_BASE_URL must be set. Did you forget to provision the Anthropic AI integration?",
+    "ANTHROPIC_API_KEY env var is required.",
   );
 }
 
-if (!process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_ANTHROPIC_API_KEY must be set. Did you forget to provision the Anthropic AI integration?",
-  );
-}
+// baseURL is optional — if set, use it; otherwise SDK defaults to https://api.anthropic.com
+const baseURL = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL || undefined;
 
 export const anthropic = new Anthropic({
-  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  apiKey,
+  ...(baseURL ? { baseURL } : {}),
 });

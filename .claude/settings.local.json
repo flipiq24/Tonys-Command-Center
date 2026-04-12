@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(xargs:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(curl -s -H \"x-tcc-token: 2580\" \"https://tonyscommandcenter.replit.app/api/journal/today\")",
+      "Bash(curl -s -H \"x-tcc-token: 2580\" \"https://tonyscommandcenter.replit.app/api/contacts?limit=3\")",
+      "Bash(curl -s -H \"x-tcc-token: 2580\" \"https://tonyscommandcenter.replit.app/api/contacts?limit=5&offset=0\")",
+      "Bash(psql \"postgresql://neondb_owner:npg_h2TrAHYbNqG0@ep-spring-rice-a65gpwtb.us-west-2.aws.neon.tech/neondb?sslmode=require\" -c \"\\\\dt\")",
+      "Bash(PORT=8080 API_PORT=8081 BASE_PATH=/ pnpm --filter @workspace/tcc dev)"
+    ]
+  }
+}

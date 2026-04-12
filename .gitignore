@@ -53,3 +53,5 @@ Thumbs.db
 .cache/
 .local/
 attached_assets/
+context/*
+ai-outputs/*

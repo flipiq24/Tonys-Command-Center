@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/LENOVO/OneDrive/Desktop/New/ folder/Tonys-Command-Center/artifacts/api-server/**)"
+    ]
+  }
+}

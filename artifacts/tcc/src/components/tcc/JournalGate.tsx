@@ -51,7 +51,11 @@ export function JournalGate({ onComplete }: Props) {
               {anchorLoading ? (
                 <div style={{ fontSize: 13, color: "#B8860B", fontStyle: "italic" }}>Generating your morning anchor...</div>
               ) : anchor ? (
-                <div style={{ fontFamily: FS, fontSize: 15, color: "#5C4000", lineHeight: 1.6 }}>{anchor}</div>
+                <div style={{ fontFamily: FS, fontSize: 15, color: "#5C4000", lineHeight: 1.6 }}>
+                  {anchor.replace(/[#*_~`>]/g, "").trim().split(/\n+/).map((line, i) => (
+                    <p key={i} style={{ margin: i === 0 ? 0 : "8px 0 0" }}>{line.trim()}</p>
+                  ))}
+                </div>
               ) : (
                 <div style={{ fontFamily: FS, fontSize: 15, color: "#5C4000", lineHeight: 1.6 }}>
                   Commit your work to the Lord, and your plans will be established. — Proverbs 16:3<br />

@@ -723,6 +723,8 @@ router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
         role: "user",
         content: `You are Tony Diaz's morning AI coach. Generate a SHORT (3-4 sentences max) morning spiritual anchor message.
 
+Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Los_Angeles" })}.
+
 Tony's spiritual content / Daily Task doc:
 ${spiritualContent.slice(0, 1200)}
 
@@ -735,7 +737,9 @@ Rules:
 - Reference yesterday's actual performance with honesty: celebrate wins, acknowledge misses without shame
 - If engagement is low: weave in a brief, direct call to get back to Bible reading — no shame, just honest accountability
 - End with ONE clear action directive for today (always starts with calls if no calls yesterday)
-- Max 4 sentences. No fluff. Tony's ADHD brain needs impact, not paragraphs.`,
+- Max 4 sentences. No fluff. Tony's ADHD brain needs impact, not paragraphs.
+- Output PLAIN TEXT only. No markdown, no hashtags, no asterisks, no bold, no headers. Just plain sentences.
+- Use the actual date provided above. Never use placeholders like [Date] or [Month].`,
       }],
     });
 

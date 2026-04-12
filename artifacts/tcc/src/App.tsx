@@ -493,9 +493,23 @@ export default function App() {
         <div style={{ position: "fixed", inset: 0, zIndex: 2000, overflowY: "auto", background: "rgba(0,0,0,0.45)", backdropFilter: "blur(3px)" }}>
           <CheckinGate
             initial={ck}
-            onComplete={(completed) => {
+            onComplete={async (completed) => {
               setCk(completed);
-              setView(ck.done ? (prevView || "dashboard") : "journal");
+              if (ck.done) {
+                setView(prevView || "dashboard");
+              } else {
+                // Check if journal already exists for today before showing journal gate
+                try {
+                  const j = await get<{ formattedText?: string; rawText?: string }>("/journal/today");
+                  if (j?.formattedText || j?.rawText) {
+                    setView("dashboard");
+                  } else {
+                    setView("journal");
+                  }
+                } catch {
+                  setView("journal");
+                }
+              }
             }}
           />
         </div>

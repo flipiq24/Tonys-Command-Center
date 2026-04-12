@@ -36,15 +36,21 @@ export function CheckinGate({ initial, onComplete }: Props) {
     const u = { ...ck, [k]: v } as CheckinState;
     if (u.bed && u.wake) {
       try {
-        const parse = (t: string) => {
+        const parse = (t: string, isBedtime: boolean) => {
           const m = t.match(/(\d+):?(\d*)\s*(am|pm)?/i);
           if (!m) return 0;
           let h = +m[1]; const mn = m[2] ? +m[2] : 0;
-          if (m[3]?.toLowerCase() === "pm" && h < 12) h += 12;
-          if (m[3]?.toLowerCase() === "am" && h === 12) h = 0;
+          const suffix = m[3]?.toLowerCase();
+          if (suffix === "pm" && h < 12) h += 12;
+          else if (suffix === "am" && h === 12) h = 0;
+          else if (!suffix) {
+            // No AM/PM: bedtime assumes PM (7-11), wake assumes AM (4-11)
+            if (isBedtime && h >= 7 && h <= 11) h += 12;
+            // wake time: h <= 12 stays as-is (AM)
+          }
           return h + mn / 60;
         };
-        let d = parse(u.wake) - parse(u.bed);
+        let d = parse(u.wake, false) - parse(u.bed, true);
         if (d < 0) d += 24;
         u.sleep = d.toFixed(1);
       } catch { /* ignore */ }
@@ -235,9 +241,9 @@ export function CheckinGate({ initial, onComplete }: Props) {
           </div>
         </div>
         {error && <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: C.redBg, color: C.red, fontSize: 13 }}>{error}</div>}
-        <button onClick={submit} disabled={saving}
-          style={{ ...btn1, width: "100%", opacity: saving ? 0.6 : 1 }}>
-          {saving ? "Checking..." : "Let's Go →"}
+        <button onClick={submit} disabled={saving || !ck.bed || !ck.wake}
+          style={{ ...btn1, width: "100%", opacity: (saving || !ck.bed || !ck.wake) ? 0.6 : 1 }}>
+          {saving ? "Checking..." : !ck.bed || !ck.wake ? "Enter Bedtime & Wake Time" : "Let's Go →"}
         </button>
       </div>
     </div>

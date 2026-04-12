@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://tcc-api.vercel.app/api/:path*"
+      "destination": "https://tonys-command-center-api-server.vercel.app/api/:path*"
     }
   ]
 }

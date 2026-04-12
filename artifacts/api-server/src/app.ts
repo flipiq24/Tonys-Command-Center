@@ -7,18 +7,19 @@ import { authMiddleware } from "./middlewares/auth";
 
 const app: Express = express();
 
+// @ts-ignore — pino-http CJS/ESM interop: callable at runtime
 app.use(
   pinoHttp({
     logger,
     serializers: {
-      req(req) {
+      req(req: any) {
         return {
           id: req.id,
           method: req.method,
           url: req.url?.split("?")[0],
         };
       },
-      res(res) {
+      res(res: any) {
         return {
           statusCode: res.statusCode,
         };

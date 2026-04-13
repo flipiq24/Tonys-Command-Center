@@ -54,16 +54,15 @@ router.post("/email/send", async (req, res): Promise<void> => {
     const gmail = await getGmail();
 
     const contentType = isHtml ? "text/html" : "text/plain";
-    const messageParts = [
+    const headers = [
       `From: Tony Diaz <tony@flipiq.com>`,
       `To: ${to}`,
-      cc ? `Cc: ${cc}` : "",
-      bcc ? `Bcc: ${bcc}` : "",
+      cc ? `Cc: ${cc}` : null,
+      bcc ? `Bcc: ${bcc}` : null,
       `Subject: ${subject}`,
       `Content-Type: ${contentType}; charset=utf-8`,
-      "",
-      body,
-    ].filter(Boolean).join("\r\n");
+    ].filter(h => h !== null).join("\r\n");
+    const messageParts = headers + "\r\n\r\n" + body;
 
     const encoded = Buffer.from(messageParts)
       .toString("base64")

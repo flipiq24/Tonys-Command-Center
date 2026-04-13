@@ -79,7 +79,7 @@ export async function syncTasksTab(): Promise<void> {
       ];
     });
 
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Tasks", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
     console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (11 columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncTasksTab failed:", (err as Error).message);
@@ -104,7 +104,7 @@ export async function syncContactsTab(): Promise<void> {
       c.lastContactDate || null,
       c.createdAt ? new Date(c.createdAt).toISOString() : null,
     ]);
-    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contacts Master", [header, ...rows]);
+    await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contact Master", [header, ...rows]);
     console.log(`[sheets-sync] Contacts tab synced: ${rows.length} rows`);
   } catch (err) {
     console.warn("[sheets-sync] syncContactsTab failed:", (err as Error).message);

@@ -933,13 +933,13 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [organizePreview, setOrganizePreview] = useState<OrganizePreview | null>(null);
   const [confirmingOrganize, setConfirmingOrganize] = useState(false);
 
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
+  const loadTasks = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await get("/plan/tasks");
-      setTasks(data.tasks || []);
+      setTasks((data as any).tasks || []);
     } catch { /**/ }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, []);
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
@@ -952,12 +952,21 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   if (filterPriority) displayed = displayed.filter(t => t.priority === filterPriority);
 
   async function handleToggle(id: string, complete: boolean) {
+    // Optimistic UI update — instant visual feedback
+    setTasks(prev => prev.map(t =>
+      t.id === id ? { ...t, status: complete ? "completed" : "active", completedAt: complete ? new Date().toISOString() : null } : t
+    ));
     try {
       if (complete) await post(`/plan/task/${id}/complete`, {});
       else await post(`/plan/task/${id}/uncomplete`, {});
-      await loadTasks();
+      await loadTasks(true);
       onRefreshAll();
-    } catch { /**/ }
+    } catch {
+      // Revert on failure
+      setTasks(prev => prev.map(t =>
+        t.id === id ? { ...t, status: complete ? "active" : "completed", completedAt: complete ? null : t.completedAt } : t
+      ));
+    }
   }
 
   // Drag to reorder — now shows Training Modal instead of immediately saving
@@ -2044,13 +2053,13 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
     try { const d = await get("/plan/top3"); setTop3(d.tasks || []); } catch { /**/ }
   }, []);
 
-  const loadPlan = useCallback(async () => {
-    setLoading(true);
+  const loadPlan = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await get("/plan/categories");
-      setCategories(data.categories || []);
-    } catch { setErr("Failed to load 411 plan"); }
-    finally { setLoading(false); }
+      setCategories((data as any).categories || []);
+    } catch { if (!silent) setErr("Failed to load 411 plan"); }
+    finally { if (!silent) setLoading(false); }
   }, []);
 
   const loadWeekly = useCallback(async () => {
@@ -2063,12 +2072,38 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   useEffect(() => { loadPlan(); loadWeekly(); loadTop3(); }, [loadPlan, loadWeekly, loadTop3]);
 
   async function handleToggleTask(id: string, complete: boolean) {
+    // Optimistic UI update — instant visual feedback
+    const updateItem = (item: PlanItem): PlanItem =>
+      item.id === id ? { ...item, status: complete ? "completed" : "active", completedAt: complete ? new Date().toISOString() : null } : item;
+
+    setCategories(prev => prev.map(cat => ({
+      ...cat,
+      completedTasks: cat.completedTasks + (cat.subcategories.some(s => s.tasks.some(t => t.id === id)) ? (complete ? 1 : -1) : 0),
+      subcategories: cat.subcategories.map(sub => ({
+        ...sub,
+        completedTasks: sub.completedTasks + (sub.tasks.some(t => t.id === id) ? (complete ? 1 : -1) : 0),
+        tasks: sub.tasks.map(updateItem),
+      })),
+    })));
+    setByOwner(prev => {
+      const next = { ...prev };
+      for (const owner of Object.keys(next)) {
+        next[owner] = { ...next[owner] };
+        for (const week of Object.keys(next[owner])) {
+          next[owner][Number(week)] = next[owner][Number(week)].map(updateItem);
+        }
+      }
+      return next;
+    });
+
     loadTop3();
     try {
       if (complete) await post(`/plan/task/${id}/complete`, {});
       else await post(`/plan/task/${id}/uncomplete`, {});
-      await Promise.all([loadPlan(), loadWeekly()]);
+      await Promise.all([loadPlan(true), loadWeekly()]);
     } catch (e: any) {
+      // Revert on failure
+      await Promise.all([loadPlan(true), loadWeekly()]);
       if (e.message?.includes("remaining")) setToast(e.message);
     }
   }

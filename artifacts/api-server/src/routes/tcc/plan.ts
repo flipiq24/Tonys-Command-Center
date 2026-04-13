@@ -596,7 +596,15 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       if (tRank <= newRank) insertAfterOrder = t.priorityOrder ?? 0;
     }
 
-    const insertOrder = insertAfterOrder + 0.5;
+    const insertOrder = insertAfterOrder + 1;
+
+    // Shift all items at or after the insertion point up by 1
+    for (const t of existingTasks) {
+      if ((t.priorityOrder ?? 0) >= insertOrder) {
+        await db.update(planItemsTable).set({ priorityOrder: (t.priorityOrder ?? 0) + 1 })
+          .where(eq(planItemsTable.id, t.id));
+      }
+    }
 
     // Create the task
     const [created] = await db.insert(planItemsTable).values({
@@ -647,8 +655,9 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       prevTask: prevTask ? { title: prevTask.title, sprintId: `${prefix}-${String(taskIdx).padStart(2,"0")}` } : null,
       nextTask: nextTask ? { title: nextTask.title, sprintId: `${prefix}-${String(taskIdx + 2).padStart(2,"0")}` } : null,
     });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
+  } catch (err: any) {
+    console.error("[plan] POST /plan/task error:", err);
+    res.status(500).json({ error: err?.message || String(err), detail: err?.detail || err?.code || undefined });
   }
 });
 

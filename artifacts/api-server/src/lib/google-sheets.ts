@@ -1,39 +1,107 @@
-import { google } from "googleapis";
-import { getGoogleAuth } from "./google-auth";
+// Direct fetch-based Google Sheets client — bypasses googleapis library
+// which has bundling issues with esbuild.
 
-function getSheets() {
-  return google.sheets({ version: "v4", auth: getGoogleAuth() });
+const SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets";
+
+let _cachedToken: { token: string; expiresAt: number } | null = null;
+
+async function getAccessToken(): Promise<string> {
+  // Return cached token if still valid (with 60s buffer)
+  if (_cachedToken && Date.now() < _cachedToken.expiresAt - 60_000) {
+    return _cachedToken.token;
+  }
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID!,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN!,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Google token exchange failed: ${err}`);
+  }
+
+  const data = await res.json();
+  _cachedToken = {
+    token: data.access_token,
+    expiresAt: Date.now() + data.expires_in * 1000,
+  };
+  return _cachedToken.token;
 }
 
-export { getSheets as getSheetsClient };
+async function sheetsRequest(url: string, options: RequestInit = {}): Promise<any> {
+  const token = await getAccessToken();
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Sheets API ${res.status}: ${err}`);
+  }
+
+  return res.json();
+}
+
+// Keep the old export name for compatibility
+export async function getSheetsClient() {
+  // Return a minimal shim that the clearAndWriteTab function in sheets-sync.ts uses
+  const token = await getAccessToken();
+  return {
+    spreadsheets: {
+      values: {
+        clear: async ({ spreadsheetId, range }: { spreadsheetId: string; range: string }) => {
+          return sheetsRequest(
+            `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}:clear`,
+            { method: "POST", body: JSON.stringify({}) }
+          );
+        },
+        update: async ({ spreadsheetId, range, valueInputOption, requestBody }: {
+          spreadsheetId: string; range: string; valueInputOption: string; requestBody: { values: any[][] };
+        }) => {
+          return sheetsRequest(
+            `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=${valueInputOption}`,
+            { method: "PUT", body: JSON.stringify(requestBody) }
+          );
+        },
+      },
+    },
+  };
+}
 
 export async function appendToSheet(
   spreadsheetId: string,
   sheetName: string,
   values: (string | number | boolean | null)[]
 ) {
-  const sheets = getSheets();
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: `${sheetName}!A:Z`,
-    valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [values] },
-  });
+  const range = encodeURIComponent(`${sheetName}!A:Z`);
+  await sheetsRequest(
+    `${SHEETS_BASE}/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    { method: "POST", body: JSON.stringify({ values: [values] }) }
+  );
 }
 
 export async function getSheetValues(spreadsheetId: string, range: string): Promise<string[][]> {
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  return (res.data.values || []) as string[][];
+  const data = await sheetsRequest(
+    `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}`
+  );
+  return (data.values || []) as string[][];
 }
 
 export async function updateCell(spreadsheetId: string, range: string, value: string) {
-  const sheets = getSheets();
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[value]] },
-  });
+  await sheetsRequest(
+    `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    { method: "PUT", body: JSON.stringify({ values: [[value]] }) }
+  );
 }

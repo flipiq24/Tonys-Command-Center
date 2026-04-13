@@ -690,8 +690,20 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     background: i === 0 ? "#FFFBF2" : "#fff", transition: "background 0.15s",
                   }}>
                     <CB id={id} checked={done} onToggle={t ? async () => {
-                      toggle(id);
-                      await post(`/plan/task/${t.id}/complete`, {}).catch(() => {});
+                      const willComplete = !done;
+                      // Optimistic UI update
+                      setPlanTop3(prev => prev.map(p =>
+                        p.id === t.id ? { ...p, status: willComplete ? "completed" : "active" } : p
+                      ));
+                      try {
+                        if (willComplete) await post(`/plan/task/${t.id}/complete`, {});
+                        else await post(`/plan/task/${t.id}/uncomplete`, {});
+                      } catch {
+                        // Revert on failure
+                        setPlanTop3(prev => prev.map(p =>
+                          p.id === t.id ? { ...p, status: willComplete ? "active" : "completed" } : p
+                        ));
+                      }
                       loadPlanTop3();
                     } : () => toggle(id)} />
                     <div style={{

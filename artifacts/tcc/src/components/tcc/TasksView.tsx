@@ -191,11 +191,20 @@ export function TasksView({ tasks, tDone, calSide, onComplete, onSwitchToSales, 
   }, []);
 
   const handlePlanToggle = useCallback(async (id: string, complete: boolean) => {
+    // Optimistic UI update — instant visual feedback
+    setPlanItems(prev => prev.map(t =>
+      t.id === id ? { ...t, status: complete ? "completed" : "active" } : t
+    ));
     try {
       if (complete) await post(`/plan/task/${id}/complete`, {});
       else await post(`/plan/task/${id}/uncomplete`, {});
       await loadPlanItems();
-    } catch { /* ignore */ }
+    } catch {
+      // Revert on failure
+      setPlanItems(prev => prev.map(t =>
+        t.id === id ? { ...t, status: complete ? "active" : "completed" } : t
+      ));
+    }
   }, [loadPlanItems]);
 
   useEffect(() => {

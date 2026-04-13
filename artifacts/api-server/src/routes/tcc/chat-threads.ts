@@ -4,7 +4,7 @@ import { eq, desc, and, sql, asc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, contactsTable } from "@workspace/db";
 import { chatThreadsTable, chatMessagesTable, communicationLogTable, contactIntelligenceTable, companyGoalsTable, teamRolesTable } from "../../lib/schema-v2";
-import { createLinearIssue } from "../../lib/linear";
+import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
 import { postSlackMessage, getSlackChannelHistory, listSlackChannels, searchSlack } from "../../lib/slack";
 import { sendEmail, listRecentEmails, draftReply } from "../../lib/gmail";
 import { getTodayEvents, createEvent } from "../../lib/gcal";
@@ -210,6 +210,64 @@ const TOOLS: Parameters<typeof anthropic.messages.create>[0]["tools"] = [
     description: "Generate and send today's End of Day (EOD) report. Sends Tony's performance summary to tony@flipiq.com and Ethan's accountability brief to ethan@flipiq.com. Guards against double-sending.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
+  {
+    name: "get_all_tasks",
+    description: "Fetch ALL open Linear tasks/issues with status, priority, assignee, and due dates. Use this when Tony asks about Linear, tasks, issues, tickets, due dates, team progress, or what's overdue.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "get_linear_members",
+    description: "List all active Linear team members with their IDs, names, and emails. Call this before assigning issues.",
+    input_schema: { type: "object" as const, properties: {}, required: [] },
+  },
+  {
+    name: "get_calendar_range",
+    description: "Fetch calendar events for a specific date range.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        start_date: { type: "string", description: "Start date (ISO format or YYYY-MM-DD)" },
+        end_date: { type: "string", description: "End date (ISO format or YYYY-MM-DD)" },
+      },
+      required: ["start_date", "end_date"],
+    },
+  },
+  {
+    name: "query_database",
+    description: "Execute a read-only SQL SELECT query against the database. Use for custom data lookups. Only SELECT queries allowed.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "SQL SELECT query" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "search_contacts",
+    description: "Search contacts by name, company, or type.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        query: { type: "string", description: "Search term (name, company, etc.)" },
+        limit: { type: "number", description: "Max results (default 10)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_communication_log",
+    description: "Fetch recent entries from Tony's communication log (emails, calls, texts). Optionally filter by contact name or channel.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        contact_name: { type: "string", description: "Filter by contact name (optional)" },
+        channel: { type: "string", description: "Filter by channel: email, call, sms, slack (optional)" },
+        limit: { type: "number", description: "Max results (default 20)" },
+      },
+      required: [],
+    },
+  },
 ];
 
 async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -387,6 +445,98 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
       if (!result.ok) return `✗ EOD report failed to generate.`;
       return `✓ EOD report sent!\n- Calls: ${result.callsMade ?? 0}\n- Demos: ${result.demosBooked ?? 0}\n- Tasks: ${result.tasksCompleted ?? 0}\n\nTony → tony@flipiq.com\nEthan → ethan@flipiq.com`;
     }
+    case "get_all_tasks": {
+      try {
+        const issues = await getLinearIssues();
+        if (issues.length === 0) return "No open Linear tasks found.";
+        return issues.map((t: any, i: number) => {
+          const priority = ["", "Urgent", "High", "Medium", "Low"][t.priority] || "Unknown";
+          const due = t.dueDate ? ` | Due: ${t.dueDate}` : " | Due: NOT SET";
+          const assignee = t.assignee?.name ? ` | Assignee: ${t.assignee.name}` : "";
+          return `${i + 1}. [${t.identifier}] ${t.title}\n   Status: ${t.state?.name || "Unknown"} | Priority: ${priority}${due}${assignee}`;
+        }).join("\n\n");
+      } catch (err) {
+        return `Failed to fetch Linear tasks: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    case "get_linear_members": {
+      try {
+        const members = await getLinearMembers();
+        return members.map((m: any) => `${m.name} (${m.email}) — ID: ${m.id}`).join("\n");
+      } catch (err) {
+        return `Failed to fetch Linear members: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    case "get_calendar_range": {
+      try {
+        const { getCalendar } = await import("../../lib/gcal");
+        const cal = await getCalendar();
+        const events = await cal.events.list({
+          calendarId: "primary",
+          timeMin: new Date(String(input.start_date)).toISOString(),
+          timeMax: new Date(String(input.end_date)).toISOString(),
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 50,
+        });
+        const items = events.data.items || [];
+        if (!items.length) return "No events in that range.";
+        return items.map((e: any, i: number) => {
+          const start = e.start?.dateTime ? new Date(e.start.dateTime).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" }) : e.start?.date || "?";
+          return `${i + 1}. ${e.summary || "Untitled"} — ${start}`;
+        }).join("\n");
+      } catch (err) {
+        return `Calendar range fetch failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    case "query_database": {
+      const q = String(input.query).trim();
+      if (!/^SELECT/i.test(q)) return "Only SELECT queries are allowed.";
+      if (/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE)\b/i.test(q)) return "Only SELECT queries are allowed.";
+      try {
+        const result = await db.execute(sql.raw(q));
+        const rows = Array.isArray(result) ? result : (result as any).rows || [];
+        if (rows.length === 0) return "Query returned 0 rows.";
+        return rows.slice(0, 50).map((r: any) => JSON.stringify(r)).join("\n");
+      } catch (err) {
+        return `Query failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    case "search_contacts": {
+      try {
+        const term = `%${String(input.query)}%`;
+        const lim = Math.min(Number(input.limit) || 10, 25);
+        const results = await db.select().from(contactsTable)
+          .where(sql`LOWER(name) LIKE LOWER(${term}) OR LOWER(company) LIKE LOWER(${term})`)
+          .limit(lim);
+        if (!results.length) return `No contacts matching "${input.query}".`;
+        return results.map((c, i) => `${i + 1}. ${c.name} | ${c.company || "N/A"} | ${c.status} | ${c.phone || "N/A"} | ${c.email || "N/A"}`).join("\n");
+      } catch (err) {
+        return `Contact search failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    case "get_communication_log": {
+      try {
+        const lim = Math.min(Number(input.limit) || 20, 50);
+        let results;
+        if (input.contact_name) {
+          const [contact] = await db.select().from(contactsTable)
+            .where(sql`LOWER(name) LIKE LOWER(${`%${String(input.contact_name)}%`})`)
+            .limit(1);
+          if (!contact) return `No contact found matching "${input.contact_name}".`;
+          results = await db.select().from(communicationLogTable)
+            .where(eq(communicationLogTable.contactId, contact.id))
+            .orderBy(desc(communicationLogTable.loggedAt)).limit(lim);
+        } else {
+          results = await db.select().from(communicationLogTable)
+            .orderBy(desc(communicationLogTable.loggedAt)).limit(lim);
+        }
+        if (!results.length) return "No communication log entries found.";
+        return results.map((c, i) => `${i + 1}. [${c.channel}] ${c.loggedAt ? new Date(c.loggedAt).toLocaleDateString() : "?"} — ${c.summary || c.subject || "No summary"}`).join("\n");
+      } catch (err) {
+        return `Comm log fetch failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
     default:
       return `Unknown tool: ${name}`;
   }
@@ -467,6 +617,11 @@ SCOPE GATEKEEPER:
 - If Tony drifts into non-sales activities during prime hours, redirect him.
 - For compose_email: draft for review, Tony sends via Gmail himself.
 - For schedule_meeting: only sales or Ramy support meetings allowed.
+
+LINEAR (project management tool — NOT a Slack channel):
+- When Tony asks about "Linear", "tasks", "issues", "tickets", "due dates", "team progress", or "what's overdue" → use get_all_tasks to fetch all Linear issues
+- To assign issues, call get_linear_members first to get user IDs, then create_linear_issue
+- NEVER search Slack for Linear data — Linear is a separate tool, use get_all_tasks
 
 KNOWN RESOURCES (always use these direct links — do not search Drive for these):
 - FlipIQ Business Master Sheet: https://docs.google.com/spreadsheets/d/1VXx88LTbuoTrnEssB50kBelGPX_nCVcclVrEAxJGEqE

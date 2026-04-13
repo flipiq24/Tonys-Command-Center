@@ -933,6 +933,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [filterOwner, setFilterOwner] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
+  const [filterWeek, setFilterWeek] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [placementToast, setPlacementToast] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -971,6 +972,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   if (filterOwner) displayed = displayed.filter(t => t.owner === filterOwner);
   if (filterStatus) displayed = displayed.filter(t => t.status === filterStatus);
   if (filterPriority) displayed = displayed.filter(t => t.priority === filterPriority);
+  if (filterWeek) displayed = displayed.filter(t => String(t.weekNumber) === filterWeek);
 
   async function handleToggle(id: string, complete: boolean) {
     // Optimistic UI update — instant visual feedback
@@ -1176,6 +1178,13 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
           <select value={filterOwner} onChange={e => setFilterOwner(e.target.value)} style={selStyle}>
             <option value="">All owners</option>
             {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={filterWeek} onChange={e => setFilterWeek(e.target.value)} style={selStyle}>
+            <option value="">All weeks</option>
+            <option value="1">Week 1</option>
+            <option value="2">Week 2</option>
+            <option value="3">Week 3</option>
+            <option value="4">Week 4</option>
           </select>
           {/* Priority chips */}
           {[["", "All"], ["P0", "P0"], ["P1", "P1"], ["P2", "P2"]].map(([val, label]) => (

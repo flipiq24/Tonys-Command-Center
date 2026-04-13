@@ -576,7 +576,7 @@ function AddTaskModal({
 }) {
   const [form, setForm] = useState({
     title: "", category: "", subcategoryName: "", owner: "", priority: "P1",
-    dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "",
+    dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "",
   });
   const [subcats, setSubcats] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -701,7 +701,7 @@ function AddTaskModal({
             <input value={form.atomicKpi} onChange={e => set("atomicKpi", e.target.value)} placeholder="e.g. Signed operator = 4 new AAs in pipeline" style={inputStyle} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             <div>
               <label style={labelStyle}>Source</label>
               <select value={form.source} onChange={e => set("source", e.target.value)} style={inputStyle}>
@@ -713,6 +713,16 @@ function AddTaskModal({
               <input value={form.workNotes} onChange={e => set("workNotes", e.target.value)} placeholder="Context, blockers, links…" style={inputStyle} />
             </div>
           </div>
+
+          {form.source === "Linear" && (
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Linear Issue ID</label>
+              <input value={form.linearId} onChange={e => set("linearId", e.target.value)} placeholder="e.g. FLI-123 or paste Linear issue URL" style={inputStyle} />
+              <div style={{ fontSize: 10, color: C.mut, marginTop: 3 }}>Links this task to Linear — completion will sync both ways</div>
+            </div>
+          )}
+
+          {form.source !== "Linear" && <div style={{ marginBottom: 6 }} />}
 
           {err && <div style={{ background: C.redBg, color: C.red, borderRadius: 7, padding: "8px 12px", fontSize: 12, marginBottom: 14, fontFamily: F }}>{err}</div>}
 

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, sql } from "drizzle-orm";
-import { db, eodReportsTable, callLogTable, demosTable, taskCompletionsTable, taskWorkNotesTable, ideasTable } from "@workspace/db";
+import { db, eodReportsTable, callLogTable, demosTable, ideasTable } from "@workspace/db";
+import { planItemsTable } from "../../lib/schema-v2";
 import { linearGraphQL } from "../../lib/linear";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { sendEmail } from "../../lib/gmail";
@@ -21,16 +22,19 @@ async function buildEodReport(log: any): Promise<{ reportText: string; callsMade
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
 
-  const [calls, demoRows, taskCompletions] = await Promise.all([
+  const [calls, demoRows, planCompletions] = await Promise.all([
     db.select().from(callLogTable).where(gte(callLogTable.createdAt, todayDate)),
     db.select().from(demosTable).where(eq(demosTable.scheduledDate, today)),
-    db.select().from(taskCompletionsTable).where(gte(taskCompletionsTable.completedAt, todayDate)),
+    db.select().from(planItemsTable).where(
+      sql`${planItemsTable.status} = 'completed' AND ${planItemsTable.completedAt} >= ${todayDate} AND ${planItemsTable.level} = 'task'`
+    ),
   ]);
 
   const callsMade = calls.length;
   const demosBooked = demoRows.length;
-  const tasksCompleted = taskCompletions.length;
+  const tasksCompleted = planCompletions.length;
   const callList = calls.map(c => `- ${c.contactName}: ${c.type}`).join("\n") || "- No calls logged";
+  const taskList = planCompletions.map(t => `- ${t.title} (${t.category || "misc"})`).join("\n") || "- No tasks completed";
 
   let reportText = "";
   try {
@@ -48,6 +52,9 @@ Today's Data:
 
 Call Log:
 ${callList}
+
+Tasks Completed:
+${taskList}
 
 Write a brief EOD report (3-4 paragraphs) in Tony's voice:
 1. Summary of the day's sales activity
@@ -139,11 +146,12 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
   const todayDate = new Date();
   todayDate.setHours(0, 0, 0, 0);
 
-  const [calls, demoRows, taskCompletions, workedOnTasks] = await Promise.all([
+  const [calls, demoRows, planCompletions] = await Promise.all([
     db.select().from(callLogTable).where(gte(callLogTable.createdAt, todayDate)),
     db.select().from(demosTable).where(eq(demosTable.scheduledDate, today)),
-    db.select().from(taskCompletionsTable).where(gte(taskCompletionsTable.completedAt, todayDate)),
-    db.select().from(taskWorkNotesTable).where(gte(taskWorkNotesTable.createdAt, todayDate)),
+    db.select().from(planItemsTable).where(
+      sql`${planItemsTable.status} = 'completed' AND ${planItemsTable.completedAt} >= ${todayDate} AND ${planItemsTable.level} = 'task'`
+    ),
   ]);
 
   let emailsSent = 0;
@@ -209,10 +217,10 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
 
   const callsMade = calls.length;
   const demosBooked = demoRows.length;
-  const tasksCompleted = taskCompletions.length;
+  const tasksCompleted = planCompletions.length;
   const callList = calls.map(c => `- ${c.contactName}: ${c.type}`).join("\n") || "- No calls logged";
-  const workedOnSummary = workedOnTasks.map(t => `- ${t.taskId}: ${t.note || "no note"}`).join("\n") || "- None";
-  const completionRate = Math.min(100, Math.round(((tasksCompleted + workedOnTasks.length) / 10) * 100));
+  const taskList = planCompletions.map(t => `- ${t.title} (${t.category || "misc"})`).join("\n") || "- No tasks completed";
+  const completionRate = Math.min(100, Math.round((tasksCompleted / 10) * 100));
 
   let tonyReportText = "";
   try {
@@ -228,7 +236,7 @@ Today's Data:
 - Demos booked/completed: ${demosBooked}
 - Emails sent: ${emailsSent}
 - Tasks completed: ${tasksCompleted}
-- Tasks worked on:\n${workedOnSummary}
+- Tasks completed today:\n${taskList}
 - Ideas submitted: ${ideasToday.length > 0 ? ideasToday.join(", ") : "None"}
 
 Format as a brief EOD (4 paragraphs max):
@@ -255,7 +263,7 @@ Format as a brief EOD (4 paragraphs max):
 
 Tony's Activity:
 - Calls: ${callsMade}, Demos: ${demosBooked}, Emails: ${emailsSent}
-- Tasks completed: ${tasksCompleted}, Worked on: ${workedOnTasks.length}
+- Tasks completed: ${tasksCompleted}
 - Accountability score: ${completionRate}%
 
 Items Without Due Dates (Ethan must assign):

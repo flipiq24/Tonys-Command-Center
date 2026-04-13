@@ -39,45 +39,33 @@ async function clearAndWriteTab(spreadsheetId: string, tabName: string, rows: (s
 export async function syncTasksTab(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
-    const { taskCompletionsTable, localTasksTable } = await import("@workspace/db");
-    const { taskWorkNotesTable } = await import("../../lib/schema-v2.js");
+    const { planItemsTable } = await import("../../lib/schema-v2.js");
+    const { asc } = await import("drizzle-orm");
 
-    // Pull all local tasks (active + recently completed)
-    const localTasks = await db.select().from(localTasksTable).limit(500);
-    // Pull completions for reference
-    const completions = await db.select().from(taskCompletionsTable)
-      .orderBy(desc(taskCompletionsTable.completedAt)).limit(500);
-    const completionMap = new Map(completions.map(c => [c.taskId, c]));
-    // Pull latest work note per task
-    const notes = await db.select().from(taskWorkNotesTable)
-      .orderBy(desc(taskWorkNotesTable.createdAt)).limit(2000);
-    const latestNote = new Map<string, typeof notes[0]>();
-    for (const n of notes) {
-      if (!latestNote.has(n.taskId)) latestNote.set(n.taskId, n);
-    }
+    // Pull all plan tasks (the real task system — 411 Plan)
+    const planTasks = await db.select().from(planItemsTable)
+      .where(eq(planItemsTable.level, "task"))
+      .orderBy(asc(planItemsTable.priorityOrder))
+      .limit(500);
 
     const header = [
       "Task", "Source", "Owner", "Priority", "Status",
-      "Start Date", "Completed Date", "Due Date", "Notes",
-      "90-Day Link", "Linear ID",
+      "Category", "Completed Date", "Due Date", "Notes",
+      "Atomic KPI", "Linear ID",
     ];
-    const rows: (string | number | null)[][] = localTasks.map(t => {
-      const comp = completionMap.get(t.id);
-      const note = latestNote.get(t.id);
-      return [
-        t.text,
-        t.taskType || "Manual",
-        "Tony",
-        t.priority != null ? String(t.priority) : null,
-        comp ? "Completed" : (t.status || "Active"),
-        t.createdAt ? new Date(t.createdAt).toLocaleDateString("en-US") : null,
-        comp?.completedAt ? new Date(comp.completedAt).toLocaleDateString("en-US") : null,
-        t.dueDate || null,
-        note?.note || null,
-        null, // 90-day link — future
-        null, // Linear ID — future
-      ];
-    });
+    const rows: (string | number | null)[][] = planTasks.map(t => [
+      t.title,
+      t.source || "manual",
+      t.owner || "Unassigned",
+      t.priority || "P2",
+      t.status === "completed" ? "Completed" : "Active",
+      t.category || null,
+      t.completedAt ? new Date(t.completedAt).toLocaleDateString("en-US") : null,
+      t.dueDate || null,
+      t.workNotes || null,
+      t.atomicKpi || null,
+      t.linearId || null,
+    ]);
 
     await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
     console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (11 columns)`);

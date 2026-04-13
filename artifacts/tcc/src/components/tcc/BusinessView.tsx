@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { get, post, patch, put } from "@/lib/api";
+import { get, post, patch, put, del } from "@/lib/api";
 import { C, F } from "@/components/tcc/constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -745,6 +745,8 @@ function TaskDetailModal({ task, onClose, onSaved }: {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const catColor = CAT_COLOR[task.category] ?? "#555";
 
@@ -857,15 +859,34 @@ function TaskDetailModal({ task, onClose, onSaved }: {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.brd}`, display: "flex", gap: 10 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.sub, fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving || saved} style={{
-            flex: 2, padding: "10px", borderRadius: 8, border: "none",
-            background: saved ? C.grn : "#F97316", color: "#fff",
-            fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer", fontFamily: F,
-          }}>
-            {saved ? "✓ Saved" : saving ? "Saving…" : "Save changes"}
-          </button>
+        <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.brd}`, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.sub, fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving || saved} style={{
+              flex: 2, padding: "10px", borderRadius: 8, border: "none",
+              background: saved ? C.grn : "#F97316", color: "#fff",
+              fontSize: 13, fontWeight: 700, cursor: saving ? "wait" : "pointer", fontFamily: F,
+            }}>
+              {saved ? "✓ Saved" : saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+          {confirmDelete ? (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 12px", background: "#FEF2F2", borderRadius: 8, border: "1px solid #FECACA" }}>
+              <span style={{ fontSize: 12, color: "#991B1B", flex: 1 }}>Delete this task permanently?</span>
+              <button onClick={async () => {
+                setDeleting(true);
+                try { await del(`/plan/task/${task.id}`); onSaved(); onClose(); } catch { /**/ }
+                finally { setDeleting(false); }
+              }} disabled={deleting} style={{ padding: "5px 14px", borderRadius: 6, border: "none", background: "#DC2626", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+              <button onClick={() => setConfirmDelete(false)} style={{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.brd}`, background: "#fff", color: C.sub, fontSize: 12, cursor: "pointer", fontFamily: F }}>No</button>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} style={{ padding: "8px", borderRadius: 8, border: `1px solid #FECACA`, background: "transparent", color: "#DC2626", fontSize: 11, cursor: "pointer", fontFamily: F, fontWeight: 600 }}>
+              Delete task
+            </button>
+          )}
         </div>
       </div>
     </div>

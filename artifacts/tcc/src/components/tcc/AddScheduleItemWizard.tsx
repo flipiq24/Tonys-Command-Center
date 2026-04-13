@@ -91,6 +91,15 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   }, []);
 
   const handleGuestInput = useCallback((val: string) => {
+    // Handle paste of multiple comma-separated emails
+    if (val.includes(",") && val.includes("@")) {
+      const emails = val.split(",").map(e => e.trim()).filter(e => e.includes("@"));
+      for (const email of emails) {
+        addGuest({ name: email.split("@")[0], email });
+      }
+      setGuestInput("");
+      return;
+    }
     setGuestInput(val);
     if (acTimer.current) clearTimeout(acTimer.current);
     if (val.length < 3) { setSuggestions([]); setShowSuggestions(false); return; }
@@ -126,9 +135,16 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   };
 
   const handleGuestKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if ((e.key === "Enter" || e.key === ",") && guestInput.includes("@")) {
+    if ((e.key === "Enter" || e.key === "," || e.key === " ") && guestInput.trim()) {
       e.preventDefault();
-      addGuest({ name: guestInput, email: guestInput });
+      const raw = guestInput.trim().replace(/,$/,"");
+      if (!raw) return;
+      // Extract email from "Name <email>" format or plain email
+      const emailMatch = raw.match(/<([^>]+@[^>]+)>/);
+      const email = emailMatch ? emailMatch[1] : raw;
+      if (!email.includes("@")) return; // must be an email
+      const name = emailMatch ? raw.replace(/<[^>]+>/, "").trim() : email.split("@")[0];
+      addGuest({ name, email });
     }
   };
 
@@ -277,8 +293,9 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
                     onChange={e => handleGuestInput(e.target.value)}
                     onKeyDown={handleGuestKeyDown}
                     onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-                    placeholder="Add guests"
+                    placeholder="Type email and press Enter"
                     style={{ ...inp, fontSize: 14 }}
+                    type="email"
                   />
                   {showSuggestions && (
                     <div style={{

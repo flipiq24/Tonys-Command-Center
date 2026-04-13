@@ -255,7 +255,7 @@ export function PrintView({
   const workBlocks = computeWorkBlocks(meetings);
 
   return (
-    <div style={{
+    <div className="print-view-root" style={{
       position: "fixed", inset: 0, zIndex: 20000, background: "#1C1C1E",
       display: "flex", flexDirection: "column", overflow: "hidden",
     }}>
@@ -272,7 +272,19 @@ export function PrintView({
         </div>
         <Btn label={refreshing ? "Refreshing…" : "↻ Refresh"} onClick={handleRefresh} disabled={refreshing} dim />
         <Btn label={processing ? "Processing…" : "📷 Process Scanned Sheet"} onClick={handleProcessScan} disabled={processing} dim />
-        <Btn label="🖨 Print" onClick={() => window.print()} primary />
+        <Btn label="🖨 Print" onClick={() => {
+          const printEl = document.querySelector('.print-only') as HTMLElement;
+          if (!printEl) return;
+          const root = document.getElementById('root');
+          if (root) root.style.display = 'none';
+          const wrapper = document.createElement('div');
+          wrapper.id = 'print-wrapper';
+          wrapper.innerHTML = printEl.innerHTML;
+          document.body.appendChild(wrapper);
+          window.print();
+          document.body.removeChild(wrapper);
+          if (root) root.style.display = '';
+        }} primary />
         <Btn label="✕ Close" onClick={onClose} dim />
       </div>
       {processResult && (
@@ -312,9 +324,7 @@ export function PrintView({
       <style>{`
         @media print {
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          body > * { display: none !important; }
-          .print-only { display: block !important; }
-          .print-page {
+          #print-wrapper .print-page {
             width: 100%;
             font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
             font-size: 11px;
@@ -324,20 +334,13 @@ export function PrintView({
             margin: 0;
             box-shadow: none !important;
             border-radius: 0 !important;
-            page-break-inside: avoid;
-            break-inside: avoid;
           }
-          .print-page + .print-page {
+          #print-wrapper .print-page + .print-page {
             page-break-before: always;
             break-before: page;
           }
         }
-        /* Base page rule — letter portrait, consistent margins for duplex */
         @page { size: letter portrait; margin: 0.4in 0.45in; }
-        /* Recto (right / odd = front side) */
-        @page :right { margin-left: 0.5in; margin-right: 0.4in; }
-        /* Verso (left / even = back side) */
-        @page :left  { margin-left: 0.4in; margin-right: 0.5in; }
       `}</style>
     </div>
   );

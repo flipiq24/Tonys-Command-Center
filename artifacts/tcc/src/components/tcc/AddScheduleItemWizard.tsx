@@ -160,6 +160,20 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
         return;
       }
 
+      if (!result.ok && (result as any).scopeBlock) {
+        setGuiltTrip({
+          msg: (result as any).scopeMsg || "This doesn't look like a Sales or ops meeting. Force override?",
+          callsMade: (result as any).callsMade ?? 0,
+          quotaTarget: (result as any).quotaTarget ?? 10,
+        });
+        return;
+      }
+
+      if (!result.ok) {
+        setError((result as any).error || "Failed to create event");
+        return;
+      }
+
       onSaved();
       onClose();
     } catch (err) {

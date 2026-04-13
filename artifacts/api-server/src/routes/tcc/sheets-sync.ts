@@ -3,9 +3,9 @@ import { db } from "@workspace/db";
 import { contactsTable } from "@workspace/db";
 import { appendToSheet, getSheetValues, getSheetsClient } from "../../lib/google-sheets";
 import { readGoogleDoc } from "../../lib/google-drive";
-import { businessContextTable, contactIntelligenceTable, communicationLogTable } from "../../lib/schema-v2";
+import { businessContextTable, contactIntelligenceTable, communicationLogTable, planItemsTable } from "../../lib/schema-v2";
 import { sync411FromSheet, syncTeamFromSheet } from "./business";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, asc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates";
 
@@ -39,9 +39,6 @@ async function clearAndWriteTab(spreadsheetId: string, tabName: string, rows: (s
 export async function syncTasksTab(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
-    const { planItemsTable } = await import("../../lib/schema-v2.js");
-    const { asc } = await import("drizzle-orm");
-
     // Pull all plan tasks (the real task system — 411 Plan)
     const planTasks = await db.select().from(planItemsTable)
       .where(eq(planItemsTable.level, "task"))

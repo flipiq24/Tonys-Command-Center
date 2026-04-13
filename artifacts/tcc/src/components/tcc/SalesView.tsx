@@ -128,9 +128,9 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
         onUpdated={handleContactUpdated}
         onDeleted={handleContactDeleted}
         onAttempt={c => { onAttempt(c); setSelectedContactId(null); }}
-        onConnected={name => { onConnected(name); setSelectedContactId(null); }}
+        onConnected={c => { if (onConnectedCall) onConnectedCall(c); else onConnected(c.contactName); setSelectedContactId(null); }}
         onSmsOpen={c => { setSmsContact(c); setSelectedContactId(null); }}
-        onCompose={onCompose ? c => { onCompose(c); setSelectedContactId(null); } : undefined}
+        onCompose={onCompose ? c => { onCompose(c); } : undefined}
         contacts={results}
         onNavigate={id => setSelectedContactId(id)}
         filters={{ status: filterStatus, stage: filterStage, type: filterType, category: filterCategory, search }}

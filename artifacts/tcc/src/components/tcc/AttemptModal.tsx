@@ -23,7 +23,7 @@ export function AttemptModal({ contact, onClose, onLog, onCompose }: Props) {
     setError("");
     try {
       const call = await post<CallEntry & { followUpText?: string }>("/calls", {
-        contactName: contact.name, type: "attempt", notes: note || undefined, instructions: note || undefined
+        contactId: String(contact.id), contactName: contact.name, type: "attempt", notes: note || undefined, instructions: note || undefined
       });
       onLog(call);
       if (call.followUpText) {

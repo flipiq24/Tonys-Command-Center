@@ -18,7 +18,7 @@ interface Props {
   onUpdated: (contact: Contact) => void;
   onDeleted: (id: string) => void;
   onAttempt: (contact: { id: string | number; name: string }) => void;
-  onConnected: (contactName: string) => void;
+  onConnected: (contact: { contactId: string; contactName: string; contactEmail?: string }) => void;
   onSmsOpen: (contact: Contact) => void;
   onCompose?: (contact: Contact) => void;
   contacts?: Contact[];
@@ -48,6 +48,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [contact, setContact] = useState<Contact | null>(null);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [calls, setCalls] = useState<CallEntry[]>([]);
+  const [comms, setComms] = useState<{ id: string; channel: string; direction: string; subject?: string; summary?: string; loggedAt?: string; contactName?: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [noteText, setNoteText] = useState("");
@@ -73,25 +74,41 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
     filters.type !== "All" || filters.category !== "All" || filters.search.trim() !== ""
   );
 
-  useEffect(() => {
-    if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); setMeetings([]); setMeetingsLoaded(false); setInteracted(false); return; }
-    setLoading(true);
-    setActiveTab("details");
-    setMeetings([]);
-    setMeetingsLoaded(false);
-    setInteracted(false);
-    get<Contact & { _notes: ContactNote[]; _calls: CallEntry[] }>(`/contacts/${contactId}`)
+  const refreshContact = useCallback((cid: string, resetView = true) => {
+    if (resetView) {
+      setLoading(true);
+      setActiveTab("details");
+      setMeetings([]);
+      setMeetingsLoaded(false);
+      setInteracted(false);
+    }
+    get<Contact & { _notes: ContactNote[]; _calls: CallEntry[]; _comms?: typeof comms }>(`/contacts/${cid}`)
       .then(data => {
-        const { _notes, _calls, ...c } = data;
+        const { _notes, _calls, _comms, ...c } = data;
         setContact(c);
-        setDraft(c);
+        if (resetView) { setDraft(c); setHasChanges(false); }
         setNotes(_notes ?? []);
         setCalls(_calls ?? []);
-        setHasChanges(false);
+        setComms(_comms ?? []);
+        if ((_calls ?? []).length > 0 || (_comms ?? []).length > 0 || (_notes ?? []).length > 0) {
+          setInteracted(true);
+        }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [contactId]);
+      .finally(() => { if (resetView) setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    if (!contactId) { setContact(null); setDraft({}); setHasChanges(false); setMeetings([]); setMeetingsLoaded(false); setInteracted(false); return; }
+    refreshContact(contactId, true);
+  }, [contactId, refreshContact]);
+
+  // Silently refresh activity data periodically while drawer is open (catches email sends, etc.)
+  useEffect(() => {
+    if (!contactId) return;
+    const interval = setInterval(() => refreshContact(contactId, false), 5000);
+    return () => clearInterval(interval);
+  }, [contactId, refreshContact]);
 
   useEffect(() => {
     if (activeTab !== "meetings" || meetingsLoaded || !contact?.name) return;
@@ -273,10 +290,10 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   <button onClick={() => { setInteracted(true); onSmsOpen(contact); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Text</button>
                 )}
                 {onCompose && (
-                  <button onClick={() => { setInteracted(true); onCompose(contact); onClose(); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Email</button>
+                  <button onClick={() => { setInteracted(true); onCompose(contact); }} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.bluBg, color: C.blu, border: `1px solid ${C.blu}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Email</button>
                 )}
                 <button
-                  onClick={() => { if (interacted) onConnected(contact.name); }}
+                  onClick={() => { if (interacted) onConnected({ contactId: String(contact.id), contactName: contact.name, contactEmail: contact.email || undefined }); }}
                   disabled={!interacted}
                   title={interacted ? "Log as done" : "Send a text, email, or make an update first"}
                   style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: interacted ? C.grnBg : "#F0F0EE", color: interacted ? C.grn : C.mut, border: `1px solid ${interacted ? C.grn : C.brd}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: interacted ? "pointer" : "not-allowed", fontFamily: F, transition: "all 0.2s" }}>Done</button>
@@ -291,7 +308,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
               <div style={{ display: "flex", gap: 0, borderTop: `1px solid ${C.brd}`, marginTop: 4 }}>
                 {(["details", "notes", "activity", "meetings"] as const).map(tab => (
                   <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex: 1, padding: "10px 2px", background: "none", border: "none", borderBottom: activeTab === tab ? `2px solid ${C.tx}` : "2px solid transparent", fontFamily: F, fontSize: 11, fontWeight: 700, color: activeTab === tab ? C.tx : C.mut, cursor: "pointer", textTransform: "capitalize", letterSpacing: 0.4 }}>
-                    {tab === "notes" ? `Notes (${notes.length})` : tab === "activity" ? `Activity (${calls.length})` : tab === "meetings" ? `Meetings${meetingsLoaded ? ` (${meetings.length})` : ""}` : "Details"}
+                    {tab === "notes" ? `Notes (${notes.length})` : tab === "activity" ? `Activity (${calls.length + comms.length})` : tab === "meetings" ? `Meetings${meetingsLoaded ? ` (${meetings.length})` : ""}` : "Details"}
                   </button>
                 ))}
               </div>
@@ -483,7 +500,8 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
               {activeTab === "activity" && (() => {
                 type ActivityItem =
                   | { kind: "call"; data: CallEntry & { followUpText?: string }; ts: number }
-                  | { kind: "note"; data: ContactNote; ts: number };
+                  | { kind: "note"; data: ContactNote; ts: number }
+                  | { kind: "comm"; data: typeof comms[number]; ts: number };
 
                 const items: ActivityItem[] = [
                   ...calls.map(cl => ({
@@ -495,6 +513,11 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                     kind: "note" as const,
                     data: n,
                     ts: n.createdAt ? new Date(n.createdAt).getTime() : 0,
+                  })),
+                  ...comms.map(cm => ({
+                    kind: "comm" as const,
+                    data: cm,
+                    ts: cm.loggedAt ? new Date(cm.loggedAt).getTime() : 0,
                   })),
                 ].sort((a, b) => b.ts - a.ts);
 
@@ -516,6 +539,23 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                             {cl.notes && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{cl.notes}</div>}
                             {cl.followUpText && <div style={{ fontSize: 12, color: C.blu, marginTop: 4, fontStyle: "italic" }}>Follow-up draft: {cl.followUpText}</div>}
                             <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cl.createdAt ? new Date(cl.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                          </div>
+                        );
+                      } else if (item.kind === "comm") {
+                        const cm = item.data;
+                        const isEmail = cm.channel?.includes("email");
+                        const isText = cm.channel?.includes("text") || cm.channel?.includes("sms");
+                        const isInbound = cm.direction === "inbound";
+                        const accentColor = isEmail ? "#E65100" : isText ? "#7B1FA2" : C.blu;
+                        const channelLabel = isEmail ? (isInbound ? "Email Received" : "Email Sent") : isText ? (isInbound ? "Text Received" : "Text Sent") : cm.channel?.replace(/_/g, " ") || "Communication";
+                        return (
+                          <div key={`comm-${cm.id}`} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${accentColor}` }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: accentColor, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
+                              {isInbound ? "↓ " : "↑ "}{channelLabel}
+                            </div>
+                            {cm.subject && <div style={{ fontSize: 13, fontWeight: 600, color: C.tx }}>{cm.subject}</div>}
+                            {cm.summary && <div style={{ fontSize: 12, color: C.sub, marginTop: 2, lineHeight: 1.4 }}>{cm.summary}</div>}
+                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cm.loggedAt ? new Date(cm.loggedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
                           </div>
                         );
                       } else {

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, contactsTable, contactNotesTable, callLogTable } from "@workspace/db";
+import { communicationLogTable } from "../../lib/schema-v2";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 
@@ -67,12 +68,13 @@ router.get("/contacts/:id", async (req, res): Promise<void> => {
   const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
   if (!contact) { res.status(404).json({ error: "Not found" }); return; }
 
-  const [notes, recentCalls] = await Promise.all([
+  const [notes, recentCalls, comms] = await Promise.all([
     db.select().from(contactNotesTable).where(eq(contactNotesTable.contactId, id)).orderBy(desc(contactNotesTable.createdAt)).limit(50),
     db.select().from(callLogTable).where(eq(callLogTable.contactId, id)).orderBy(desc(callLogTable.createdAt)).limit(20),
+    db.select().from(communicationLogTable).where(eq(communicationLogTable.contactId, id)).orderBy(desc(communicationLogTable.loggedAt)).limit(30),
   ]);
 
-  res.json({ ...contact, _notes: notes, _calls: recentCalls });
+  res.json({ ...contact, _notes: notes, _calls: recentCalls, _comms: comms });
 });
 
 router.post("/contacts", async (req, res): Promise<void> => {

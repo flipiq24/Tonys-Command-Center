@@ -3,7 +3,7 @@ import { C, F, FS } from "./constants";
 import { get, patch, post } from "@/lib/api";
 import { ContactDrawer } from "./ContactDrawer";
 import { SmsModal } from "./SmsModal";
-import type { TaskItem, CalItem, EmailItem, LinearItem, SlackItem } from "./types";
+import type { TaskItem, CalItem, EmailItem, LinearItem, SlackItem, CallEntry } from "./types";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface LocalTask { id: string; text: string; dueDate?: string | null; taskType?: string | null; size?: string | null; }
@@ -18,6 +18,7 @@ interface Props {
   linearItems: LinearItem[];
   slackItems?: SlackItem[];
   contacts: Contact[];
+  calls?: CallEntry[];
   onComplete: (task: TaskItem) => void;
   onNavigate: (view: NavView) => void;
   onOpenEmail?: (em: EmailItem) => void;
@@ -527,7 +528,7 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
 }
 
 // ════════════════════════════════════════════════════════════════════
-export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, onComplete, onNavigate, onOpenEmail, onAttempt, onCompose }: Props) {
+export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, calls = [], onComplete, onNavigate, onOpenEmail, onAttempt, onCompose }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -586,6 +587,8 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
 
   // Data — real sources only
+  // Build set of contact names that have been called today (from actual call_log)
+  const calledNames = new Set(calls.map(c => c.contactName.toLowerCase()));
   const callList = contacts.slice(0, 10);
   const meetings = calendarData.filter(c => c.real);
   const emails   = emailsImportant.slice(0, 5);
@@ -636,7 +639,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         <div style={{ padding: "12px 20px 18px" }}>
 
             {/* ── SALES CALLS — 10 Today ── */}
-            <SL text="📞 Sales Calls — 10 Today" color="#C62828" view="sales" onNavigate={onNavigate} />
+            <SL text={`📞 Sales Calls — ${calls.length} of 10 Done`} color="#C62828" view="sales" onNavigate={onNavigate} />
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 2 }}>
               <thead>
                 <tr><TH w={22} center>✓</TH><TH w={28} center>#</TH><TH>CONTACT</TH><TH w={120}>COMPANY</TH><TH w={90}>STATUS</TH><TH>NEXT STEP</TH></tr>
@@ -644,7 +647,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               <tbody>
                 {callList.slice(0, 10).map((c, i) => {
                   const id = `call-${i}`;
-                  const done = ck(id);
+                  const done = ck(id) || calledNames.has(c.name.toLowerCase());
                   return (
                     <tr key={id} className="dash-row-hover" style={{ background: done ? "#FAFAF8" : "#fff" }}>
                       <TD center><CB id={id} checked={done} onToggle={() => toggle(id)} /></TD>
@@ -930,7 +933,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
               {/* Win 1 — Auto: 10 calls + appointments booked */}
               {(() => {
-                const callsDone = callList.filter((_, i) => ck(`call-${i}`)).length;
+                const callsDone = calls.length;
                 const callWin = callsDone >= 10;
                 const apptCount = meetings.length;
                 return (

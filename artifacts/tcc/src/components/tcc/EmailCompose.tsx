@@ -219,7 +219,17 @@ export function EmailCompose({
               <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: C.mut }}>&#10005;</button>
             </div>
 
-            <ContactAutocomplete value={to} onChange={setTo} placeholder="name@example.com" label="To" />
+            {prefillContactId && prefillTo ? (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 4 }}>To</label>
+                <div style={{ ...inp, fontSize: 14, background: "#F0EFEB", color: C.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                  {prefillContactName && <span style={{ fontWeight: 600 }}>{prefillContactName}</span>}
+                  <span style={{ color: C.sub }}>{prefillContactName ? `<${to}>` : to}</span>
+                </div>
+              </div>
+            ) : (
+              <ContactAutocomplete value={to} onChange={setTo} placeholder="name@example.com" label="To" />
+            )}
             <ContactAutocomplete value={cc} onChange={setCc} placeholder="cc@example.com" label="CC (optional)" />
             <ContactAutocomplete value={bcc} onChange={setBcc} placeholder="bcc@example.com" label="BCC (optional)" />
 

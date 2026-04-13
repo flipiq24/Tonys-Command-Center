@@ -42,6 +42,20 @@ router.post("/calls", async (req, res): Promise<void> => {
     })
     .returning();
 
+  // Always log to communication_log when we have a contactId
+  if (contactId) {
+    await db.insert(communicationLogTable).values({
+      contactId,
+      contactName,
+      channel: "call_outbound",
+      direction: "outbound",
+      subject: type === "attempt" ? "Call attempt" : "Connected call",
+      summary: notes || (type === "attempt" ? "No answer" : "Connected"),
+    }).catch(err => console.warn("[calls] Failed to log to communication_log:", err));
+
+    updateContactComms(contactId, "call_outbound", notes || type).catch(() => {});
+  }
+
   if (type === "attempt" && instructions) {
     try {
       const msg = await anthropic.messages.create({
@@ -70,20 +84,6 @@ Draft a brief, professional follow-up email (3-4 sentences max). Plain text only
     } catch (err) {
       req.log.warn({ err }, "Claude follow-up email failed");
     }
-  }
-
-  if (contactId) {
-    const channel = type === "connected" ? "call_outbound" : "call_outbound";
-    await db.insert(communicationLogTable).values({
-      contactId,
-      contactName,
-      channel,
-      direction: "outbound",
-      subject: type === "attempt" ? "Call attempt" : "Connected call",
-      summary: notes || (type === "attempt" ? "No answer" : "Connected"),
-    }).catch(err => console.warn("[calls] Failed to log to communication_log:", err));
-
-    updateContactComms(contactId, channel, notes || type).catch(() => {});
   }
 
   res.status(201).json(call);

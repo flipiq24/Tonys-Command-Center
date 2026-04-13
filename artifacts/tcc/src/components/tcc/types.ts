@@ -63,9 +63,11 @@ export interface Contact {
 }
 export interface CallEntry {
   id?: string;
+  contactId?: string;
   contactName: string;
   type: string;
   notes?: string;
+  followUpText?: string;
   createdAt?: string;
 }
 export interface Idea {

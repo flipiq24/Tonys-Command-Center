@@ -157,7 +157,10 @@ Keep the body to 3-5 sentences max.`;
     });
 
     const textBlock = response.content.find(b => b.type === "text");
-    const raw = textBlock?.type === "text" ? textBlock.text.trim() : "";
+    let raw = textBlock?.type === "text" ? textBlock.text.trim() : "";
+
+    // Strip markdown code fences if Claude wrapped the JSON in them
+    raw = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
 
     let draftSubject = subject || "";
     let draftBody = "";
@@ -165,10 +168,18 @@ Keep the body to 3-5 sentences max.`;
     try {
       const parsed = JSON.parse(raw);
       draftSubject = parsed.subject || draftSubject;
-      draftBody = parsed.body || "";
+      // Convert literal \n sequences to actual newlines
+      draftBody = (parsed.body || "").replace(/\\n/g, "\n");
     } catch {
-      // Fallback: treat entire response as body
-      draftBody = raw;
+      // Fallback: try to extract body from raw text
+      const bodyMatch = raw.match(/"body"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (bodyMatch) {
+        draftBody = bodyMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+        const subjMatch = raw.match(/"subject"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (subjMatch) draftSubject = subjMatch[1].replace(/\\"/g, '"');
+      } else {
+        draftBody = raw;
+      }
     }
 
     res.json({ ok: true, subject: draftSubject, body: draftBody });

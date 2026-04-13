@@ -306,12 +306,12 @@ export default function App() {
     }
   }, [tDone]);
 
-  const handleLogCall = useCallback(async (contactName: string, type: string) => {
+  const handleLogCall = useCallback(async (contactName: string, type: string, contactId?: string) => {
     try {
-      const call = await post<CallEntry>("/calls", { contactName, type });
+      const call = await post<CallEntry>("/calls", { contactId, contactName, type });
       setCalls(prev => [...prev, call]);
     } catch {
-      setCalls(prev => [...prev, { contactName, type, createdAt: new Date().toISOString() }]);
+      setCalls(prev => [...prev, { contactId, contactName, type, createdAt: new Date().toISOString() }]);
     }
   }, []);
 
@@ -556,6 +556,7 @@ export default function App() {
         emailsImportant={brief?.emailsImportant || []}
         linearItems={activeLinearItems}
         contacts={contacts}
+        calls={calls}
         onComplete={handleTaskComplete}
         onNavigate={v => persistView(v as View)}
         onOpenEmail={em => setEmailCompose({ threadId: em.gmailMessageId, subject: `Re: ${em.subj}` })}

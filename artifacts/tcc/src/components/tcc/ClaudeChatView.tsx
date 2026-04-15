@@ -268,7 +268,7 @@ export function ClaudeChatView({ onBack, initialContextType, initialContextId, i
                 </div>
                 <div style={{ fontSize: 10, color: C.mut, marginTop: 2 }}>
                   {thread.contextType !== "general" ? `[${thread.contextType}] ` : ""}
-                  {new Date(thread.updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  {new Date(thread.updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })}
                 </div>
               </div>
               <button

@@ -17,7 +17,7 @@ interface Props {
   onRefresh?: () => Promise<void>;
 }
 
-const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" });
 
 function parseTimeMins(t: string): number | null {
   const m = t?.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);

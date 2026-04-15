@@ -119,7 +119,7 @@ const BLK = "#111";
 const BORDER = "1px solid #D4D4D4";
 const HEAVY = "2px solid #222";
 const HDR_BG = "#F0F0EE";
-const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+const DATE_STR = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "America/Los_Angeles" });
 
 // ── Day Timeline ─────────────────────────────────────────────────────
 const TL_START = 6 * 60;              // 6:00 AM in minutes from midnight
@@ -590,7 +590,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   // Build set of contact names that have been called today (from actual call_log)
   const calledNames = new Set(calls.map(c => c.contactName.toLowerCase()));
   const callList = contacts.slice(0, 10);
-  const meetings = calendarData.filter(c => c.real);
+  const meetings = calendarData;
   const emails   = emailsImportant.slice(0, 5);
   const todayStr    = new Date().toISOString().slice(0, 10);
   const priorityRank = (l: LinearItem) => l.level === "high" ? 0 : l.level === "mid" ? 1 : 2;
@@ -634,7 +634,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
       <div style={{ width: "100%" }}>
 
         {/* ── Day Timeline ── real calendar data only (no sample fallback) */}
-        <DayTimeline meetings={calendarData.filter(c => c.real)} autoBlocks={wb.autoBlocks} onNavigate={onNavigate} />
+        <DayTimeline meetings={calendarData} autoBlocks={wb.autoBlocks} onNavigate={onNavigate} />
 
         <div style={{ padding: "12px 20px 18px" }}>
 

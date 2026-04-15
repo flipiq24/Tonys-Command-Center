@@ -490,7 +490,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                     notes.map(n => (
                       <div key={n.id} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${C.brd}` }}>
                         <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{n.text}</div>
-                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) : ""}</div>
                       </div>
                     ))
                   )}
@@ -538,7 +538,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                             </div>
                             {cl.notes && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{cl.notes}</div>}
                             {cl.followUpText && <div style={{ fontSize: 12, color: C.blu, marginTop: 4, fontStyle: "italic" }}>Follow-up draft: {cl.followUpText}</div>}
-                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cl.createdAt ? new Date(cl.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cl.createdAt ? new Date(cl.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) : ""}</div>
                           </div>
                         );
                       } else if (item.kind === "comm") {
@@ -555,7 +555,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                             </div>
                             {cm.subject && <div style={{ fontSize: 13, fontWeight: 600, color: C.tx }}>{cm.subject}</div>}
                             {cm.summary && <div style={{ fontSize: 12, color: C.sub, marginTop: 2, lineHeight: 1.4 }}>{cm.summary}</div>}
-                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cm.loggedAt ? new Date(cm.loggedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{cm.loggedAt ? new Date(cm.loggedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) : ""}</div>
                           </div>
                         );
                       } else {
@@ -567,7 +567,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                           <div key={`note-${n.id}`} style={{ padding: "10px 12px", background: isSystemEvent ? "#F8F8FF" : "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${accentColor}` }}>
                             <div style={{ fontSize: 11, fontWeight: 700, color: accentColor, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>{label}</div>
                             <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{n.text}</div>
-                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : ""}</div>
+                            <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>{n.createdAt ? new Date(n.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) : ""}</div>
                           </div>
                         );
                       }

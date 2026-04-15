@@ -26,7 +26,7 @@ export function CheckinGate({ initial, onComplete }: Props) {
   const [ck, setCk] = useState<CheckinState>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [clock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }));
+  const [clock] = useState(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
   const [patternAlerts, setPatternAlerts] = useState<PatternAlert[]>([]);
   const [showAlerts, setShowAlerts] = useState(false);
   const [guiltMessage, setGuiltMessage] = useState("");

@@ -185,7 +185,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               COO Dashboard
             </div>
             <div style={{ fontSize: 12, color: C.mut, marginTop: 2, fontFamily: F }}>
-              {TODAY_STR} · {clock}
+              {TODAY_STR} · {clock} PT
               {refreshing && (
                 <span style={{ marginLeft: 8, color: C.blu, fontWeight: 600 }}>⟳ Refreshing…</span>
               )}

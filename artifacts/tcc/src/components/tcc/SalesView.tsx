@@ -312,13 +312,13 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                 { label: "Contact", value: cl.contactName },
                 { label: "Type", value: cl.type === "connected" ? "Connected" : "Attempt", color: cl.type === "connected" ? C.grn : C.amb },
                 ...(cl.notes ? [{ label: "Notes", value: cl.notes }] : []),
-                ...(cl.createdAt ? [{ label: "Time", value: new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) }] : []),
+                ...(cl.createdAt ? [{ label: "Time", value: new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) }] : []),
               ]}>
               <div style={{ fontSize: 13, padding: "3px 0", color: C.grn, display: "flex", gap: 8, cursor: "default" }}>
                 <span>{cl.type === "connected" ? "✓" : "📞"}</span>
                 <span style={{ fontWeight: 600 }}>{cl.contactName}</span>
                 <span style={{ color: C.sub }}>— {cl.type}</span>
-                {cl.createdAt && <span style={{ color: C.mut, marginLeft: "auto" }}>{new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>}
+                {cl.createdAt && <span style={{ color: C.mut, marginLeft: "auto" }}>{new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })}</span>}
               </div>
               </HoverCard>
             ))}

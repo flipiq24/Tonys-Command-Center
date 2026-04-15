@@ -119,14 +119,36 @@ export default function App() {
   }, [refreshBrief]);
 
   // Email polling — check for new received emails every 5 minutes
+  const [newEmailCount, setNewEmailCount] = useState(0);
+  const [pendingNewEmails, setPendingNewEmails] = useState<{ from: string; subject: string; snippet: string; messageId: string }[]>([]);
+  const [reclassifying, setReclassifying] = useState(false);
   useEffect(() => {
     const pollEmails = async () => {
-      try { await get("/emails/poll"); } catch { /* silent fail */ }
+      try {
+        const res = await get<{ ok: boolean; newCount: number; newEmails: { from: string; subject: string; snippet: string; messageId: string }[] }>("/emails/poll");
+        if (res?.newCount > 0) {
+          setNewEmailCount(prev => prev + res.newCount);
+          setPendingNewEmails(prev => [...prev, ...res.newEmails]);
+        }
+      } catch { /* silent fail */ }
     };
     pollEmails();
     const interval = setInterval(pollEmails, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+  const handleReclassify = async () => {
+    setReclassifying(true);
+    try {
+      const res = await post<{ ok: boolean; emailsImportant?: any[]; emailsFyi?: any[]; emailsPromotions?: any[] }>("/emails/reclassify-new", { newEmails: pendingNewEmails });
+      if (res?.ok && brief) {
+        setBrief({ ...brief, emailsImportant: res.emailsImportant ?? brief.emailsImportant, emailsFyi: res.emailsFyi ?? brief.emailsFyi, emailsPromotions: res.emailsPromotions ?? brief.emailsPromotions ?? [] });
+      }
+    } catch { /* fallback: full refresh */ await refreshBrief(["emails"]); }
+    setNewEmailCount(0);
+    setPendingNewEmails([]);
+    setReclassifying(false);
+  };
+  const dismissNewEmails = () => { setNewEmailCount(0); setPendingNewEmails([]); };
 
   // Live Linear data — fetch fresh on mount and every 5 minutes
   const [liveLinear, setLiveLinear] = useState<LinearItem[]>([]);
@@ -434,6 +456,27 @@ export default function App() {
     />
   );
 
+  const newEmailBanner = newEmailCount > 0 ? (
+    <div style={{
+      background: "#EBF5FF", borderBottom: "2px solid #2563EB", padding: "10px 20px",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+    }}>
+      <span style={{ fontSize: 14, color: "#1E40AF", fontWeight: 600 }}>
+        📬 {newEmailCount} new email{newEmailCount > 1 ? "s" : ""} arrived
+      </span>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={handleReclassify} disabled={reclassifying} style={{
+          background: "#2563EB", color: "#fff", border: "none", borderRadius: 6,
+          padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: reclassifying ? 0.6 : 1,
+        }}>{reclassifying ? "Classifying..." : "Classify & Update"}</button>
+        <button onClick={dismissNewEmails} style={{
+          background: "transparent", color: "#6B7280", border: "1px solid #D1D5DB",
+          borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: "pointer",
+        }}>Dismiss</button>
+      </div>
+    </div>
+  ) : null;
+
   const sharedModals = (
     <>
       {/* Scope / Morning Protection Banner */}
@@ -547,6 +590,7 @@ export default function App() {
   if (view === "dashboard" || view === "checkin" || view === "journal") return (
     <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#fff", fontFamily: F }}>
       {sharedHeader}
+      {newEmailBanner}
       {sharedModals}
       <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} onCompose={opts => setEmailCompose({ to: opts.to, contactId: opts.contactId, contactName: opts.contactName, body: opts.body, subject: opts.subject })} />
       <DashboardView
@@ -570,6 +614,7 @@ export default function App() {
   if (view === "emails") return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {sharedHeader}
+      {newEmailBanner}
       {sharedModals}
       <EmailsView
         emailsImportant={brief?.emailsImportant || []}

@@ -14,6 +14,7 @@ export const checkinsTable = pgTable("checkins", {
   journal: boolean("journal").default(false),
   nutrition: text("nutrition"),
   unplug: boolean("unplug").default(false),
+  sheetRowNumber: integer("sheet_row_number"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("checkins_date_idx").on(t.date),
@@ -27,6 +28,7 @@ export const journalsTable = pgTable("journals", {
   mood: text("mood"),
   keyEvents: text("key_events"),
   reflection: text("reflection"),
+  docsPageUrl: text("docs_page_url"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("journals_date_idx").on(t.date),

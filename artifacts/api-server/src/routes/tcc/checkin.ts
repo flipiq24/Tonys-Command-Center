@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db, checkinsTable } from "@workspace/db";
 import { SaveCheckinBody } from "@workspace/api-zod";
 import { todayPacific } from "../../lib/dates.js";
-import { appendToSheet } from "../../lib/google-sheets.js";
+import { upsertSheetRow } from "../../lib/google-sheets.js";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 
 const TONY_PERSONAL_DOC = `
@@ -173,8 +173,8 @@ router.post("/checkin", async (req, res): Promise<void> => {
     }
   }
 
-  // Append to personal check-in Google Sheet (fire-and-forget, Tony only)
-  appendToSheet(CHECKIN_SHEET_ID, "Check-ins", [
+  // Upsert to personal check-in Google Sheet (find by date, update or append)
+  upsertSheetRow(CHECKIN_SHEET_ID, "Check-ins", checkin.date, [
     checkin.date,
     checkin.bedtime ?? "",
     checkin.waketime ?? "",
@@ -184,7 +184,10 @@ router.post("/checkin", async (req, res): Promise<void> => {
     checkin.journal ? "Yes" : "No",
     checkin.nutrition ?? "Good",
     checkin.unplug ? "Yes" : "No",
-  ]).catch(err => req.log.warn({ err }, "[checkin] Sheet append failed (non-fatal)"));
+  ]).then(rowNum => {
+    // Save sheet row number to DB for reference
+    db.update(checkinsTable).set({ sheetRowNumber: rowNum } as any).where(eq(checkinsTable.date, today)).catch(() => {});
+  }).catch(err => req.log.warn({ err }, "[checkin] Sheet upsert failed (non-fatal)"));
 
   res.json({ ...checkin, done: true, patternAlerts: alerts });
 });

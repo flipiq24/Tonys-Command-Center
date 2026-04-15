@@ -93,6 +93,10 @@ Output EXACTLY this format and nothing else (start immediately with ### Daily Jo
     req.log.warn({ err }, "Claude API failed, saving raw text");
   }
 
+  // Check if today's journal already exists (to avoid duplicate Doc prepends on edit)
+  const [existingJournal] = await db.select({ id: journalsTable.id }).from(journalsTable).where(eq(journalsTable.date, today)).limit(1);
+  const isEdit = !!existingJournal;
+
   // Use ON CONFLICT DO UPDATE to avoid select-then-insert race condition
   const [journal] = await db
     .insert(journalsTable)
@@ -109,9 +113,14 @@ Output EXACTLY this format and nothing else (start immediately with ### Daily Jo
     .where(eq(checkinsTable.date, today))
     .catch(err => console.error("[journal] Failed to mark checkin journal=true:", err));
 
-  // Prepend to personal journal Google Doc (inserts at top so newest entries appear first)
-  if (rawText !== "[skipped]" && formattedText) {
+  // Prepend to Google Doc ONLY on first entry (skip on edits to avoid duplicates)
+  if (!isEdit && rawText !== "[skipped]" && formattedText) {
     prependToDoc(JOURNAL_DOC_ID, formattedText)
+      .then(() => {
+        // Generate direct URL to journal doc and save to DB
+        const docsUrl = `https://docs.google.com/document/d/${JOURNAL_DOC_ID}/edit`;
+        db.update(journalsTable).set({ docsPageUrl: docsUrl } as any).where(eq(journalsTable.date, today)).catch(() => {});
+      })
       .catch(err => console.error("[journal] Doc prepend failed (non-fatal):", err));
   }
 

@@ -85,7 +85,26 @@
 
 ---
 
-## Feature 5: Fix Empty Email Body (MIME encoding)
+## Feature 5: Check-in & Journal — Fix Google Sync + Add Row/URL Tracking
+**Status:** Implemented
+**Files Changed:**
+- `lib/db/src/schema/tcc.ts` — Added `sheetRowNumber` (integer) to checkinsTable, `docsPageUrl` (text) to journalsTable
+- `artifacts/api-server/src/lib/google-sheets.ts` — Added `upsertSheetRow()` function: finds row by column A value (date), updates if exists, appends if new. Returns 1-based row number.
+- `artifacts/api-server/src/routes/tcc/checkin.ts` — Replaced `appendToSheet` with `upsertSheetRow`. Saves row number to DB after sheet write. No more duplicate rows on edit.
+- `artifacts/api-server/src/routes/tcc/journal.ts` — Added check for existing journal before upsert. Only prepends to Google Doc on FIRST entry (skips on edits). Saves docsPageUrl to DB after Doc write.
+- Database: Added columns via SQL `ALTER TABLE checkins ADD COLUMN sheet_row_number INTEGER` and `ALTER TABLE journals ADD COLUMN docs_page_url TEXT`
+
+**Ideal Behavior:**
+1. **Check-in first submit** → inserts row in Google Sheet + DB, saves sheet row number
+2. **Check-in edit** → finds existing row by date in Sheet, updates in-place (no new row), updates DB
+3. **Journal first submit** → AI formats, saves to DB, prepends to Google Doc, saves docs URL
+4. **Journal edit** → updates DB only, does NOT prepend duplicate to Google Doc
+5. `sheetRowNumber` in DB tells which row in Google Sheet has this check-in
+6. `docsPageUrl` in DB provides direct link to the journal Google Doc
+
+---
+
+## Feature 6: Fix Empty Email Body (MIME encoding)
 **Status:** Pending
 **Files:** `email-send.ts`
 **Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature). Fix: ensure MIME header/body separator is preserved and body is properly encoded.

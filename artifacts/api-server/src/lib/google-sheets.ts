@@ -99,6 +99,29 @@ export async function getSheetValues(spreadsheetId: string, range: string): Prom
   return (data.values || []) as string[][];
 }
 
+/**
+ * Upsert a row in a sheet: find by column A value (e.g. date), update if exists, append if not.
+ * Returns the 1-based row number where data was written.
+ */
+export async function upsertSheetRow(
+  spreadsheetId: string,
+  sheetName: string,
+  keyValue: string,
+  values: (string | number | boolean | null)[]
+): Promise<number> {
+  const rows = await getSheetValues(spreadsheetId, `${sheetName}!A:A`);
+  let rowIndex = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === keyValue) { rowIndex = i + 1; break; } // 1-based
+  }
+  const range = encodeURIComponent(`${sheetName}!A${rowIndex > 0 ? rowIndex : rows.length + 1}`);
+  await sheetsRequest(
+    `${SHEETS_BASE}/${spreadsheetId}/values/${range}?valueInputOption=USER_ENTERED`,
+    { method: "PUT", body: JSON.stringify({ values: [values] }) }
+  );
+  return rowIndex > 0 ? rowIndex : rows.length + 1;
+}
+
 export async function updateCell(spreadsheetId: string, range: string, value: string) {
   await sheetsRequest(
     `${SHEETS_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,

@@ -12,6 +12,7 @@ export async function appendToDoc(documentId: string, text: string) {
   }
 
   const insertIndex = Math.max(1, endIndex - 1);
+  const textToInsert = "\n" + text;
 
   await docs.documents.batchUpdate({
     documentId,
@@ -20,7 +21,27 @@ export async function appendToDoc(documentId: string, text: string) {
         {
           insertText: {
             location: { index: insertIndex },
-            text: "\n" + text,
+            text: textToInsert,
+          },
+        },
+        {
+          updateParagraphStyle: {
+            range: {
+              startIndex: insertIndex,
+              endIndex: insertIndex + textToInsert.length,
+            },
+            paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+            fields: "namedStyleType",
+          },
+        },
+        {
+          updateTextStyle: {
+            range: {
+              startIndex: insertIndex,
+              endIndex: insertIndex + textToInsert.length,
+            },
+            textStyle: { fontSize: { magnitude: 11, unit: "PT" }, bold: false },
+            fields: "fontSize,bold",
           },
         },
       ],

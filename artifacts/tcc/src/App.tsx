@@ -528,7 +528,19 @@ export default function App() {
           onRefresh={() => refreshBrief(["calendar", "emails"])}
         />
       )}
-      <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={idea => setIdeas(prev => [...prev, idea])} count={ideas.length} />
+      <IdeasModal open={showIdea} onClose={() => setShowIdea(false)} onSave={async (idea) => {
+        setIdeas(prev => [...prev, idea]);
+        try {
+          const res = await post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", {
+            ideaText: idea.text, category: idea.category, urgency: idea.urgency, techType: (idea as any).techType,
+          });
+          if (res?.ok && res.taskFields) {
+            setBusinessTab("master" as any);
+            persistView("business");
+            setTimeout(() => window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: res.taskFields })), 500);
+          }
+        } catch { /* AI task gen failed — idea still saved */ }
+      }} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
 
       {/* ═══ GATE OVERLAY: Check-in ═══ */}

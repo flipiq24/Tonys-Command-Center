@@ -568,15 +568,17 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
 // ─── Add Task Modal ───────────────────────────────────────────────────────────
 
 function AddTaskModal({
-  onClose, onCreated, categories,
+  onClose, onCreated, categories, prefill,
 }: {
   onClose: () => void;
   onCreated: (task: PlanItem & { sprintId: string; position: number; total: number; prevTask?: { title: string; sprintId: string } | null; nextTask?: { title: string; sprintId: string } | null }) => void;
   categories: CategoryWithSubs[];
+  prefill?: Record<string, string> | null;
 }) {
-  const [form, setForm] = useState({
-    title: "", category: "", subcategoryName: "", owner: "", priority: "P1",
-    dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "",
+  const [form, setForm] = useState(() => {
+    const defaults = { title: "", category: "", subcategoryName: "", owner: "", priority: "P1", dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "" };
+    if (prefill) return { ...defaults, ...Object.fromEntries(Object.entries(prefill).filter(([_, v]) => v != null && v !== "")) };
+    return defaults;
   });
   const [subcats, setSubcats] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -945,7 +947,18 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [filterPriority, setFilterPriority] = useState("");
   const [filterWeek, setFilterWeek] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [prefillData, setPrefillData] = useState<Record<string, string> | null>(null);
   const [placementToast, setPlacementToast] = useState<string | null>(null);
+
+  // Listen for idea-to-task prefill events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) { setPrefillData(detail); setShowAdd(true); }
+    };
+    window.addEventListener("tcc:prefill-task", handler);
+    return () => window.removeEventListener("tcc:prefill-task", handler);
+  }, []);
   const [editId, setEditId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragTaskRef = useRef<string | null>(null);
@@ -1365,9 +1378,10 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
 
       {showAdd && (
         <AddTaskModal
-          onClose={() => setShowAdd(false)}
+          onClose={() => { setShowAdd(false); setPrefillData(null); }}
           onCreated={handleAddCreated}
           categories={categories}
+          prefill={prefillData}
         />
       )}
       {placementToast && <Toast msg={placementToast} onDismiss={() => setPlacementToast(null)} />}

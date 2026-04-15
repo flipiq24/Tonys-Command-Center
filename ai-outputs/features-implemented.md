@@ -61,7 +61,31 @@
 
 ---
 
-## Feature 4: Fix Empty Email Body (MIME encoding)
+## Feature 4: Ideas → Auto-Create Task via AI
+**Status:** Implemented
+**Files Changed:**
+- `artifacts/api-server/src/routes/tcc/ideas.ts` — Added `POST /ideas/generate-task` endpoint. Takes ideaText, category, urgency, techType → sends to Claude Haiku with full category/subcategory/owner/priority schema → returns structured task fields. Auto-maps urgency to due date (Now=today, This Week=Friday, This Month=end of month). Source always set to "TCC".
+- `artifacts/tcc/src/App.tsx` — Modified IdeasModal `onSave` callback. After saving idea, calls `/ideas/generate-task`, then navigates to Business Brain Master Task tab, dispatches `tcc:prefill-task` CustomEvent with AI-generated fields.
+- `artifacts/tcc/src/components/tcc/BusinessView.tsx` — MasterTaskTab now listens for `tcc:prefill-task` event, stores prefill data, auto-opens AddTaskModal. AddTaskModal accepts new `prefill` prop and initializes form fields from it.
+
+**Ideal Behavior:**
+1. User submits idea in IdeasModal
+2. AI classifies idea (existing flow)
+3. User reviews classification, optionally overrides
+4. User approves/saves the idea (existing flow — notifications sent)
+5. **NEW**: After save, AI generates structured task fields (title, category, subcategory, owner, priority, executionTier, atomicKpi, dueDate, weekNumber, workNotes)
+6. App navigates to Business Brain → Master Task tab
+7. AddTaskModal opens pre-filled with AI-generated fields
+8. User can review/edit any field before final "Add task & place in 411 plan"
+9. If user accepts, task is created in planItemsTable with proper placement
+
+**API Endpoint:** `POST /ideas/generate-task`
+- Input: `{ ideaText, category, urgency, techType? }`
+- Output: `{ ok, taskFields: { title, category, subcategoryName, owner, priority, executionTier, atomicKpi, source, workNotes, weekNumber, dueDate } }`
+
+---
+
+## Feature 5: Fix Empty Email Body (MIME encoding)
 **Status:** Pending
 **Files:** `email-send.ts`
 **Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature). Fix: ensure MIME header/body separator is preserved and body is properly encoded.

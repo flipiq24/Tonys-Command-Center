@@ -472,4 +472,76 @@ router.post("/ideas", async (req, res): Promise<void> => {
   });
 });
 
+// ─── Generate task fields from an approved idea via AI ────────────────────────
+router.post("/ideas/generate-task", async (req, res): Promise<void> => {
+  try {
+    const { ideaText, category, urgency, techType } = req.body as {
+      ideaText: string; category: string; urgency: string; techType?: string;
+    };
+    if (!ideaText) { res.status(400).json({ error: "ideaText required" }); return; }
+
+    const bizContext = await getBusinessContext();
+
+    const claudeResponse = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: `You are the FlipIQ task creation assistant. Given an idea, generate structured task fields for the 411 Plan.
+
+Available categories and their subcategories:
+- adaptation: Operator Assessment, CS Dashboard, User Outreach, Success Playbook, Dead Weight Suspension
+- sales: Pricing & Approach, Commitments Pipeline, Demo Workflow, Sales Materials, Prospect Pipeline
+- tech: CS Dashboard (Tech), Foundation + DispoPro, AWS/Cloud Credits, AAA Build, USale Marketplace
+- capital: Loan Direction Decision, P&L / Financial Plan, Investor Meetings, Kiavi Broker, Nema/Lightning Docs
+- team: PM/Engineer Hire, Onboarding Manager, Adaptation Manager, Nate Transition, SOW Updates
+
+Owners: Tony, Ethan, Ramy, Faisal, Haris, Nate, Bondilyn, Chris, TBD PM
+Priorities: P0 (critical, blocks revenue today), P1 (high, must ship this week), P2 (standard, this sprint)
+Execution tiers: Sprint (weekly deliverable), Strategic (multi-week initiative), Maintenance (ongoing)
+Sources: OAP, Linear, TCC, manual
+
+Business context:
+${bizContext}
+
+Return ONLY valid JSON with these exact fields:
+{
+  "title": "Owner: action description",
+  "category": "adaptation|sales|tech|capital|team",
+  "subcategoryName": "exact subcategory name from list above",
+  "owner": "Tony|Ethan|Ramy|Faisal|Haris|Nate|Bondilyn|Chris|TBD PM",
+  "priority": "P0|P1|P2",
+  "executionTier": "Sprint|Strategic|Maintenance",
+  "atomicKpi": "how this moves toward 2 deals/month",
+  "source": "TCC",
+  "workNotes": "context from the original idea",
+  "weekNumber": 1-4 (current week of month)
+}`,
+      messages: [{ role: "user", content: `Idea category: ${category}\nUrgency: ${urgency}${techType ? `\nType: ${techType}` : ""}\n\nIdea: "${ideaText}"\n\nGenerate task fields.` }],
+    });
+
+    const textBlock = claudeResponse.content.find(b => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") { res.json({ ok: false, error: "No response" }); return; }
+    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) { res.json({ ok: false, error: "No JSON in AI response" }); return; }
+
+    const taskFields = JSON.parse(jsonMatch[0]);
+    // Ensure source is always TCC for idea-generated tasks
+    taskFields.source = "TCC";
+    // Map urgency to due date if not set
+    if (!taskFields.dueDate) {
+      const now = new Date();
+      if (urgency === "Now") taskFields.dueDate = now.toISOString().split("T")[0];
+      else if (urgency === "This Week") {
+        const fri = new Date(now); fri.setDate(fri.getDate() + (5 - fri.getDay())); taskFields.dueDate = fri.toISOString().split("T")[0];
+      } else if (urgency === "This Month") {
+        const eom = new Date(now.getFullYear(), now.getMonth() + 1, 0); taskFields.dueDate = eom.toISOString().split("T")[0];
+      }
+    }
+
+    res.json({ ok: true, taskFields });
+  } catch (err) {
+    console.warn("[Ideas] generate-task failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ error: "Failed to generate task fields" });
+  }
+});
+
 export default router;

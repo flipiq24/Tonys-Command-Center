@@ -116,9 +116,37 @@
 
 ---
 
-## Feature 7: Fix Empty Email Body (MIME encoding)
+## Feature 7: Task Real-Time Google Sheets Sync
+**Status:** Implemented
+**Files Changed:**
+- `artifacts/api-server/src/routes/tcc/plan.ts` — Added `import { syncTasksTab }` and `triggerSheetsSync()` helper. Called after: task create, task complete, task uncomplete, task patch/update, task delete, task reorder. All fire-and-forget (non-blocking).
+
+**Ideal Behavior:**
+- When a task is created → Google Sheet "Master Task List" tab updates immediately
+- When a task is completed/uncompleted → Sheet updates immediately
+- When a task is edited (title, owner, priority, etc.) → Sheet updates immediately
+- When a task is deleted → Sheet updates immediately
+- When tasks are reordered (drag-drop or AI Organize) → Sheet updates immediately
+- Sync is fire-and-forget — does not block the API response
+
+---
+
+## Feature 8: Dynamic Week Dropdown in Task Creation
+**Status:** Implemented
+**Files Changed:**
+- `artifacts/tcc/src/components/tcc/BusinessView.tsx` — Added `getWeeksForDate()` helper function. Renamed label from "April week" to "Week". Dropdown now generates 4 weeks dynamically starting from the due date's week.
+
+**Ideal Behavior:**
+- If due date is set (e.g. Aug 18, 2026) → dropdown shows Wk 3 (Aug 18-22), Wk 4 (Aug 25-29), Wk 1 (Sep 1-5), Wk 2 (Sep 8-12)
+- If due date is NOT set → dropdown shows current month's weeks starting from this week
+- Label says "Week" not "April week"
+- Weeks auto-recalculate when due date changes
+
+---
+
+## Feature 9: Fix Empty Email Body (MIME encoding)
 **Status:** Pending
 **Files:** `email-send.ts`
-**Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature). Fix: ensure MIME header/body separator is preserved and body is properly encoded.
+**Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature).
 
 ---

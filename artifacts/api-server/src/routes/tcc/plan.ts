@@ -3,8 +3,12 @@ import { db } from "@workspace/db";
 import { planItemsTable, brainTrainingLogTable, businessContextTable } from "../../lib/schema-v2";
 import { eq, and, asc, desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { syncTasksTab } from "./sheets-sync";
 
 const router: IRouter = Router();
+
+// Helper: trigger Google Sheets sync after task mutations (fire-and-forget)
+function triggerSheetsSync() { syncTasksTab().catch(() => {}); }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -504,6 +508,7 @@ router.post("/plan/task/:id/complete", async (req, res): Promise<void> => {
       }
     }
 
+    triggerSheetsSync();
     res.json({ ok: true, item: updated });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -536,6 +541,7 @@ router.post("/plan/task/:id/uncomplete", async (req, res): Promise<void> => {
       syncLinearComplete(item.linearId, false).catch(e => console.warn("[plan] Linear sync failed:", e.message));
     }
 
+    triggerSheetsSync();
     res.json({ ok: true, item: updated });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -553,6 +559,7 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
     }
     const [updated] = await db.update(planItemsTable).set(updates).where(eq(planItemsTable.id, id)).returning();
     if (!updated) { res.status(404).json({ error: "Not found" }); return; }
+    triggerSheetsSync();
     res.json({ ok: true, item: updated });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -647,6 +654,7 @@ router.post("/plan/task", async (req, res): Promise<void> => {
     const prevTask = taskIdx > 0 ? existingTasks[taskIdx - 1] : null;
     const nextTask = taskIdx < allTasksAfter.length - 1 ? existingTasks[taskIdx] : null;
 
+    triggerSheetsSync();
     res.json({
       ok: true,
       task: { ...created, sprintId },
@@ -821,6 +829,7 @@ Return ONLY a JSON object with the key "priorityOrder" containing an array of AL
 
     const tasksInNewOrder = fullOrder.map(id => activeTasks.find(t => t.id === id)!).filter(Boolean);
 
+    triggerSheetsSync();
     res.json({ priorityOrder: fullOrder, tasks: tasksInNewOrder });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -879,6 +888,7 @@ router.delete("/plan/task/:id", async (req, res): Promise<void> => {
   try {
     const { id } = req.params;
     await db.delete(planItemsTable).where(eq(planItemsTable.id, id));
+    triggerSheetsSync();
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

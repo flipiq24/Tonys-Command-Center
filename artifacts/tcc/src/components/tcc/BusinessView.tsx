@@ -242,6 +242,35 @@ const APRIL_WEEKS = [
   { n: 4, label: "Wk 4", dates: "Apr 28–30" },
 ];
 
+/** Generate 4 week options starting from the week containing the given date (or today) */
+function getWeeksForDate(dateStr?: string): { n: number; label: string; dates: string }[] {
+  const d = dateStr ? new Date(dateStr + "T12:00:00") : new Date();
+  const mon = d.toLocaleString("en-US", { month: "short", timeZone: "America/Los_Angeles" });
+  // Find the Monday of the week containing d
+  const day = d.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d); monday.setDate(d.getDate() + mondayOffset);
+  // First day of month
+  const firstOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  const firstMonday = new Date(firstOfMonth);
+  const fDay = firstOfMonth.getDay();
+  firstMonday.setDate(firstOfMonth.getDate() + (fDay === 0 ? 1 : fDay === 1 ? 0 : 8 - fDay));
+  // Which week of the month is this?
+  const weekOfMonth = Math.max(1, Math.ceil((monday.getDate()) / 7));
+  const weeks: { n: number; label: string; dates: string }[] = [];
+  for (let i = 0; i < 4; i++) {
+    const wkStart = new Date(monday); wkStart.setDate(monday.getDate() + i * 7);
+    const wkEnd = new Date(wkStart); wkEnd.setDate(wkStart.getDate() + 4);
+    const wkMon = wkStart.toLocaleString("en-US", { month: "short", timeZone: "America/Los_Angeles" });
+    weeks.push({
+      n: weekOfMonth + i,
+      label: `Wk ${weekOfMonth + i}`,
+      dates: `${wkMon} ${wkStart.getDate()}–${wkEnd.getDate()}`,
+    });
+  }
+  return weeks;
+}
+
 const CAT_KEYS = ["adaptation", "sales", "tech", "capital", "team"];
 const OWNER_OPTIONS = ["Tony", "Ethan", "Ramy", "Faisal", "Haris", "Nate", "Bondilyn", "Chris", "TBD PM"];
 const PRIORITY_OPTS = [
@@ -682,10 +711,10 @@ function AddTaskModal({
             </div>
             {/* Week */}
             <div>
-              <label style={labelStyle}>April week</label>
+              <label style={labelStyle}>Week</label>
               <select value={form.weekNumber} onChange={e => set("weekNumber", e.target.value)} style={inputStyle}>
                 <option value="">None</option>
-                {APRIL_WEEKS.map(w => <option key={w.n} value={String(w.n)}>{w.label} ({w.dates})</option>)}
+                {getWeeksForDate(form.dueDate || undefined).map(w => <option key={w.n} value={String(w.n)}>{w.label} ({w.dates})</option>)}
               </select>
             </div>
             {/* Execution tier */}

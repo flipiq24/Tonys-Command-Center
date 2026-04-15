@@ -4,7 +4,7 @@ import { db, journalsTable, checkinsTable } from "@workspace/db";
 import { SaveJournalBody } from "@workspace/api-zod";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates.js";
-import { prependToDoc } from "../../lib/google-docs.js";
+import { appendToDoc } from "../../lib/google-docs.js";
 
 const JOURNAL_DOC_ID = "1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE";
 
@@ -113,15 +113,24 @@ Output EXACTLY this format and nothing else (start immediately with ### Daily Jo
     .where(eq(checkinsTable.date, today))
     .catch(err => console.error("[journal] Failed to mark checkin journal=true:", err));
 
-  // Prepend to Google Doc ONLY on first entry (skip on edits to avoid duplicates)
-  if (!isEdit && rawText !== "[skipped]" && formattedText) {
-    prependToDoc(JOURNAL_DOC_ID, formattedText)
+  // Append to Google Doc: always on first entry, retry if previous write failed
+  const existingUrl = isEdit ? (await db.select({ docsPageUrl: journalsTable.docsPageUrl }).from(journalsTable).where(eq(journalsTable.date, today)).limit(1))[0]?.docsPageUrl : null;
+  const shouldWriteDoc = rawText !== "[skipped]" && formattedText && (!isEdit || !existingUrl);
+  if (shouldWriteDoc) {
+    // If AI formatting failed (no mood/keyEvents), wrap raw text in the standard format
+    let docText = formattedText;
+    if (!mood && !keyEvents && !reflection) {
+      docText = `Daily Journal Entry — ${todayDate}\n\nMood:\n(AI unavailable)\n\nKey Events:\n• ${rawText}\n\nReflection:\n(AI unavailable — raw entry preserved above)\n\nOriginal Entry:\n${rawText}`;
+    }
+    // Add horizontal rule separator before entry
+    const entryWithSeparator = "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" + docText + "\n";
+    appendToDoc(JOURNAL_DOC_ID, entryWithSeparator)
       .then(() => {
-        // Generate direct URL to journal doc and save to DB
         const docsUrl = `https://docs.google.com/document/d/${JOURNAL_DOC_ID}/edit`;
         db.update(journalsTable).set({ docsPageUrl: docsUrl } as any).where(eq(journalsTable.date, today)).catch(() => {});
+        console.log("[journal] Appended to Google Doc successfully");
       })
-      .catch(err => console.error("[journal] Doc prepend failed (non-fatal):", err));
+      .catch(err => console.error("[journal] Doc append failed (non-fatal):", err));
   }
 
   res.json(journal);

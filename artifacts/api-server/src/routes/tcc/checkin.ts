@@ -174,7 +174,8 @@ router.post("/checkin", async (req, res): Promise<void> => {
   }
 
   // Upsert to personal check-in Google Sheet (find by date, update or append)
-  upsertSheetRow(CHECKIN_SHEET_ID, "Check-ins", checkin.date, [
+  const alertSummary = alerts.length > 0 ? alerts.map(a => a.message).join(" | ") : "";
+  upsertSheetRow(CHECKIN_SHEET_ID, "Daily Check-in", checkin.date, [
     checkin.date,
     checkin.bedtime ?? "",
     checkin.waketime ?? "",
@@ -184,6 +185,9 @@ router.post("/checkin", async (req, res): Promise<void> => {
     checkin.journal ? "Yes" : "No",
     checkin.nutrition ?? "Good",
     checkin.unplug ? "Yes" : "No",
+    alertSummary,
+    "", // Spiritual Anchor — filled separately via /brief/spiritual-anchor
+    checkin.notes ?? "",
   ]).then(rowNum => {
     // Save sheet row number to DB for reference
     db.update(checkinsTable).set({ sheetRowNumber: rowNum } as any).where(eq(checkinsTable.date, today)).catch(() => {});

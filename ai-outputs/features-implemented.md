@@ -104,7 +104,19 @@
 
 ---
 
-## Feature 6: Fix Empty Email Body (MIME encoding)
+## Feature 6: Fix Sidebar Menu Hidden Behind Business Brain Pages
+**Status:** Implemented
+**Files Changed:**
+- `artifacts/tcc/src/components/tcc/Header.tsx` — Changed menu dropdown from `position: absolute` with `zIndex: 200` to `position: fixed` with `zIndex: 9999`. Fixed top/right positioning to anchor below header.
+
+**Ideal Behavior:**
+- Sidebar hamburger menu always renders on top of ALL page content
+- Works correctly on Dashboard, Business Brain (411 Plan, Master Task, Team Roster, Business Plan), Sales Mode, and all other views
+- No more menu hiding behind z-indexed content like tables, modals, or overlays
+
+---
+
+## Feature 7: Fix Empty Email Body (MIME encoding)
 **Status:** Pending
 **Files:** `email-send.ts`
 **Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature). Fix: ensure MIME header/body separator is preserved and body is properly encoded.

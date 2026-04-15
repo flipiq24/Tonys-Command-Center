@@ -310,10 +310,10 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
 
           {open && (
             <div style={{
-              position: "absolute", top: "calc(100% + 8px)", right: 0,
+              position: "fixed", top: 56, right: 12,
               background: C.card, border: `1px solid ${C.brd}`,
               borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.13)",
-              width: 260, zIndex: 200, fontFamily: F,
+              width: 260, zIndex: 9999, fontFamily: F,
               padding: "8px 6px",
               animation: "fadeIn 0.12s ease-out",
             }}>

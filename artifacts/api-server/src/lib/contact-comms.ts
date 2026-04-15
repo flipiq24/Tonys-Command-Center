@@ -1,6 +1,6 @@
-import { db } from "@workspace/db";
+import { db, contactsTable } from "@workspace/db";
 import { contactIntelligenceTable } from "./schema-v2";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 
 export async function updateContactComms(contactId: string, channel: string, summary: string) {
   if (!contactId) return;
@@ -25,6 +25,10 @@ export async function updateContactComms(contactId: string, channel: string, sum
           updated_at = NOW()
       `);
     }
+
+    // Also update lastContactDate on the main contacts table
+    const todayPT = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+    await db.update(contactsTable).set({ lastContactDate: todayPT, updatedAt: new Date() }).where(eq(contactsTable.id, contactId));
   } catch (err) {
     console.warn("[contact-comms] Failed to update contact intelligence:", err);
   }

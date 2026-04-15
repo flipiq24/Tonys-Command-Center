@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, contactNotesTable } from "@workspace/db";
 import { contactsTable } from "@workspace/db";
 import { appendToSheet, getSheetValues, getSheetsClient } from "../../lib/google-sheets";
 import { readGoogleDoc } from "../../lib/google-drive";
@@ -75,22 +75,65 @@ export async function syncContactsTab(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
     const contacts = await db.select().from(contactsTable).orderBy(desc(contactsTable.updatedAt)).limit(2000);
-    const header = ["ID", "Name", "Company", "Status", "Phone", "Email", "Type", "Pipeline Stage", "Next Step", "Last Contact", "Created At"];
+
+    // Fetch notes, activity, and meetings for all contacts in bulk
+    const [allNotes, allComms] = await Promise.all([
+      db.select().from(contactNotesTable).orderBy(desc(contactNotesTable.createdAt)).limit(5000),
+      db.select().from(communicationLogTable).orderBy(desc(communicationLogTable.loggedAt)).limit(5000),
+    ]);
+    const notesByContact = new Map<string, string[]>();
+    for (const n of allNotes) {
+      if (!n.contactId) continue;
+      const arr = notesByContact.get(n.contactId) || [];
+      arr.push(`Note ${arr.length + 1}: ${(n.content || "").substring(0, 200)}`);
+      notesByContact.set(n.contactId, arr);
+    }
+    const commsByContact = new Map<string, string[]>();
+    for (const c of allComms) {
+      if (!c.contactId) continue;
+      const arr = commsByContact.get(c.contactId) || [];
+      const dateStr = c.loggedAt ? new Date(c.loggedAt).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" }) : "";
+      arr.push(`${c.channel || "unknown"} (${dateStr}): ${(c.summary || c.subject || "").substring(0, 150)}`);
+      commsByContact.set(c.contactId, arr);
+    }
+
+    const header = [
+      "ID", "Name", "Company", "Status", "Pipeline Stage", "Phone", "Email",
+      "Type", "Category", "Title", "Lead Source", "Source",
+      "Deal Value", "Probability", "Follow-Up Date", "Expected Close",
+      "Next Step", "LinkedIn", "Website", "Tags",
+      "Last Contact Date", "Notes", "Activity Log",
+      "Created At", "Updated At",
+    ];
     const rows: (string | null)[][] = contacts.map(c => [
       c.id,
       c.name,
       c.company || null,
       c.status || null,
+      c.pipelineStage || null,
       c.phone || null,
       c.email || null,
       c.type || null,
-      c.pipelineStage || null,
+      c.category || null,
+      c.title || null,
+      c.leadSource || null,
+      c.source || null,
+      c.dealValue ? String(c.dealValue) : null,
+      c.dealProbability ? String(c.dealProbability) : null,
+      c.followUpDate || null,
+      c.expectedCloseDate || null,
       c.nextStep || null,
+      c.linkedinUrl || null,
+      c.website || null,
+      c.tags ? (c.tags as string[]).join(", ") : null,
       c.lastContactDate || null,
+      (notesByContact.get(c.id) || []).join("\n") || null,
+      (commsByContact.get(c.id) || []).slice(0, 10).join("\n") || null,
       c.createdAt ? new Date(c.createdAt).toISOString() : null,
+      c.updatedAt ? new Date(c.updatedAt).toISOString() : null,
     ]);
     await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Contact Master", [header, ...rows]);
-    console.log(`[sheets-sync] Contacts tab synced: ${rows.length} rows`);
+    console.log(`[sheets-sync] Contacts tab synced: ${rows.length} rows (${header.length} columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncContactsTab failed:", (err as Error).message);
   }

@@ -3,8 +3,11 @@ import { db, contactsTable, contactNotesTable, callLogTable } from "@workspace/d
 import { communicationLogTable } from "../../lib/schema-v2";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { syncContactsTab } from "./sheets-sync";
 
 const router: IRouter = Router();
+
+function triggerContactSync() { syncContactsTab().catch(() => {}); }
 
 router.get("/contacts", async (req, res): Promise<void> => {
   const { status, stage, type, category, search, limit = "50", offset = "0" } = req.query as Record<string, string>;
@@ -107,6 +110,7 @@ router.post("/contacts", async (req, res): Promise<void> => {
     dealProbability: body.dealProbability ? Number(body.dealProbability) : undefined,
   }).returning();
 
+  triggerContactSync();
   res.status(201).json(contact);
 });
 
@@ -156,6 +160,7 @@ router.patch("/contacts/:id", async (req, res): Promise<void> => {
     await db.insert(contactNotesTable).values(activityNotes).catch(() => {});
   }
 
+  triggerContactSync();
   res.json(updated);
 });
 
@@ -163,6 +168,7 @@ router.delete("/contacts/:id", async (req, res): Promise<void> => {
   const { id } = req.params;
   const [deleted] = await db.delete(contactsTable).where(eq(contactsTable.id, id)).returning({ id: contactsTable.id });
   if (!deleted) { res.status(404).json({ error: "Not found" }); return; }
+  triggerContactSync();
   res.json({ ok: true, id: deleted.id });
 });
 
@@ -185,7 +191,35 @@ router.post("/contacts/:id/notes", async (req, res): Promise<void> => {
     text: body.text.trim(),
   }).returning();
 
+  triggerContactSync();
   res.status(201).json(note);
+});
+
+// ─── GET /contacts/:id/draft — load most recent unsent follow-up draft ────
+router.get("/contacts/:id/draft", async (req, res): Promise<void> => {
+  const { id } = req.params;
+  try {
+    // Find the most recent call with a draft that hasn't been sent
+    const [call] = await db.select({ followUpText: callLogTable.followUpText, createdAt: callLogTable.createdAt })
+      .from(callLogTable)
+      .where(and(eq(callLogTable.contactId, id), eq(callLogTable.followUpSent, false), sql`${callLogTable.followUpText} IS NOT NULL`))
+      .orderBy(desc(callLogTable.createdAt))
+      .limit(1);
+
+    if (!call?.followUpText) { res.json({ draft: null }); return; }
+
+    // Check if draft is newer than last communication
+    const [contact] = await db.select({ lastContactDate: contactsTable.lastContactDate })
+      .from(contactsTable).where(eq(contactsTable.id, id)).limit(1);
+
+    if (contact?.lastContactDate && call.createdAt) {
+      const draftDate = new Date(call.createdAt);
+      const lastCommDate = new Date(contact.lastContactDate + "T23:59:59");
+      if (draftDate < lastCommDate) { res.json({ draft: null, reason: "stale" }); return; }
+    }
+
+    res.json({ draft: call.followUpText, draftDate: call.createdAt });
+  } catch { res.json({ draft: null }); }
 });
 
 // ─── POST /contacts/scan-card ─────────────────────────────────────────────

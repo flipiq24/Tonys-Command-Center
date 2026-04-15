@@ -144,7 +144,29 @@
 
 ---
 
-## Feature 9: Fix Empty Email Body (MIME encoding)
+## Feature 9: Full Contacts Google Sheets Sync + Last Comm Date + Draft Auto-Load
+**Status:** Implemented
+**Files Changed:**
+- `artifacts/api-server/src/routes/tcc/sheets-sync.ts` — Enhanced `syncContactsTab()` with 25 columns including all contact fields, formatted notes (numbered), activity log (last 10 communications with timestamps), tags, LinkedIn, website, deal value, probability, follow-up/close dates. Bulk-loads notes and comms for performance.
+- `artifacts/api-server/src/routes/tcc/contacts.ts` — Added `import { syncContactsTab }` and `triggerContactSync()`. Called after: contact create, update, delete, note add. Added `GET /contacts/:id/draft` endpoint for draft auto-load.
+- `artifacts/api-server/src/lib/contact-comms.ts` — Now also updates `contacts.lastContactDate` and `updatedAt` when any communication occurs (email/call/text).
+- `artifacts/tcc/src/components/tcc/EmailCompose.tsx` — Auto-loads draft from `GET /contacts/:id/draft` when opening compose for a contact without prefill body. Only loads if draft is newer than last communication date.
+
+**Ideal Behavior:**
+1. **Contact create** → Google Sheet "Contact Master" tab updates immediately with all 25 fields
+2. **Contact update** (any field change) → Sheet updates immediately
+3. **Contact delete** → Sheet updates immediately
+4. **Note added** → Sheet updates (notes column shows numbered list)
+5. **Email/call/text sent** → `lastContactDate` updates on contacts table + contact_intelligence
+6. **Draft auto-load**: When opening email compose for a contact:
+   - Checks `GET /contacts/:id/draft` for most recent unsent follow-up
+   - Only loads if draft is newer than lastContactDate (stale drafts ignored)
+   - Pre-fills email body with the saved draft
+7. **Google Sheet columns**: ID, Name, Company, Status, Pipeline Stage, Phone, Email, Type, Category, Title, Lead Source, Source, Deal Value, Probability, Follow-Up Date, Expected Close, Next Step, LinkedIn, Website, Tags, Last Contact Date, Notes, Activity Log, Created At, Updated At
+
+---
+
+## Feature 10: Fix Empty Email Body (MIME encoding)
 **Status:** Pending
 **Files:** `email-send.ts`
 **Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature).

@@ -141,8 +141,14 @@ export function EmailCompose({
       setBcc("");
       setSent(false);
       setError("");
+      // Auto-load draft if opening for a contact with no prefill body
+      if (prefillContactId && !prefillBody) {
+        get<{ draft: string | null }>(`/contacts/${prefillContactId}/draft`)
+          .then(r => { if (r?.draft) setBody(r.draft); })
+          .catch(() => {});
+      }
     }
-  }, [open, prefillTo, prefillSubject, prefillBody]);
+  }, [open, prefillTo, prefillSubject, prefillBody, prefillContactId]);
 
   const handleAiDraft = async () => {
     setAiDrafting(true);

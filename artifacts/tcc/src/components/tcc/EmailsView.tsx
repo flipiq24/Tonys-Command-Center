@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { post } from "@/lib/api";
+import { get, post } from "@/lib/api";
 import { C, F, FS, card, btn1, btn2, TIPS } from "./constants";
 import { SmartTip } from "./SmartTip";
 import { EmailReplyModal } from "./EmailReplyModal";
@@ -37,6 +37,9 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
   const [showAll, setShowAll] = useState(false);
   const [showPromotions, setShowPromotions] = useState(false);
   const [showUnclassified, setShowUnclassified] = useState(false);
+  const [showUnread, setShowUnread] = useState(false);
+  const [unreadEmails, setUnreadEmails] = useState<{ from: string; subject: string; snippet: string; messageId: string; date: string }[]>([]);
+  const [loadingUnread, setLoadingUnread] = useState(false);
   const [nwPickEmailId, setNwPickEmailId] = useState<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -117,11 +120,27 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                 >↻</button>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={async () => {
+                if (showUnread) { setShowUnread(false); return; }
+                setLoadingUnread(true);
+                try {
+                  const res = await get<{ ok: boolean; count: number; emails: typeof unreadEmails }>("/emails/unread");
+                  if (res?.emails) setUnreadEmails(res.emails);
+                } catch { /* ignore */ }
+                setLoadingUnread(false);
+                setShowUnread(true);
+              }} disabled={loadingUnread} style={{
+                background: showUnread ? "#DCFCE7" : "#F3F4F6", color: showUnread ? "#166534" : "#374151",
+                border: `1px solid ${showUnread ? "#16A34A" : "#D1D5DB"}`, borderRadius: 6,
+                padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+              }}>
+                {loadingUnread ? "Loading..." : showUnread ? "Hide Unread" : "See Unread Emails"}
+              </button>
               {unclassifiedEmails.length > 0 && (
                 <button onClick={() => setShowUnclassified(v => !v)} style={{
-                  background: showUnclassified ? "#EBF5FF" : "#F3F4F6", color: showUnclassified ? "#2563EB" : "#374151",
-                  border: `1px solid ${showUnclassified ? "#2563EB" : "#D1D5DB"}`, borderRadius: 6,
+                  background: showUnclassified ? "#FEF9C3" : "#F3F4F6", color: showUnclassified ? "#92400E" : "#374151",
+                  border: `1px solid ${showUnclassified ? "#F59E0B" : "#D1D5DB"}`, borderRadius: 6,
                   padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
                 }}>
                   {showUnclassified ? "Hide" : "See"} {unclassifiedEmails.length} Unclassified
@@ -138,6 +157,34 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
               <span style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{unresolved} need attention</span>
             </div>
           </div>
+
+          {/* Unread emails section */}
+          {showUnread && unreadEmails.length > 0 && (
+            <div style={{ background: "#F0FDF4", border: "1px solid #16A34A", borderRadius: 8, padding: "12px 16px", marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", marginBottom: 8 }}>
+                Unread Emails — Last 24h ({unreadEmails.length})
+              </div>
+              {unreadEmails.map((e, i) => {
+                const gmailLink = `https://mail.google.com/mail/u/0/#inbox/${e.messageId}`;
+                return (
+                  <div key={e.messageId || i} style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid #BBF7D0" : "none", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "#1F2937" }}>{e.from?.replace(/<[^>]+>/, "").trim()}</div>
+                      <div style={{ fontSize: 12, color: "#374151", fontWeight: 500 }}>{e.subject || "(no subject)"}</div>
+                      <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>{e.snippet?.substring(0, 150)}</div>
+                    </div>
+                    <a href={gmailLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#2563EB", textDecoration: "none", marginLeft: 8, whiteSpace: "nowrap" }}>Open ↗</a>
+                  </div>
+                );
+              })}
+              {unreadEmails.length === 0 && <div style={{ fontSize: 12, color: "#6B7280" }}>No unread emails in the last 24 hours.</div>}
+            </div>
+          )}
+          {showUnread && unreadEmails.length === 0 && !loadingUnread && (
+            <div style={{ background: "#F0FDF4", border: "1px solid #16A34A", borderRadius: 8, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#166534" }}>
+              No unread emails in the last 24 hours.
+            </div>
+          )}
 
           {/* Unclassified emails section */}
           {showUnclassified && unclassifiedEmails.length > 0 && (

@@ -89,6 +89,46 @@ router.get("/emails/poll", async (req, res): Promise<void> => {
   }
 });
 
+// ─── GET /emails/unread — fetch all unread emails from last 24h ───────────────
+router.get("/emails/unread", async (_req, res): Promise<void> => {
+  try {
+    const gmail = await getGmail();
+    const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      maxResults: 50,
+      q: `is:unread after:${oneDayAgo} in:inbox`,
+    });
+
+    const messages = list.data.messages || [];
+    const emails: { from: string; subject: string; snippet: string; messageId: string; threadId: string; date: string }[] = [];
+
+    for (const msg of messages) {
+      const detail = await gmail.users.messages.get({
+        userId: "me",
+        id: msg.id!,
+        format: "metadata",
+        metadataHeaders: ["From", "Subject", "Date"],
+      });
+      const headers = detail.data.payload?.headers || [];
+      const getHeader = (name: string) => headers.find(h => h.name === name)?.value || "";
+      emails.push({
+        from: getHeader("From"),
+        subject: getHeader("Subject"),
+        snippet: detail.data.snippet || "",
+        messageId: msg.id!,
+        threadId: msg.threadId || "",
+        date: getHeader("Date"),
+      });
+    }
+
+    res.json({ ok: true, count: emails.length, emails });
+  } catch (err) {
+    console.warn("[EmailUnread] failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ error: "Failed to fetch unread emails" });
+  }
+});
+
 // ─── Reclassify only new emails and merge into cached brief ───────────────────
 router.post("/emails/reclassify-new", async (req, res): Promise<void> => {
   try {

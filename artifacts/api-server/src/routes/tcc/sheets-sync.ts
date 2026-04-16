@@ -68,7 +68,7 @@ export async function syncTasksTab(): Promise<void> {
     ]);
 
     await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
-    console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (11 columns)`);
+    console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (${header.length} columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncTasksTab failed:", (err as Error).message);
   }

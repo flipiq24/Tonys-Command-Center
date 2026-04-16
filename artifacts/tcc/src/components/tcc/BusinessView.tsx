@@ -879,7 +879,7 @@ function TaskDetailModal({ task, onClose, onSaved }: {
               <label style={lbl}>Category</label>
               <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} style={inp}>
                 <option value="">—</option>
-                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+                {CAT_KEYS.map(k => <option key={k} value={k}>{CAT_LABELS[k] || k}</option>)}
               </select>
             </div>
             <div>

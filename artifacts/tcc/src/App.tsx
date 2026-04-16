@@ -638,6 +638,9 @@ export default function App() {
         onDone={() => persistView("schedule")}
         onTipSaved={handleTipSaved}
         onRefresh={async () => { try { await get("/emails/poll"); } catch { /* ignore */ } await refreshBrief(["emails"]); }}
+        unclassifiedEmails={pendingNewEmails}
+        onReclassify={handleReclassify}
+        reclassifying={reclassifying}
       />
     </div>
   );

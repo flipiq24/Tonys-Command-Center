@@ -6,6 +6,8 @@ import { EmailReplyModal } from "./EmailReplyModal";
 import { HoverCard } from "./HoverCard";
 import type { EmailItem } from "./types";
 
+interface NewEmail { from: string; subject: string; snippet: string; messageId: string }
+
 interface Props {
   emailsImportant: EmailItem[];
   emailsFyi: EmailItem[];
@@ -16,6 +18,9 @@ interface Props {
   onDone: () => void;
   onTipSaved: (key: string, text: string) => void;
   onRefresh?: () => Promise<void>;
+  unclassifiedEmails?: NewEmail[];
+  onReclassify?: () => Promise<void>;
+  reclassifying?: boolean;
 }
 
 interface TrainingState {
@@ -25,12 +30,13 @@ interface TrainingState {
   saved: boolean;
 }
 
-export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh }: Props) {
+export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh, unclassifiedEmails = [], onReclassify, reclassifying = false }: Props) {
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const [training, setTraining] = useState<TrainingState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [showPromotions, setShowPromotions] = useState(false);
+  const [showUnclassified, setShowUnclassified] = useState(false);
   const [nwPickEmailId, setNwPickEmailId] = useState<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -111,8 +117,43 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                 >↻</button>
               )}
             </div>
-            <span style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{unresolved} need attention</span>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {unclassifiedEmails.length > 0 && (
+                <button onClick={() => setShowUnclassified(v => !v)} style={{
+                  background: showUnclassified ? "#EBF5FF" : "#F3F4F6", color: showUnclassified ? "#2563EB" : "#374151",
+                  border: `1px solid ${showUnclassified ? "#2563EB" : "#D1D5DB"}`, borderRadius: 6,
+                  padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+                }}>
+                  {showUnclassified ? "Hide" : "See"} {unclassifiedEmails.length} Unclassified
+                </button>
+              )}
+              {onReclassify && unclassifiedEmails.length > 0 && (
+                <button onClick={onReclassify} disabled={reclassifying} style={{
+                  background: reclassifying ? "#93C5FD" : "#2563EB", color: "#fff", border: "none", borderRadius: 6,
+                  padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: reclassifying ? "default" : "pointer",
+                }}>
+                  {reclassifying ? "Classifying..." : "Reclassify"}
+                </button>
+              )}
+              <span style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{unresolved} need attention</span>
+            </div>
           </div>
+
+          {/* Unclassified emails section */}
+          {showUnclassified && unclassifiedEmails.length > 0 && (
+            <div style={{ background: "#FEF9C3", border: "1px solid #F59E0B", borderRadius: 8, padding: "12px 16px", marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 8 }}>
+                Unclassified Emails ({unclassifiedEmails.length})
+              </div>
+              {unclassifiedEmails.map((e, i) => (
+                <div key={e.messageId || i} style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid #FDE68A" : "none" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#1F2937" }}>{e.from?.replace(/<[^>]+>/, "").trim()}</div>
+                  <div style={{ fontSize: 12, color: "#374151" }}>{e.subject || "(no subject)"}</div>
+                  <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>{e.snippet?.substring(0, 120)}...</div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {visibleEmails.map(e => (
             <HoverCard key={e.id} rows={[

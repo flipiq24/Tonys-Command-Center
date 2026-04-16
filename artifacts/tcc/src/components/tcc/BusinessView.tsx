@@ -605,7 +605,7 @@ function AddTaskModal({
   prefill?: Record<string, string> | null;
 }) {
   const [form, setForm] = useState(() => {
-    const defaults = { title: "", category: "", subcategoryName: "", owner: "", priority: "P1", dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "" };
+    const defaults = { title: "", category: "", subcategoryName: "", owner: "", coOwner: "", priority: "P1", dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "" };
     if (prefill) return { ...defaults, ...Object.fromEntries(Object.entries(prefill).filter(([_, v]) => v != null && v !== "")) };
     return defaults;
   });
@@ -694,6 +694,16 @@ function AddTaskModal({
                 {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
+            {/* Co-Owner */}
+            <div>
+              <label style={labelStyle}>Co-Owner</label>
+              <select value={form.coOwner} onChange={e => set("coOwner", e.target.value)} style={inputStyle}>
+                <option value="">— None —</option>
+                {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
             {/* Priority */}
             <div>
               <label style={labelStyle}>Priority — determines placement</label>
@@ -788,6 +798,7 @@ function TaskDetailModal({ task, onClose, onSaved }: {
     executionTier: task.executionTier || "Sprint",
     source: task.source || "manual",
     linearId: task.linearId || "",
+    coOwner: task.coOwner || "",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -886,6 +897,16 @@ function TaskDetailModal({ task, onClose, onSaved }: {
                 {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
+            <div>
+              <label style={lbl}>Co-Owner</label>
+              <select value={form.coOwner} onChange={e => setForm(p => ({ ...p, coOwner: e.target.value }))} style={inp}>
+                <option value="">— None —</option>
+                {OWNER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <div>
               <label style={lbl}>Priority</label>
               <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} style={inp}>
@@ -1434,21 +1455,8 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                   <td style={{ padding: "8px 10px" }}>
                     {task.owner && <span style={{ fontSize: 11, fontWeight: 700, color: pc, background: pc + "18", borderRadius: 8, padding: "1px 7px", whiteSpace: "nowrap" }}>{task.owner}</span>}
                   </td>
-                  {/* Co-Owner — inline editable */}
-                  <td onClick={e => e.stopPropagation()} style={{ padding: "4px 8px", minWidth: 80 }}>
-                    <input
-                      defaultValue={task.coOwner || ""}
-                      placeholder="—"
-                      onBlur={async e => {
-                        const val = e.target.value.trim();
-                        const prev = task.coOwner || "";
-                        if (val === prev) return;
-                        try { await patch(`/plan/item/${task.id}`, { coOwner: val || null }); } catch { /**/ }
-                      }}
-                      style={{ width: 72, fontSize: 11, background: "transparent", border: "none", outline: "none", color: C.tx, cursor: "text", padding: "2px 4px", borderRadius: 4 }}
-                      onFocus={e => { e.target.style.background = C.card; e.target.style.border = `1px solid ${C.brd}`; }}
-                    />
-                  </td>
+                  {/* Co-Owner — read-only in table, editable in detail modal */}
+                  <td style={{ padding: "8px 10px", fontSize: 11, color: C.sub, whiteSpace: "nowrap" }}>{task.coOwner || "—"}</td>
                   {/* Source */}
                   <td style={{ padding: "8px 10px", fontSize: 11, color: C.mut, whiteSpace: "nowrap" }}>{task.source || "—"}</td>
                   {/* Priority */}

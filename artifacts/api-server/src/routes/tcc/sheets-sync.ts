@@ -46,17 +46,20 @@ export async function syncTasksTab(): Promise<void> {
       .limit(500);
 
     const header = [
-      "Task", "Source", "Owner", "Priority", "Status",
-      "Category", "Completed Date", "Due Date", "Notes",
+      "Task", "Source", "Owner", "Co-Owner", "Priority", "Status",
+      "Category", "Subcategory", "Execution Tier", "Completed Date", "Due Date", "Notes",
       "Atomic KPI", "Linear ID",
     ];
     const rows: (string | number | null)[][] = planTasks.map(t => [
       t.title,
       t.source || "manual",
       t.owner || "Unassigned",
+      t.coOwner || null,
       t.priority || "P2",
       t.status === "completed" ? "Completed" : "Active",
       t.category || null,
+      t.subcategory || null,
+      t.executionTier || null,
       t.completedAt ? new Date(t.completedAt).toLocaleDateString("en-US") : null,
       t.dueDate || null,
       t.workNotes || null,

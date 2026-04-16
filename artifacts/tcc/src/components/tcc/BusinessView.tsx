@@ -795,17 +795,31 @@ function TaskDetailModal({ task, onClose, onSaved }: {
   const [deleting, setDeleting] = useState(false);
   const [subcats, setSubcats] = useState<string[]>([]);
 
-  // Fetch subcategories when category changes
+  const [validationErr, setValidationErr] = useState("");
+
+  // Fetch subcategories when category changes — reset subcategory on category change
+  const prevCat = useRef(form.category);
   useEffect(() => {
     if (!form.category) { setSubcats([]); return; }
     get<{ subcategories: { title: string }[] }>(`/plan/subcategories/${form.category}`)
       .then(d => setSubcats((d.subcategories || []).map(s => s.title)))
       .catch(() => setSubcats([]));
+    if (prevCat.current && prevCat.current !== form.category) {
+      setForm(p => ({ ...p, subcategory: "" }));
+    }
+    prevCat.current = form.category;
   }, [form.category]);
 
   const catColor = CAT_COLOR[task.category] ?? "#555";
 
   async function handleSave() {
+    // Validate required fields
+    if (!form.title.trim()) { setValidationErr("Task title is required"); return; }
+    if (!form.category) { setValidationErr("Category is required"); return; }
+    if (!form.subcategory) { setValidationErr("Subcategory is required"); return; }
+    if (!form.owner) { setValidationErr("Owner is required"); return; }
+    if (!form.priority) { setValidationErr("Priority is required"); return; }
+    setValidationErr("");
     setSaving(true);
     try {
       await patch(`/plan/item/${task.id}`, form);
@@ -962,6 +976,11 @@ function TaskDetailModal({ task, onClose, onSaved }: {
 
         {/* Footer */}
         <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.brd}`, display: "flex", flexDirection: "column", gap: 10 }}>
+          {validationErr && (
+            <div style={{ padding: "8px 12px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, fontSize: 12, color: "#991B1B", fontWeight: 600 }}>
+              {validationErr}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={onClose} style={{ flex: 1, padding: "10px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "transparent", color: C.sub, fontSize: 13, cursor: "pointer", fontFamily: F }}>Cancel</button>
             <button onClick={handleSave} disabled={saving || saved} style={{

@@ -123,6 +123,8 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button onClick={async () => {
                 if (showUnread) { setShowUnread(false); return; }
+                // Use cached data if already fetched this session
+                if (unreadEmails.length > 0) { setShowUnread(true); return; }
                 setLoadingUnread(true);
                 try {
                   const res = await get<{ ok: boolean; count: number; emails: typeof unreadEmails }>("/emails/unread");

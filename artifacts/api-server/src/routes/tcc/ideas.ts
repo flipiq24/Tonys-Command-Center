@@ -544,4 +544,63 @@ Return ONLY valid JSON with these exact fields:
   }
 });
 
+// ─── PATCH /ideas/:id — edit an idea ──────────────────────────────────────────
+router.patch("/ideas/:id", async (req, res): Promise<void> => {
+  const { id } = req.params;
+  const body = req.body as Record<string, unknown>;
+  const updateFields: Record<string, unknown> = {};
+  if ("text" in body) updateFields.text = String(body.text);
+  if ("category" in body) updateFields.category = String(body.category);
+  if ("urgency" in body) updateFields.urgency = String(body.urgency);
+  if ("techType" in body) updateFields.techType = body.techType ? String(body.techType) : null;
+  if ("status" in body) updateFields.status = String(body.status);
+  if ("assigneeName" in body) updateFields.assigneeName = body.assigneeName ? String(body.assigneeName) : null;
+  if ("assigneeEmail" in body) updateFields.assigneeEmail = body.assigneeEmail ? String(body.assigneeEmail) : null;
+  if ("dueDate" in body) updateFields.dueDate = body.dueDate ? String(body.dueDate) : null;
+
+  try {
+    const [updated] = await db.update(ideasTable).set(updateFields).where(eq(ideasTable.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Idea not found" }); return; }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ─── DELETE /ideas/:id — delete an idea ──────────────────────────────────────
+router.delete("/ideas/:id", async (req, res): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const [deleted] = await db.delete(ideasTable).where(eq(ideasTable.id, id)).returning({ id: ideasTable.id });
+    if (!deleted) { res.status(404).json({ error: "Idea not found" }); return; }
+    res.json({ ok: true, id: deleted.id });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ─── POST /ideas/:id/rethink — re-classify an existing idea via AI ──────────
+router.post("/ideas/:id/rethink", async (req, res): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const [idea] = await db.select().from(ideasTable).where(eq(ideasTable.id, id)).limit(1);
+    if (!idea) { res.status(404).json({ error: "Idea not found" }); return; }
+
+    // Re-classify using the same AI flow
+    const recentIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt)).limit(5);
+    const classification = await classifyIdea(idea.text, recentIdeas);
+
+    // Update idea with new classification
+    const [updated] = await db.update(ideasTable).set({
+      category: classification.category,
+      urgency: classification.urgency,
+      techType: classification.techType || null,
+    }).where(eq(ideasTable.id, id)).returning();
+
+    res.json({ ok: true, idea: updated, classification });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 export default router;

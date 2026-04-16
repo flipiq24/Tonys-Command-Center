@@ -6,6 +6,7 @@ import { JournalGate } from "@/components/tcc/JournalGate";
 import { Header } from "@/components/tcc/Header";
 import { CalendarSidebar } from "@/components/tcc/CalendarSidebar";
 import { IdeasModal } from "@/components/tcc/IdeasModal";
+import { IdeasView } from "@/components/tcc/IdeasView";
 import { AttemptModal } from "@/components/tcc/AttemptModal";
 import { ClaudeModal } from "@/components/tcc/ClaudeModal";
 import { EmailCompose } from "@/components/tcc/EmailCompose";
@@ -22,7 +23,7 @@ import { AiUsageView } from "@/components/tcc/AiUsageView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business" | "ai-usage";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business" | "ai-usage" | "ideas";
 type BusinessTab = "goals" | "team" | "tasks" | "plan";
 
 export default function App() {
@@ -547,6 +548,17 @@ export default function App() {
             setTimeout(() => window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: res.taskFields })), 500);
           }
         } catch { /* AI task gen failed — idea still saved */ }
+      }} onCreateTask={async (ideaText, category, urgency, techType) => {
+        try {
+          const res = await post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", {
+            ideaText, category, urgency, techType,
+          });
+          if (res?.ok && res.taskFields) {
+            setBusinessTab("master" as any);
+            persistView("business");
+            setTimeout(() => window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: res.taskFields })), 500);
+          }
+        } catch { /* AI task gen failed */ }
       }} count={ideas.length} />
       <ClaudeModal open={showChat} onClose={() => setShowChat(false)} />
 
@@ -712,6 +724,30 @@ export default function App() {
       {sharedHeader}
       {sharedModals}
       <AiUsageView onBack={() => persistView("dashboard")} />
+    </div>
+  );
+
+  // ═══ IDEAS VIEW ═══
+  if (view === "ideas") return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
+      {sharedHeader}
+      {sharedModals}
+      <IdeasView
+        ideas={ideas}
+        onIdeasChange={setIdeas}
+        onNewIdea={() => setShowIdea(true)}
+        onCreateTask={async (ideaText, category, urgency, techType) => {
+          try {
+            const res = await post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", { ideaText, category, urgency, techType });
+            if (res?.ok && res.taskFields) {
+              setBusinessTab("master" as any);
+              persistView("business");
+              setTimeout(() => window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: res.taskFields })), 500);
+            }
+          } catch { /* AI unavailable */ }
+        }}
+        onNavigate={v => persistView(v as View)}
+      />
     </div>
   );
 

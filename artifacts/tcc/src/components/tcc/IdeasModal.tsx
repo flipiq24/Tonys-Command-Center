@@ -61,12 +61,13 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSave: (idea: Idea) => void;
+  onCreateTask?: (ideaText: string, category: string, urgency: string, techType?: string) => void;
   count: number;
 }
 
-type Step = "input" | "classifying" | "review" | "saving";
+type Step = "input" | "classifying" | "review" | "saving" | "parked";
 
-export function IdeasModal({ open, onClose, onSave, count }: Props) {
+export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props) {
   const [text, setText] = useState("");
   const [step, setStep] = useState<Step>("input");
   const [classification, setClassification] = useState<Classification | null>(null);
@@ -297,12 +298,12 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
                       await post("/ideas", { text, category: finalCat, urgency: "Someday" });
                       await post("/ideas/escalate-to-ethan", { text, rank: pushback.priorityRank }).catch(() => {});
                       onSave({ id: Date.now().toString(), text, category: finalCat, urgency: "Someday" } as Idea);
-                      handleClose();
+                      setStep("parked");
                     } catch { setError("Failed to park idea"); setStep("review"); }
                   }}
                   style={{ ...btn2, width: "100%", color: C.red, borderColor: C.red }}
                 >
-                  OK, Park It + Book Ethan Meeting
+                  OK, Park It + Notify Ethan
                 </button>
               </div>
             )}
@@ -585,6 +586,25 @@ export function IdeasModal({ open, onClose, onSave, count }: Props) {
             {!linearId && (
               <div style={{ fontSize: 13, color: C.mut }}>Saving to database...</div>
             )}
+          </div>
+        )}
+
+        {/* ── STEP: Parked — offer to create task ── */}
+        {step === "parked" && (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📌</div>
+            <div style={{ fontFamily: FS, fontSize: 18, marginBottom: 8 }}>Idea Parked + Ethan Notified</div>
+            <div style={{ fontSize: 13, color: C.mut, marginBottom: 20 }}>Want to also create a task for this idea?</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={handleClose} style={{ ...btn2, flex: 1 }}>Just Park</button>
+              <button
+                onClick={() => {
+                  if (onCreateTask) onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
+                  handleClose();
+                }}
+                style={{ ...btn1, flex: 2 }}
+              >Create Task from Idea</button>
+            </div>
           </div>
         )}
 

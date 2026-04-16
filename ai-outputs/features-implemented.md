@@ -172,3 +172,67 @@
 **Behavior:** When manually typing email body and sending, the body text must appear in the received email (not just signature).
 
 ---
+
+## Feature 11: Comprehensive AI Token Usage Logging System
+**Status:** Implemented
+**Date:** April 16, 2026
+
+**New Files Created:**
+- `lib/integrations-anthropic-ai/src/usage-logger.ts` — Core logging utility with `createTrackedMessage()` (drop-in wrapper for `anthropic.messages.create()`) and `logStreamedUsage()` (for streaming chat calls). Auto-calculates token cost using provider-specific pricing map. Fire-and-forget DB logging (never blocks AI features).
+- `artifacts/api-server/src/routes/tcc/ai-usage.ts` — API endpoint with `GET /ai-usage` (logs + summary aggregations by day/week/month/feature/model/provider) and `GET /ai-usage/:id` (full detail with request/response). Includes `POST /ai-usage/migrate` for table creation.
+- `artifacts/tcc/src/components/tcc/AiUsageView.tsx` — Frontend dashboard page with summary cards (Today/Week/Month cost), horizontal bar charts by feature and model, provider breakdown, and clickable log table with full request/response detail modal.
+
+**Files Modified (21 backend files migrated):**
+- `lib/db/src/schema/tcc-v2.ts` — Added `aiUsageLogsTable` with 19 columns (id, timestamp, feature_name, provider, model, input/output/total tokens, input/output/total cost USD, request/response summaries, full_request/full_response JSONB, duration_ms, status, error_message, metadata)
+- `lib/integrations-anthropic-ai/src/index.ts` — Exported `createTrackedMessage` and `logStreamedUsage`
+- `lib/integrations-anthropic-ai/package.json` — Added `@workspace/db` dependency
+- `artifacts/api-server/src/routes/index.ts` — Registered `aiUsageRouter`
+- `artifacts/tcc/src/App.tsx` — Added `"ai-usage"` view type and `AiUsageView` rendering
+- `artifacts/tcc/src/components/tcc/Header.tsx` — Added "AI Token Usage" menu item in sidebar
+- `artifacts/api-server/src/routes/tcc/brief.ts` — 3 calls migrated (brief_email_triage, brief_claude_generate, brief_spiritual_anchor)
+- `artifacts/api-server/src/routes/tcc/claude.ts` — 3 calls migrated (chat_response)
+- `artifacts/api-server/src/routes/tcc/chat-threads.ts` — 1 create + 1 stream migrated (chat_thread)
+- `artifacts/api-server/src/routes/tcc/checkin.ts` — 1 call (checkin_accountability)
+- `artifacts/api-server/src/routes/tcc/journal.ts` — 1 call (journal_format)
+- `artifacts/api-server/src/routes/tcc/eod.ts` — 3 calls (eod_preview, eod_report)
+- `artifacts/api-server/src/routes/tcc/emails.ts` — 2 calls (email_triage, email_action)
+- `artifacts/api-server/src/routes/tcc/email-poll.ts` — 1 call (email_poll)
+- `artifacts/api-server/src/routes/tcc/email-send.ts` — 1 call (email_draft)
+- `artifacts/api-server/src/routes/tcc/calls.ts` — 1 call (call_follow_up)
+- `artifacts/api-server/src/routes/tcc/contacts.ts` — 1 call (contact_card_ocr)
+- `artifacts/api-server/src/routes/tcc/contacts-brief.ts` — 1 call (contact_brief)
+- `artifacts/api-server/src/routes/tcc/contacts-research.ts` — 1 call (contact_research)
+- `artifacts/api-server/src/routes/tcc/ideas.ts` — 3 calls (idea_classify)
+- `artifacts/api-server/src/routes/tcc/plan.ts` — 3 calls (plan_organize)
+- `artifacts/api-server/src/routes/tcc/schedule.ts` — 2 calls (schedule_optimize)
+- `artifacts/api-server/src/routes/tcc/sheet-scan.ts` — 1 call (sheet_scan)
+- `artifacts/api-server/src/routes/tcc/sheets-sync.ts` — 3 calls (sheets_sync)
+- `artifacts/api-server/src/routes/tcc/tasks.ts` — 1 call (task_classify)
+- `artifacts/api-server/src/lib/demo-feedback.ts` — 1 call (demo_feedback)
+- `artifacts/api-server/src/lib/plaud-processor.ts` — 1 call (plaud_transcribe)
+
+**Total: 35 `anthropic.messages.create()` calls + 1 streaming call migrated across 21 files**
+
+**Ideal Behavior:**
+1. Every AI API call is automatically logged to `ai_usage_logs` table — no exceptions
+2. Logging is fire-and-forget — if DB write fails, the AI feature still works normally
+3. Each log captures: feature name, provider, model, input/output tokens, cost in USD, request/response summaries, full request/response in JSONB, duration, success/error status
+4. Cost is auto-calculated using model-specific pricing map:
+   - claude-haiku-4-5: $1.00/$5.00 per 1M tokens (input/output)
+   - claude-sonnet-4-6: $3.00/$15.00 per 1M tokens
+   - claude-opus-4-5: $15.00/$75.00 per 1M tokens
+   - OpenAI models pre-configured for future use
+5. Frontend page (Menu → AI Token Usage) shows:
+   - Summary cards: Today, This Week, This Month (cost + tokens + call count)
+   - Bar chart: Cost by Feature (top 12 features, 30-day window)
+   - Bar chart: Cost by Model with provider breakdown
+   - Table: Recent API calls (timestamp, feature, model, tokens, cost, duration, status)
+   - Click any row → modal with full detail including request/response JSON
+6. API supports filtering by date range, feature, model, provider with pagination
+
+**API Endpoints:**
+- `GET /ai-usage?from=&to=&feature=&model=&provider=&limit=&offset=` — Returns `{ logs, summary, pagination }`
+- `GET /ai-usage/:id` — Returns full log entry with `fullRequest` and `fullResponse`
+- `POST /ai-usage/migrate` — Creates table if not exists (one-time setup)
+
+---

@@ -48,6 +48,8 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
     form.assigneeName !== (idea.assigneeName || "") || form.assigneeEmail !== (idea.assigneeEmail || "") ||
     form.dueDate !== (idea.dueDate || "");
 
+  const URGENCY_ORDER = ["Now", "This Week", "This Month", "Someday"];
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -55,6 +57,16 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
       onUpdated({ ...idea, ...updated });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
+      // Notify Ethan if urgency was escalated to something more urgent
+      const oldIdx = URGENCY_ORDER.indexOf(idea.urgency);
+      const newIdx = URGENCY_ORDER.indexOf(form.urgency);
+      if (newIdx < oldIdx && (form.urgency === "Now" || form.urgency === "This Week")) {
+        post("/ideas/escalate-to-ethan", {
+          text: form.text,
+          rank: null,
+          reasoning: `Urgency escalated from ${idea.urgency} to ${form.urgency}`,
+        }).catch(() => {});
+      }
     } catch { /* ignore */ }
     setSaving(false);
   };
@@ -86,7 +98,9 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
     try {
       const updated = await patch<any>(`/ideas/${idea.id}`, { status: "parked", urgency: "Someday" });
       onUpdated({ ...idea, ...updated, status: "parked", urgency: "Someday" });
-      setForm(f => ({ ...f, urgency: "Someday" }));
+      // Create a task at Someday priority so it lands at the right place in the task order
+      if (onCreateTask) onCreateTask(form.text, form.category, "Someday", form.techType || undefined);
+      onClose();
     } catch { /* ignore */ }
   };
 

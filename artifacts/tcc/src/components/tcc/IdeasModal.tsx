@@ -168,30 +168,30 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
         category: finalCat,
         urgency: finalUrg,
         techType: finalTt || undefined,
+        aiReflection: classification ? JSON.stringify(classification) : undefined,
         ...(assigneeName ? { assigneeName, assigneeEmail, dueDate } : {}),
       });
 
-      if (hasAssignee && assigneeName && assigneeEmail && (assign?.notifyEmail || assign?.notifySlack)) {
-        const notifyChannels: string[] = [];
-        if (assign?.notifyEmail) notifyChannels.push("email");
+      // Auto-email assignee for Now / This Week / This Month (email is always sent, Slack only if checked)
+      if (hasAssignee && assigneeName && assigneeEmail && finalUrg !== "Someday") {
+        const notifyChannels: string[] = ["email"];
         if (assign?.notifySlack && assign?.assigneeSlackId) notifyChannels.push("slack");
-        if (notifyChannels.length > 0) {
-          try {
-            await post("/ideas/notify-assignee", {
-              ideaText: text,
-              category: finalCat,
-              urgency: finalUrg,
-              dueDate: dueDate || "",
-              assigneeName,
-              assigneeEmail,
-              slackUserId: assign?.assigneeSlackId || undefined,
-              notifyChannels,
-              note: assign!.note || undefined,
-            });
-          } catch {
-            console.warn("[Ideas] Failed to send assignee notification");
-          }
-        }
+        post("/ideas/notify-assignee", {
+          ideaText: text, category: finalCat, urgency: finalUrg, dueDate: dueDate || "",
+          assigneeName, assigneeEmail, slackUserId: assign?.assigneeSlackId || undefined,
+          notifyChannels, note: assign!.note || undefined,
+        }).catch(() => console.warn("[Ideas] Failed to send assignee notification"));
+      }
+
+      // For "Now" urgency, also email Ethan
+      if (finalUrg === "Now") {
+        post("/ideas/notify-assignee", {
+          ideaText: text, category: finalCat, urgency: finalUrg,
+          dueDate: new Date().toISOString().split("T")[0],
+          assigneeName: "Ethan", assigneeEmail: "ethan@flipiq.com",
+          notifyChannels: ["email"],
+          note: `Urgent idea posted by Tony — action needed today.`,
+        }).catch(() => {});
       }
 
       if (idea.linearIssue?.identifier) {
@@ -202,6 +202,11 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
         });
       }
       onSave(idea);
+      // Only open task creation modal if urgency is NOT Someday
+      if (onCreateTask && finalUrg !== "Someday") {
+        // Must await so reset/onClose don't race the async task creation
+        await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
+      }
       reset();
       onClose();
     } catch {
@@ -214,7 +219,8 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={handleClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 18, padding: 28, width: 520, maxWidth: "92vw", maxHeight: "90vh", overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.card, borderRadius: 18, width: 520, maxWidth: "92vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: 28, overflowY: "auto", flex: 1 }}>
 
         {/* ── STEP 1: Input ── */}
         {step === "input" && (
@@ -295,10 +301,15 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                   onClick={async () => {
                     setStep("saving");
                     try {
-                      await post("/ideas", { text, category: finalCat, urgency: "Someday" });
-                      await post("/ideas/escalate-to-ethan", { text, rank: pushback.priorityRank }).catch(() => {});
-                      onSave({ id: Date.now().toString(), text, category: finalCat, urgency: "Someday" } as Idea);
-                      setStep("parked");
+                      const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: "Someday" });
+                      // Only notify Ethan if urgency is high (Now or This Week)
+                      if (finalUrg === "Now" || finalUrg === "This Week") {
+                        await post("/ideas/escalate-to-ethan", { text, rank: pushback.priorityRank }).catch(() => {});
+                      }
+                      onSave(idea);
+                      // Auto-open task modal with ORIGINAL urgency (not Someday)
+                      if (onCreateTask) await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
+                      handleClose();
                     } catch { setError("Failed to park idea"); setStep("review"); }
                   }}
                   style={{ ...btn2, width: "100%", color: C.red, borderColor: C.red }}
@@ -356,6 +367,7 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                       const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: finalUrg });
                       await post("/ideas/notify-override", { text, justification: override.justification }).catch(() => {});
                       onSave(idea);
+                      if (onCreateTask) await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
                       handleClose();
                     } catch { setError("Failed to save idea"); setStep("review"); }
                   }}
@@ -437,7 +449,7 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                     Team member {teamMembers.length > 0 ? <span style={{ color: C.grn, fontWeight: 400 }}>({teamMembers.length} from Linear/Slack)</span> : <span style={{ color: C.mut, fontWeight: 400 }}>loading...</span>}
                   </label>
                   <select
-                    value={assign.mode === "team" ? `${assign.assigneeName}|${assign.assigneeEmail}` : assign.mode === "custom" ? "__custom__" : ""}
+                    value={assign.mode === "team" ? `${assign.assigneeName}|${assign.assigneeEmail}|${assign.assigneeSlackId || ""}` : assign.mode === "custom" ? "__custom__" : ""}
                     onChange={e => {
                       const val = e.target.value;
                       if (!val) {
@@ -549,23 +561,7 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
               </div>
             )}
 
-            {error && <div style={{ marginBottom: 12, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
-
-            {/* Only show action button if there's no active pushback / override flow */}
-            {!pushback && !override && (
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setStep("input")} style={{ ...btn2, flex: 1 }}>← Edit</button>
-                <button onClick={save} style={{ ...btn1, flex: 2, background: finalUrg === "Now" ? "#B71C1C" : undefined }}>
-                  {(() => {
-                    const hasAssignee = assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim();
-                    const willNotify = hasAssignee && (assign!.notifyEmail || (assign!.notifySlack && assign!.assigneeSlackId));
-                    if (finalUrg === "Now") return willNotify ? "Post and Deliver →" : "Post Now →";
-                    if (willNotify) return "Park & Notify Assignee →";
-                    return "Park It → Back to Calls";
-                  })()}
-                </button>
-              </div>
-            )}
+            {error && <div style={{ marginBottom: 4, padding: "8px 12px", borderRadius: 8, background: C.redBg, color: C.red, fontSize: 12 }}>{error}</div>}
           </>
         )}
 
@@ -589,24 +585,32 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
           </div>
         )}
 
-        {/* ── STEP: Parked — offer to create task ── */}
+        {/* ── STEP: Parked — task creation is automatic, just show confirmation ── */}
         {step === "parked" && (
           <div style={{ textAlign: "center", padding: "24px 0" }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>📌</div>
-            <div style={{ fontFamily: FS, fontSize: 18, marginBottom: 8 }}>Idea Parked + Ethan Notified</div>
-            <div style={{ fontSize: 13, color: C.mut, marginBottom: 20 }}>Want to also create a task for this idea?</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={handleClose} style={{ ...btn2, flex: 1 }}>Just Park</button>
-              <button
-                onClick={() => {
-                  if (onCreateTask) onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
-                  handleClose();
-                }}
-                style={{ ...btn1, flex: 2 }}
-              >Create Task from Idea</button>
-            </div>
+            <div style={{ fontFamily: FS, fontSize: 18, marginBottom: 8 }}>Idea Parked</div>
+            <div style={{ fontSize: 13, color: C.mut, marginBottom: 20 }}>Opening task creation…</div>
           </div>
         )}
+
+      </div>{/* end scrollable body */}
+
+      {/* ── STICKY FOOTER: action buttons (only on review step, no pushback/override in progress) ── */}
+      {step === "review" && classification && !pushback && !override && (
+        <div style={{ padding: "14px 28px", borderTop: `1px solid ${C.brd}`, background: C.card, borderRadius: "0 0 18px 18px", flexShrink: 0 }}>
+          <button onClick={save} style={{ ...btn1, width: "100%", marginBottom: 8, ...(finalUrg === "Now" ? { background: "#B71C1C" } : {}), padding: "12px 20px", fontSize: 15 }}>
+            {(() => {
+              const hasAssignee = assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim();
+              const willNotify = hasAssignee && (assign!.notifyEmail || (assign!.notifySlack && assign!.assigneeSlackId));
+              if (finalUrg === "Now") return willNotify ? "Post and Deliver →" : "Post Now →";
+              if (willNotify) return "Park & Notify Assignee →";
+              return "Park It → Back to Calls";
+            })()}
+          </button>
+          <button onClick={() => setStep("input")} style={{ ...btn2, width: "100%", fontSize: 13 }}>← Edit Idea</button>
+        </div>
+      )}
 
       </div>
     </div>

@@ -569,7 +569,7 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
 // POST /plan/task — create a new task with smart priority placement
 router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const { category, subcategoryName, title, owner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId } = req.body;
+    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId } = req.body;
 
     if (!category || !title) {
       res.status(400).json({ error: "category and title are required" });
@@ -620,6 +620,7 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       subcategory: subcategoryName || null,
       title,
       owner: owner || null,
+      coOwner: coOwner || null,
       priority: priority || "P2",
       dueDate: dueDate || null,
       weekNumber: weekNumber ? parseInt(weekNumber) : null,

@@ -47,6 +47,7 @@ export const ideasTable = pgTable("ideas", {
   assigneeEmail: text("assignee_email"),
   linearIdentifier: text("linear_identifier"),
   dueDate: date("due_date"),
+  aiReflection: text("ai_reflection"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("ideas_status_idx").on(t.status),

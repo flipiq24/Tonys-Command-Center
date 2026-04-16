@@ -1076,6 +1076,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterWeek, setFilterWeek] = useState("");
+  const [searchQ, setSearchQ] = useState("");
   const [sortCol, setSortCol] = useState<string>("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [showAdd, setShowAdd] = useState(false);
@@ -1128,6 +1129,20 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   if (filterStatus) displayed = displayed.filter(t => t.status === filterStatus);
   if (filterPriority) displayed = displayed.filter(t => t.priority === filterPriority);
   if (filterWeek) displayed = displayed.filter(t => String(t.weekNumber) === filterWeek);
+  if (searchQ.trim()) {
+    const q = searchQ.trim().toLowerCase();
+    displayed = displayed.filter(t =>
+      (t.title || "").toLowerCase().includes(q) ||
+      (t.owner || "").toLowerCase().includes(q) ||
+      (t.coOwner || "").toLowerCase().includes(q) ||
+      (t.category || "").toLowerCase().includes(q) ||
+      (t.subcategory || "").toLowerCase().includes(q) ||
+      (t.atomicKpi || "").toLowerCase().includes(q) ||
+      (t.workNotes || "").toLowerCase().includes(q) ||
+      (t.source || "").toLowerCase().includes(q) ||
+      (t.linearId || "").toLowerCase().includes(q)
+    );
+  }
 
   // Sort
   if (sortCol) {
@@ -1354,6 +1369,21 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
 
         {/* ── Filter row ── */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ position: "relative", minWidth: 180 }}>
+            <input
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+              placeholder="Search tasks..."
+              style={{
+                padding: "6px 10px 6px 28px", borderRadius: 8, border: `1px solid ${C.brd}`,
+                fontSize: 12, fontFamily: F, color: C.tx, background: C.card, width: "100%",
+                outline: "none",
+              }}
+              onFocus={e => (e.target.style.borderColor = "#F97316")}
+              onBlur={e => (e.target.style.borderColor = C.brd)}
+            />
+            <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: C.mut, pointerEvents: "none" }}>🔍</span>
+          </div>
           <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={selStyle}>
             <option value="">All categories</option>
             {CAT_KEYS.map(c => <option key={c} value={c}>{CAT_LABELS[c]}</option>)}

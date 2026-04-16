@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/Users/LENOVO/OneDrive/Desktop/New/ folder/Tonys-Command-Center/artifacts/api-server/**)"
+      "Read(//c/Users/LENOVO/OneDrive/Desktop/New/ folder/Tonys-Command-Center/artifacts/api-server/**)",
+      "Read(//c/Users/LENOVO/OneDrive/Desktop/New/ folder/Tonys-Command-Center/artifacts/tcc/src/components/tcc/**)",
+      "Bash(pnpm run:*)",
+      "Bash(set -a)",
+      "Bash(source .env)",
+      "Bash(set +a)",
+      "Bash(source ../../.env)",
+      "Read(//c/Users/LENOVO/OneDrive/Desktop/New folder/**)"
     ]
   }
 }

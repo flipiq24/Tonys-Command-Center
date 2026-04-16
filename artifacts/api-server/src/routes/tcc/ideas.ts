@@ -407,6 +407,7 @@ const CreateIdeaBody = z.object({
   assigneeName: z.string().optional(),
   assigneeEmail: z.string().email().optional(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  aiReflection: z.string().optional(), // JSON string of AI classification result
 });
 
 router.post("/ideas", async (req, res): Promise<void> => {
@@ -416,7 +417,7 @@ router.post("/ideas", async (req, res): Promise<void> => {
     return;
   }
 
-  const { text, category, urgency, techType, assigneeName, assigneeEmail, dueDate } = parsed.data;
+  const { text, category, urgency, techType, assigneeName, assigneeEmail, dueDate, aiReflection } = parsed.data;
 
   const existingIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt));
   const priorityPosition = existingIdeas.length + 1;
@@ -433,6 +434,7 @@ router.post("/ideas", async (req, res): Promise<void> => {
       assigneeName: assigneeName || undefined,
       assigneeEmail: assigneeEmail || undefined,
       dueDate: dueDate || undefined,
+      aiReflection: aiReflection || undefined,
     })
     .returning();
 
@@ -508,13 +510,16 @@ Return ONLY valid JSON with these exact fields:
   "category": "adaptation|sales|tech|capital|team",
   "subcategoryName": "exact subcategory name from list above",
   "owner": "Tony|Ethan|Ramy|Faisal|Haris|Nate|Bondilyn|Chris|TBD PM",
+  "coOwner": "Tony|Ethan|Ramy|Faisal|Haris|Nate|Bondilyn|Chris|TBD PM|null",
   "priority": "P0|P1|P2",
   "executionTier": "Sprint|Strategic|Maintenance",
   "atomicKpi": "how this moves toward 2 deals/month",
   "source": "TCC",
   "workNotes": "context from the original idea",
   "weekNumber": 1-4 (current week of month)
-}`,
+}
+
+Set coOwner to whoever should support the primary owner based on idea domain and team expertise. Use null if no clear second owner.`,
       messages: [{ role: "user", content: `Idea category: ${category}\nUrgency: ${urgency}${techType ? `\nType: ${techType}` : ""}\n\nIdea: "${ideaText}"\n\nGenerate task fields.` }],
     });
 
@@ -557,6 +562,7 @@ router.patch("/ideas/:id", async (req, res): Promise<void> => {
   if ("assigneeName" in body) updateFields.assigneeName = body.assigneeName ? String(body.assigneeName) : null;
   if ("assigneeEmail" in body) updateFields.assigneeEmail = body.assigneeEmail ? String(body.assigneeEmail) : null;
   if ("dueDate" in body) updateFields.dueDate = body.dueDate ? String(body.dueDate) : null;
+  if ("aiReflection" in body) updateFields.aiReflection = body.aiReflection ? String(body.aiReflection) : null;
 
   try {
     const [updated] = await db.update(ideasTable).set(updateFields).where(eq(ideasTable.id, id)).returning();

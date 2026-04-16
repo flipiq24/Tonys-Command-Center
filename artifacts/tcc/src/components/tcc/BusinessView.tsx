@@ -793,6 +793,15 @@ function TaskDetailModal({ task, onClose, onSaved }: {
   const [saved, setSaved] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [subcats, setSubcats] = useState<string[]>([]);
+
+  // Fetch subcategories when category changes
+  useEffect(() => {
+    if (!form.category) { setSubcats([]); return; }
+    get<{ subcategories: { title: string }[] }>(`/plan/subcategories/${form.category}`)
+      .then(d => setSubcats((d.subcategories || []).map(s => s.title)))
+      .catch(() => setSubcats([]));
+  }, [form.category]);
 
   const catColor = CAT_COLOR[task.category] ?? "#555";
 
@@ -884,7 +893,13 @@ function TaskDetailModal({ task, onClose, onSaved }: {
             </div>
             <div>
               <label style={lbl}>Subcategory</label>
-              <input value={form.subcategory} onChange={e => setForm(p => ({ ...p, subcategory: e.target.value }))} style={inp} placeholder="e.g. Operator Assessment" />
+              <select value={form.subcategory} onChange={e => setForm(p => ({ ...p, subcategory: e.target.value }))} style={inp}>
+                <option value="">— Select —</option>
+                {subcats.map(s => <option key={s} value={s}>{s}</option>)}
+                {form.subcategory && !subcats.includes(form.subcategory) && (
+                  <option value={form.subcategory}>{form.subcategory}</option>
+                )}
+              </select>
             </div>
           </div>
 

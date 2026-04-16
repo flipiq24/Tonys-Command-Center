@@ -139,11 +139,17 @@ export default function App() {
   const handleReclassify = async () => {
     setReclassifying(true);
     try {
-      const res = await post<{ ok: boolean; emailsImportant?: any[]; emailsFyi?: any[]; emailsPromotions?: any[] }>("/emails/reclassify-new", { newEmails: pendingNewEmails });
-      if (res?.ok && brief) {
-        setBrief({ ...brief, emailsImportant: res.emailsImportant ?? brief.emailsImportant, emailsFyi: res.emailsFyi ?? brief.emailsFyi, emailsPromotions: res.emailsPromotions ?? brief.emailsPromotions ?? [] });
+      if (pendingNewEmails.length > 0) {
+        // Classify only new unclassified emails
+        const res = await post<{ ok: boolean; emailsImportant?: any[]; emailsFyi?: any[]; emailsPromotions?: any[] }>("/emails/reclassify-new", { newEmails: pendingNewEmails });
+        if (res?.ok && brief) {
+          setBrief({ ...brief, emailsImportant: res.emailsImportant ?? brief.emailsImportant, emailsFyi: res.emailsFyi ?? brief.emailsFyi, emailsPromotions: res.emailsPromotions ?? brief.emailsPromotions ?? [] });
+        }
+      } else {
+        // No pending new emails — do full reclassification
+        await refreshBrief(["emails"]);
       }
-    } catch { /* fallback: full refresh */ await refreshBrief(["emails"]); }
+    } catch { await refreshBrief(["emails"]); }
     setNewEmailCount(0);
     setPendingNewEmails([]);
     setReclassifying(false);

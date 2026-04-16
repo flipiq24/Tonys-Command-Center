@@ -146,12 +146,12 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                   {showUnclassified ? "Hide" : "See"} {unclassifiedEmails.length} Unclassified
                 </button>
               )}
-              {onReclassify && unclassifiedEmails.length > 0 && (
+              {onReclassify && (
                 <button onClick={onReclassify} disabled={reclassifying} style={{
                   background: reclassifying ? "#93C5FD" : "#2563EB", color: "#fff", border: "none", borderRadius: 6,
                   padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: reclassifying ? "default" : "pointer",
                 }}>
-                  {reclassifying ? "Classifying..." : "Reclassify"}
+                  {reclassifying ? "Classifying..." : "Reclassify All"}
                 </button>
               )}
               <span style={{ color: C.red, fontWeight: 700, fontSize: 13 }}>{unresolved} need attention</span>

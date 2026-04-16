@@ -74,12 +74,12 @@ export async function syncTasksTab(): Promise<void> {
 export async function syncContactsTab(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
-    const contacts = await db.select().from(contactsTable).orderBy(desc(contactsTable.updatedAt)).limit(2000);
+    const contacts = await db.select().from(contactsTable).orderBy(desc(contactsTable.updatedAt)).limit(10000);
 
     // Fetch notes, activity, and meetings for all contacts in bulk
     const [allNotes, allComms] = await Promise.all([
-      db.select().from(contactNotesTable).orderBy(desc(contactNotesTable.createdAt)).limit(5000),
-      db.select().from(communicationLogTable).orderBy(desc(communicationLogTable.loggedAt)).limit(5000),
+      db.select().from(contactNotesTable).orderBy(desc(contactNotesTable.createdAt)).limit(50000),
+      db.select().from(communicationLogTable).orderBy(desc(communicationLogTable.loggedAt)).limit(50000),
     ]);
     const notesByContact = new Map<string, string[]>();
     for (const n of allNotes) {
@@ -143,7 +143,7 @@ export async function syncContactsTab(): Promise<void> {
 export async function syncCommsTab(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
-    const comms = await db.select().from(communicationLogTable).orderBy(desc(communicationLogTable.loggedAt)).limit(2000);
+    const comms = await db.select().from(communicationLogTable).orderBy(desc(communicationLogTable.loggedAt)).limit(50000);
     const header = ["ID", "Contact Name", "Channel", "Direction", "Subject", "Summary", "Logged At"];
     const rows: (string | null)[][] = comms.map(c => [
       c.id,

@@ -5,7 +5,7 @@ import { db } from "@workspace/db";
 import { communicationLogTable, contactsTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
 import { updateContactComms } from "../../lib/contact-comms";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 
 const router: IRouter = Router();
 
@@ -148,7 +148,7 @@ ${subject ? `Subject hint: "${subject}"` : "Create a clear, compelling subject l
 ${context ? `Context/purpose: ${context}` : "Write a general outreach or follow-up email."}
 Keep the body to 3-5 sentences max.`;
 
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("email_draft", {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 512,
       system: systemPrompt,

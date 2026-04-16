@@ -1,5 +1,5 @@
 import { searchFiles } from "./google-drive";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 
 const RECORDINGS_FOLDER_ID = process.env.MEETING_RECORDINGS_FOLDER_ID || "1g1itXWZj82oudTpMSp96HCoKk79_ZkdX";
 
@@ -37,7 +37,7 @@ export async function analyzeDemoRecording(eventName: string, eventDate: string)
       console.log(`[demo-feedback] Could not export transcript, using metadata-only analysis`);
     }
 
-    const feedback = await anthropic.messages.create({
+    const feedback = await createTrackedMessage("demo_feedback", {
       model: "claude-haiku-4-5",
       max_tokens: 500,
       messages: [{

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { db, contactsTable } from "@workspace/db";
 import { contactIntelligenceTable, communicationLogTable, contactBriefsTable } from "../../lib/schema-v2";
 import { eq, desc } from "drizzle-orm";
@@ -55,7 +55,7 @@ router.post("/contacts/brief", async (req, res): Promise<void> => {
       }
     }
 
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("contact_brief", {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 768,
       messages: [{

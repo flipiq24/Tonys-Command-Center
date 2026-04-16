@@ -3,7 +3,7 @@ import { eq, gte, sql } from "drizzle-orm";
 import { db, eodReportsTable, callLogTable, demosTable, ideasTable } from "@workspace/db";
 import { planItemsTable } from "../../lib/schema-v2";
 import { linearGraphQL } from "../../lib/linear";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { sendEmail } from "../../lib/gmail";
 import { todayPacific } from "../../lib/dates.js";
 import { communicationLogTable, businessContextTable } from "../../lib/schema-v2";
@@ -38,7 +38,7 @@ async function buildEodReport(log: any): Promise<{ reportText: string; callsMade
 
   let reportText = "";
   try {
-    const message = await anthropic.messages.create({
+    const message = await createTrackedMessage("eod_preview", {
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
       messages: [{
@@ -224,7 +224,7 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
 
   let tonyReportText = "";
   try {
-    const tonyMsg = await anthropic.messages.create({
+    const tonyMsg = await createTrackedMessage("eod_report", {
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       messages: [{
@@ -254,7 +254,7 @@ Format as a brief EOD (4 paragraphs max):
 
   let ethanReportText = "";
   try {
-    const ethanMsg = await anthropic.messages.create({
+    const ethanMsg = await createTrackedMessage("eod_report", {
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       messages: [{

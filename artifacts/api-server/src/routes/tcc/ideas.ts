@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, ideasTable } from "@workspace/db";
 import { ParkIdeaBody } from "@workspace/api-zod";
 import { desc, eq } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { createLinearIssue, getLinearMembers } from "../../lib/linear";
 import { postTechIdeaToSlack, postSlackMessage, listSlackUsers, notifyAssigneeViaSlack } from "../../lib/slack";
 import { z } from "zod/v4";
@@ -97,7 +97,7 @@ async function classifyIdea(text: string, recentIdeas: typeof ideasTable.$inferS
 
   const liveContext = await getBusinessContext().catch(() => "");
 
-  const msg = await anthropic.messages.create({
+  const msg = await createTrackedMessage("idea_classify", {
     model: "claude-haiku-4-5",
     max_tokens: 512,
     messages: [{
@@ -220,7 +220,7 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
           text: `*Bug Report (auto-filed from TCC)*\n\n> ${text}\n\n*Severity:* ${classification.urgency || "Unknown"}\n*Priority Recommendation:* ${classification.urgency === "Now" ? "P1" : classification.urgency === "This Week" ? "P2" : "P3"}`,
         }).catch(() => {});
       } else {
-        const pushbackCheck = await anthropic.messages.create({
+        const pushbackCheck = await createTrackedMessage("idea_classify", {
           model: "claude-haiku-4-5",
           max_tokens: 512,
           messages: [{
@@ -482,7 +482,7 @@ router.post("/ideas/generate-task", async (req, res): Promise<void> => {
 
     const bizContext = await getBusinessContext();
 
-    const claudeResponse = await anthropic.messages.create({
+    const claudeResponse = await createTrackedMessage("idea_classify", {
       model: "claude-haiku-4-5",
       max_tokens: 1024,
       system: `You are the FlipIQ task creation assistant. Given an idea, generate structured task fields for the 411 Plan.

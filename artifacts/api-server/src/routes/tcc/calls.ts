@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, callLogTable, contactsTable } from "@workspace/db";
 import { LogCallBody } from "@workspace/api-zod";
 import { gte, eq, sql } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { z } from "zod";
 import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2";
 import { createReminder } from "../../lib/gcal";
@@ -58,7 +58,7 @@ router.post("/calls", async (req, res): Promise<void> => {
 
   if (type === "attempt" && instructions) {
     try {
-      const msg = await anthropic.messages.create({
+      const msg = await createTrackedMessage("call_follow_up", {
         model: "claude-haiku-4-5",
         max_tokens: 1024,
         messages: [

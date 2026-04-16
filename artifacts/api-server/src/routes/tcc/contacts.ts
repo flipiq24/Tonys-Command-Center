@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, contactsTable, contactNotesTable, callLogTable } from "@workspace/db";
 import { communicationLogTable } from "../../lib/schema-v2";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncContactsTab } from "./sheets-sync";
 
 const router: IRouter = Router();
@@ -232,7 +232,7 @@ router.post("/contacts/scan-card", async (req, res): Promise<void> => {
   const mt = (mimeType && allowedTypes.includes(mimeType) ? mimeType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("contact_card_ocr", {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 512,
       messages: [{

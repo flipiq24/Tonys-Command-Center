@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, journalsTable, checkinsTable } from "@workspace/db";
 import { SaveJournalBody } from "@workspace/api-zod";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates.js";
 import { appendToDoc } from "../../lib/google-docs.js";
 
@@ -42,7 +42,7 @@ router.post("/journal", async (req, res): Promise<void> => {
   let reflection = "";
 
   try {
-    const message = await anthropic.messages.create({
+    const message = await createTrackedMessage("journal_format", {
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
       messages: [

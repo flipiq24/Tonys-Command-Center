@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { db, contactsTable } from "@workspace/db";
 import { contactIntelligenceTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
@@ -82,7 +82,7 @@ router.post("/contacts/research", async (req, res): Promise<void> => {
         }
       }
 
-      const response = await anthropic.messages.create({
+      const response = await createTrackedMessage("contact_research", {
         model: "claude-sonnet-4-6",
         max_tokens: 2048,
         tools: [{

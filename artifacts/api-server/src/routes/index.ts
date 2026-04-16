@@ -36,6 +36,7 @@ import demoFeedbackRouter from "./tcc/demo-feedback";
 import businessRouter from "./tcc/business";
 import planRouter from "./tcc/plan";
 import cronRouter from "./tcc/cron";
+import aiUsageRouter from "./tcc/ai-usage";
 
 const router: IRouter = Router();
 
@@ -76,6 +77,7 @@ router.use(demoFeedbackRouter);
 router.use(businessRouter);
 router.use(planRouter);
 router.use(cronRouter);
+router.use(aiUsageRouter);
 
 // ─── Canonical aliases ────────────────────────────────────────────────────────
 router.post("/email-action", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {

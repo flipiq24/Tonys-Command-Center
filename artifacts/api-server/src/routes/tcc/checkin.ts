@@ -5,7 +5,7 @@ import { db, checkinsTable } from "@workspace/db";
 import { SaveCheckinBody } from "@workspace/api-zod";
 import { todayPacific } from "../../lib/dates.js";
 import { upsertSheetRow } from "../../lib/google-sheets.js";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 
 const TONY_PERSONAL_DOC = `
 WHO I AM — CORE IDENTITY
@@ -221,7 +221,7 @@ router.post("/checkin/guilt-trip", async (req, res): Promise<void> => {
   ].filter(Boolean).join(" and ");
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("checkin_accountability", {
       model: "claude-haiku-4-5",
       max_tokens: 8192,
       system: `You are Tony's personal accountability system. You have access to his entire personal document — his own words, his own commitments, his own warnings to himself. Your job is to reflect his words back at him when he tries to skip what he committed to.

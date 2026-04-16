@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { eq, desc, and, sql, asc } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage, logStreamedUsage } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, contactsTable } from "@workspace/db";
 import { chatThreadsTable, chatMessagesTable, communicationLogTable, contactIntelligenceTable, companyGoalsTable, teamRolesTable } from "../../lib/schema-v2";
 import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
@@ -632,7 +632,7 @@ BE BRIEF. Tony doesn't like to read. Bullet points, not paragraphs.${brainSectio
 
 async function autoTitle(threadId: string, firstMessage: string): Promise<void> {
   try {
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("chat_thread", {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 30,
       messages: [{ role: "user", content: `Generate a 3-6 word title for this conversation. Title only, no quotes.\n\n"${firstMessage.substring(0, 200)}"` }],
@@ -719,6 +719,7 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
   const systemPrompt = await buildSystemPrompt(thread.contextType || undefined, thread.contextId || undefined);
   let fullResponse = "";
   const toolResults: { name: string; result: string }[] = [];
+  const streamStartTime = Date.now();
 
   try {
     for (let turn = 0; turn < 5; turn++) {
@@ -784,6 +785,9 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
       }
       messages.push({ role: "user", content: toolResultContent });
     }
+
+    const streamDurationMs = Date.now() - streamStartTime;
+    logStreamedUsage("chat_thread", "claude-sonnet-4-6", { input_tokens: 0, output_tokens: 0 }, streamDurationMs, content.substring(0, 200), fullResponse.substring(0, 200));
 
     await db.insert(chatMessagesTable).values({
       threadId,

@@ -250,6 +250,33 @@ export const planItemsTable = pgTable("plan_items", {
   index("idx_pi_status").on(table.status),
 ]);
 
+export const aiUsageLogsTable = pgTable("ai_usage_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+  featureName: text("feature_name").notNull(),
+  provider: text("provider").notNull().default("anthropic"),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").default(0),
+  outputTokens: integer("output_tokens").default(0),
+  totalTokens: integer("total_tokens").default(0),
+  inputCostUsd: numeric("input_cost_usd", { precision: 10, scale: 6 }),
+  outputCostUsd: numeric("output_cost_usd", { precision: 10, scale: 6 }),
+  totalCostUsd: numeric("total_cost_usd", { precision: 10, scale: 6 }),
+  requestSummary: text("request_summary"),
+  responseSummary: text("response_summary"),
+  fullRequest: jsonb("full_request"),
+  fullResponse: jsonb("full_response"),
+  durationMs: integer("duration_ms"),
+  status: text("status").notNull().default("success"),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"),
+}, (table) => [
+  index("idx_aul_timestamp").on(table.timestamp),
+  index("idx_aul_feature").on(table.featureName),
+  index("idx_aul_provider").on(table.provider),
+  index("idx_aul_model").on(table.model),
+]);
+
 export const brainTrainingLogTable = pgTable("brain_training_log", {
   id: uuid("id").defaultRandom().primaryKey(),
   movedItemId: uuid("moved_item_id").references(() => planItemsTable.id, { onDelete: "cascade" }),

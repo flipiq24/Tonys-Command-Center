@@ -1,5 +1,5 @@
 import { searchFiles } from "./google-drive";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
 import { communicationLogTable, contactIntelligenceTable } from "./schema-v2";
 import { eq, ilike } from "drizzle-orm";
@@ -110,7 +110,7 @@ Analyze this call and respond in the following JSON format ONLY (no other text):
   let rawText = "";
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("plaud_transcribe", {
       model: "claude-haiku-4-5",
       max_tokens: 800,
       messages: [{ role: "user", content: prompt }],

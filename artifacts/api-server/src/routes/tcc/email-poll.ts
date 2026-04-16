@@ -5,7 +5,7 @@ import { communicationLogTable, contactsTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { updateContactComms } from "../../lib/contact-comms";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 const router: IRouter = Router();
 
 router.get("/emails/poll", async (req, res): Promise<void> => {
@@ -136,7 +136,7 @@ router.post("/emails/reclassify-new", async (req, res): Promise<void> => {
     if (!newEmails?.length) { res.json({ ok: true, added: 0 }); return; }
 
     // Classify new emails via Claude Haiku
-    const claudeResponse = await anthropic.messages.create({
+    const claudeResponse = await createTrackedMessage("email_poll", {
       model: "claude-haiku-4-5",
       max_tokens: 1024,
       system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).

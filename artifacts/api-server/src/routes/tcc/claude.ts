@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, ilike, or, sql, asc } from "drizzle-orm";
 import { ClaudePromptBody } from "@workspace/api-zod";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, meetingHistoryTable, contactsTable, checkinsTable } from "@workspace/db";
 import { businessContextTable, chatThreadsTable, chatMessagesTable, contactIntelligenceTable, contactBriefsTable, communicationLogTable, companyGoalsTable, teamRolesTable, goalCompletionsTable } from "../../lib/schema-v2";
 import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
@@ -729,7 +729,7 @@ Extract and organize the following in a clear, bulleted format:
 
 Be concise and action-oriented. Tony has ADHD — make it scannable.`;
 
-      const analysisResponse = await anthropic.messages.create({
+      const analysisResponse = await createTrackedMessage("chat_response", {
         model: "claude-sonnet-4-6",
         max_tokens: 1500,
         messages: [{ role: "user", content: prompt }],
@@ -1525,7 +1525,7 @@ router.post("/claude", async (req, res): Promise<void> => {
     activeThreadId = newThread.id;
 
     // Auto-title the new thread from the first message using Haiku
-    anthropic.messages.create({
+    createTrackedMessage("chat_response", {
       model: "claude-haiku-4-5-20251001",
       max_tokens: 30,
       messages: [{ role: "user", content: `Generate a 3-6 word title for this conversation. Title only, no quotes.\n\n"${prompt.substring(0, 200)}"` }],
@@ -1563,7 +1563,7 @@ router.post("/claude", async (req, res): Promise<void> => {
   try {
     // Agentic loop — Claude may call tools multiple times before finishing
     for (let turn = 0; turn < 5; turn++) {
-      const response = await anthropic.messages.create({
+      const response = await createTrackedMessage("chat_response", {
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
         system: systemPrompt,

@@ -18,10 +18,11 @@ import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
 import { DashboardView } from "@/components/tcc/DashboardView";
 import { BusinessView } from "@/components/tcc/BusinessView";
+import { AiUsageView } from "@/components/tcc/AiUsageView";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business" | "ai-usage";
 type BusinessTab = "goals" | "team" | "tasks" | "plan";
 
 export default function App() {
@@ -702,6 +703,15 @@ export default function App() {
         onTabChange={setBusinessTab}
         onBack={() => persistView("dashboard")}
       />
+    </div>
+  );
+
+  // ═══ AI USAGE VIEW ═══
+  if (view === "ai-usage") return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
+      {sharedHeader}
+      {sharedModals}
+      <AiUsageView onBack={() => persistView("dashboard")} />
     </div>
   );
 

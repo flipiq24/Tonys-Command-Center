@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, gte, ilike, desc as descOrder, sql as sqlExpr, inArray } from "drizzle-orm";
 import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable } from "@workspace/db";
 import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2.js";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
 import { getSlackChannelHistory } from "../../lib/slack.js";
@@ -145,7 +145,7 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
       if (msgId) msgIdMap.set(key, msgId);
     }
 
-    const claudeResponse = await anthropic.messages.create({
+    const claudeResponse = await createTrackedMessage("brief_email_triage", {
       model: "claude-haiku-4-5",
       max_tokens: 1024,
       system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
@@ -435,7 +435,7 @@ async function generateClaudeBrief(
       ? linearData.map(i => `[${i.id}] ${i.task} (${i.level} priority)`).join("\n")
       : "No open Linear issues";
 
-    const message = await anthropic.messages.create({
+    const message = await createTrackedMessage("brief_claude_generate", {
       model: "claude-haiku-4-5",
       max_tokens: 2048,
       system: `You generate Tony Diaz's daily brief. He is CEO of FlipIQ (AI-powered real estate wholesaling SaaS).
@@ -716,7 +716,7 @@ router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
       ? `Tony's spiritual engagement: MODERATE (Bible missed ${missedBible} of last ${last5Checkins.length} days). Acknowledge the inconsistency briefly, encourage getting back on track.`
       : `Tony's spiritual engagement: STRONG (Bible read consistently). Affirm this briefly.`;
 
-    const message = await anthropic.messages.create({
+    const message = await createTrackedMessage("brief_spiritual_anchor", {
       model: "claude-haiku-4-5",
       max_tokens: 300,
       messages: [{

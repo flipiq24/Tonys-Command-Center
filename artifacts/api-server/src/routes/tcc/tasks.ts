@@ -5,7 +5,7 @@ import { eq, gte, and, desc } from "drizzle-orm";
 import { getLinearIssues } from "../../lib/linear";
 import { todayPacific } from "../../lib/dates.js";
 import { localTasksTable } from "../../lib/schema-v2";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { z } from "zod/v4";
 import { createGoogleTask, completeGoogleTask, listGoogleTasks } from "../../lib/gtasks.js";
 
@@ -207,7 +207,7 @@ async function checkTaskPriority(
 
   const taskList = allTasks.map((t, i) => `${i + 1}. [${t.source}] ${t.text}`).join("\n");
 
-  const msg = await anthropic.messages.create({
+  const msg = await createTrackedMessage("task_classify", {
     model: "claude-haiku-4-5",
     max_tokens: 512,
     messages: [{

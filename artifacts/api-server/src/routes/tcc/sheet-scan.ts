@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { agentMailRequest } from "../../lib/agentmail";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { db, callLogTable, taskCompletionsTable } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
@@ -111,7 +111,7 @@ Return a JSON object with this exact shape:
 Include all 10 call rows; mark checked=false if checkbox is blank/unchecked.
 For confidence: high = can clearly read text, medium = partially legible, low = very hard to read.`;
 
-    const visionResponse = await anthropic.messages.create({
+    const visionResponse = await createTrackedMessage("sheet_scan", {
       model: "claude-opus-4-5",
       max_tokens: 1024,
       messages: [

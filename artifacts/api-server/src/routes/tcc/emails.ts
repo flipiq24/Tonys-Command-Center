@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, emailTrainingTable, emailSnoozesTable, systemInstructionsTable } from "@workspace/db";
 import { EmailActionBody } from "@workspace/api-zod";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { sendEmail } from "../../lib/gmail.js";
 import { getGmail } from "../../lib/google-auth.js";
 import { todayPacific } from "../../lib/dates.js";
@@ -24,7 +24,7 @@ async function regenerateBrain(): Promise<string> {
   ).join("\n");
 
   try {
-    const msg = await anthropic.messages.create({
+    const msg = await createTrackedMessage("email_triage", {
       model: "claude-haiku-4-5",
       max_tokens: 1024,
       messages: [{
@@ -227,7 +227,7 @@ router.post("/emails/action", async (req, res): Promise<void> => {
     const { notes } = parsed.data;
     let draft = "";
     try {
-      const message = await anthropic.messages.create({
+      const message = await createTrackedMessage("email_action", {
         model: "claude-sonnet-4-6",
         max_tokens: 8192,
         system: `You are Tony Diaz's AI assistant. Tony runs FlipIQ, a real estate wholesale platform. 

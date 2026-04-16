@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { gte } from "drizzle-orm";
 import { db, callLogTable, ideasTable } from "@workspace/db";
 import { createEvent } from "../../lib/gcal.js";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { postSlackMessage } from "../../lib/slack.js";
 import z from "zod";
 
@@ -69,7 +69,7 @@ async function checkMeetingScope(title: string, description?: string): Promise<{
   warning?: string;
 }> {
   try {
-    const msg = await anthropic.messages.create({
+    const msg = await createTrackedMessage("schedule_optimize", {
       model: "claude-haiku-4-5",
       max_tokens: 256,
       messages: [{
@@ -288,7 +288,7 @@ Return ONLY a valid JSON array, no markdown, no explanation. Format:
 [{"start":"8:00 AM","end":"9:00 AM","label":"Sales Calls","items":["Call Mike Torres (Hot — Coko Acq.)","Call Sarah Chen (Warm)"],"tip":"Open with a question, not a pitch."}]`;
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await createTrackedMessage("schedule_optimize", {
       model: "claude-opus-4-5",
       max_tokens: 1200,
       messages: [{ role: "user", content: prompt }],

@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { planItemsTable, brainTrainingLogTable, businessContextTable } from "../../lib/schema-v2";
 import { eq, and, asc, desc } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncTasksTab } from "./sheets-sync";
 
 const router: IRouter = Router();
@@ -714,7 +714,7 @@ TONY'S EXPLANATION: "${explanation}"
 Write a concise 2-3 sentence reflection (under 80 words) that is relevant to the direction Tony moved the task. If moved DOWN (less important), acknowledge what is more urgent and why deprioritizing makes sense. If moved UP (more important), confirm the reasoning or note a tradeoff. Be direct — no fluff. Start with "Got it —" or similar.`;
 
       try {
-        const msg = await anthropic.messages.create({
+        const msg = await createTrackedMessage("plan_organize", {
           model: "claude-haiku-4-5",
           max_tokens: 200,
           messages: [{ role: "user", content: prompt }],
@@ -807,7 +807,7 @@ Re-rank ALL ${activeTasks.length} tasks in optimal sprint priority order. Consid
 Return ONLY a JSON object with the key "priorityOrder" containing an array of ALL task IDs in optimal order (no markdown, no explanation):
 {"priorityOrder": ["id1","id2","id3",...]}`;
 
-    const msg = await anthropic.messages.create({
+    const msg = await createTrackedMessage("plan_organize", {
       model: "claude-sonnet-4-5",
       max_tokens: 4000,
       messages: [{ role: "user", content: prompt }],
@@ -940,7 +940,7 @@ At which index (0 = top) should the new task be inserted? Consider:
 
 Return ONLY a JSON object: {"insertAt": <number>}`;
 
-    const msg = await anthropic.messages.create({
+    const msg = await createTrackedMessage("plan_organize", {
       model: "claude-haiku-4-5",
       max_tokens: 100,
       messages: [{ role: "user", content: prompt }],

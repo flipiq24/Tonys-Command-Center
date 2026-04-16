@@ -1076,6 +1076,8 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterWeek, setFilterWeek] = useState("");
+  const [sortCol, setSortCol] = useState<string>("");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [showAdd, setShowAdd] = useState(false);
   const [prefillData, setPrefillData] = useState<Record<string, string> | null>(null);
   const [placementToast, setPlacementToast] = useState<string | null>(null);
@@ -1126,6 +1128,34 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   if (filterStatus) displayed = displayed.filter(t => t.status === filterStatus);
   if (filterPriority) displayed = displayed.filter(t => t.priority === filterPriority);
   if (filterWeek) displayed = displayed.filter(t => String(t.weekNumber) === filterWeek);
+
+  // Sort
+  if (sortCol) {
+    const SORT_KEYS: Record<string, (t: PlanItem & { sprintId?: string }) => string> = {
+      "Sprint ID": t => t.sprintId || "",
+      "Tier": t => t.executionTier || "",
+      "Category": t => t.category || "",
+      "Sub-Category": t => t.subcategory || "",
+      "Task": t => t.title || "",
+      "Atomic KPI": t => t.atomicKpi || "",
+      "Owner": t => t.owner || "",
+      "Co-Owner": t => t.coOwner || "",
+      "Source": t => t.source || "",
+      "Priority": t => t.priority || "",
+      "Status": t => t.status || "",
+      "Due Date": t => t.dueDate || "",
+      "Completed": t => t.completedAt || "",
+      "Notes": t => t.workNotes || "",
+      "Linear": t => t.linearId || "",
+    };
+    const keyFn = SORT_KEYS[sortCol];
+    if (keyFn) {
+      displayed = [...displayed].sort((a, b) => {
+        const av = keyFn(a).toLowerCase(), bv = keyFn(b).toLowerCase();
+        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      });
+    }
+  }
 
   async function handleToggle(id: string, complete: boolean) {
     // Optimistic UI update — instant visual feedback
@@ -1392,7 +1422,13 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
           <thead>
             <tr style={{ background: C.card, borderBottom: `2px solid ${C.brd}` }}>
               {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Co-Owner","Source","Priority","Status","Due Date","Completed","Notes","Linear"].map((h, i) => (
-                <th key={i} style={{ position: "sticky", top: 0, background: C.card, fontSize: 10, fontWeight: 700, color: C.sub, textAlign: "left", padding: "8px 10px", whiteSpace: "nowrap", borderRight: `1px solid ${C.brd}`, borderBottom: `2px solid ${C.brd}`, zIndex: 10 }}>{h}</th>
+                <th key={i} onClick={() => {
+                  if (!h) return;
+                  if (sortCol === h) setSortDir(d => d === "asc" ? "desc" : "asc");
+                  else { setSortCol(h); setSortDir("asc"); }
+                }} style={{ position: "sticky", top: 0, background: C.card, fontSize: 10, fontWeight: 700, color: sortCol === h ? "#F97316" : C.sub, textAlign: "left", padding: "8px 10px", whiteSpace: "nowrap", borderRight: `1px solid ${C.brd}`, borderBottom: `2px solid ${C.brd}`, zIndex: 10, cursor: h ? "pointer" : "default", userSelect: "none" }}>
+                  {h}{sortCol === h ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                </th>
               ))}
             </tr>
           </thead>

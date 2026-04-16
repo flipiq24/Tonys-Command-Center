@@ -139,15 +139,13 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
               }}>
                 {loadingUnread ? "Loading..." : showUnread ? "Hide Unread" : "See Unread Emails"}
               </button>
-              {unclassifiedEmails.length > 0 && (
-                <button onClick={() => setShowUnclassified(v => !v)} style={{
-                  background: showUnclassified ? "#FEF9C3" : "#F3F4F6", color: showUnclassified ? "#92400E" : "#374151",
-                  border: `1px solid ${showUnclassified ? "#F59E0B" : "#D1D5DB"}`, borderRadius: 6,
-                  padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
-                }}>
-                  {showUnclassified ? "Hide" : "See"} {unclassifiedEmails.length} Unclassified
-                </button>
-              )}
+              <button onClick={() => setShowUnclassified(v => !v)} style={{
+                background: showUnclassified ? "#FEF9C3" : "#F3F4F6", color: showUnclassified ? "#92400E" : "#374151",
+                border: `1px solid ${showUnclassified ? "#F59E0B" : "#D1D5DB"}`, borderRadius: 6,
+                padding: "4px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer",
+              }}>
+                {showUnclassified ? "Hide Unclassified" : unclassifiedEmails.length > 0 ? `See ${unclassifiedEmails.length} Unclassified` : "See Unclassified"}
+              </button>
               {onReclassify && (
                 <button onClick={onReclassify} disabled={reclassifying} style={{
                   background: reclassifying ? "#93C5FD" : "#2563EB", color: "#fff", border: "none", borderRadius: 6,
@@ -189,6 +187,11 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
           )}
 
           {/* Unclassified emails section */}
+          {showUnclassified && unclassifiedEmails.length === 0 && (
+            <div style={{ background: "#FEF9C3", border: "1px solid #F59E0B", borderRadius: 8, padding: "12px 16px", marginBottom: 14, fontSize: 13, color: "#92400E" }}>
+              No unclassified emails. All emails have been classified.
+            </div>
+          )}
           {showUnclassified && unclassifiedEmails.length > 0 && (
             <div style={{ background: "#FEF9C3", border: "1px solid #F59E0B", borderRadius: 8, padding: "12px 16px", marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#92400E", marginBottom: 8 }}>

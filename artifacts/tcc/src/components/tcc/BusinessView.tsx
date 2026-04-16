@@ -783,6 +783,11 @@ function TaskDetailModal({ task, onClose, onSaved }: {
     owner: task.owner || "",
     priority: task.priority || "",
     title: task.title || "",
+    category: task.category || "",
+    subcategory: task.subcategory || "",
+    executionTier: task.executionTier || "Sprint",
+    source: task.source || "manual",
+    linearId: task.linearId || "",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -869,10 +874,51 @@ function TaskDetailModal({ task, onClose, onSaved }: {
             </div>
           </div>
 
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={lbl}>Category</label>
+              <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} style={inp}>
+                <option value="">—</option>
+                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Subcategory</label>
+              <input value={form.subcategory} onChange={e => setForm(p => ({ ...p, subcategory: e.target.value }))} style={inp} placeholder="e.g. Operator Assessment" />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <label style={lbl}>Execution Tier</label>
+              <select value={form.executionTier} onChange={e => setForm(p => ({ ...p, executionTier: e.target.value }))} style={inp}>
+                <option value="Sprint">Sprint</option>
+                <option value="Strategic">Strategic</option>
+                <option value="Maintenance">Maintenance</option>
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Source</label>
+              <select value={form.source} onChange={e => setForm(p => ({ ...p, source: e.target.value }))} style={inp}>
+                <option value="manual">Manual</option>
+                <option value="OAP">OAP</option>
+                <option value="Linear">Linear</option>
+                <option value="TCC">TCC</option>
+              </select>
+            </div>
+          </div>
+
           <div>
             <label style={lbl}>Due date</label>
             <input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} style={inp} />
           </div>
+
+          {form.source === "Linear" && (
+            <div>
+              <label style={lbl}>Linear ID</label>
+              <input value={form.linearId} onChange={e => setForm(p => ({ ...p, linearId: e.target.value }))} style={inp} placeholder="e.g. COM-341" />
+            </div>
+          )}
 
           <div>
             <label style={lbl}>Atomic KPI</label>
@@ -890,11 +936,11 @@ function TaskDetailModal({ task, onClose, onSaved }: {
             />
           </div>
 
-          {task.linearId && (
+          {(task.linearId || form.linearId) && (
             <div>
-              <label style={lbl}>Linear</label>
-              <a href={`https://linear.app/issue/${task.linearId}`} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 13, color: C.blu }}>{task.linearId}</a>
+              <label style={lbl}>Linear Link</label>
+              <a href={`https://linear.app/issue/${form.linearId || task.linearId}`} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: 13, color: C.blu }}>{form.linearId || task.linearId} ↗</a>
             </div>
           )}
         </div>

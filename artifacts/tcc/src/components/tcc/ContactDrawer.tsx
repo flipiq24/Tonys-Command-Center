@@ -62,7 +62,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [meetingsLoaded, setMeetingsLoaded] = useState(false);
   const [interacted, setInteracted] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
 
   const currentIndex = contacts && contactId ? contacts.findIndex(c => String(c.id) === contactId) : -1;
   const total = contacts?.length ?? 0;
@@ -123,16 +123,13 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
     setInteracted(true);
   }, []);
 
-  useEffect(() => {
+  const handleManualSave = useCallback(async () => {
     if (!hasChanges || !contactId) return;
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    setSaveMsg("Unsaved…");
-    autoSaveTimer.current = setTimeout(async () => {
-      setSaving(true);
-      try {
-        const payload: Record<string, unknown> = {};
-        const fields: (keyof Contact)[] = [
-          "name", "company", "title", "phone", "email", "status", "pipelineStage",
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {};
+      const fields: (keyof Contact)[] = [
+        "name", "company", "title", "phone", "email", "status", "pipelineStage",
           "type", "category", "dealValue", "dealProbability", "leadSource", "linkedinUrl", "website",
           "nextStep", "notes", "followUpDate", "expectedCloseDate", "lastContactDate", "tags",
         ];
@@ -152,9 +149,12 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
       } finally {
         setSaving(false);
       }
-    }, 1500);
-    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [draft, hasChanges, contactId, onUpdated]);
+
+  const handleClose = useCallback(() => {
+    if (hasChanges) { setShowUnsavedWarning(true); return; }
+    onClose();
+  }, [hasChanges, onClose]);
 
   const handleAddNote = useCallback(async () => {
     if (!contactId || !noteText.trim()) return;
@@ -187,9 +187,28 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   return (
     <>
       <div
-        onClick={onClose}
+        onClick={handleClose}
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.18)", zIndex: 999, backdropFilter: "blur(1px)" }}
       />
+      {/* Unsaved changes warning dialog */}
+      {showUnsavedWarning && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ background: "#fff", borderRadius: 12, padding: "24px 28px", maxWidth: 380, boxShadow: "0 8px 30px rgba(0,0,0,0.15)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#B45309", marginBottom: 8 }}>Unsaved Changes</div>
+            <div style={{ fontSize: 13, color: "#374151", marginBottom: 16 }}>You have unsaved changes. Save them before closing to keep your updates.</div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => { setShowUnsavedWarning(false); setHasChanges(false); onClose(); }} style={{
+                background: "#F3F4F6", color: "#374151", border: "1px solid #D1D5DB", borderRadius: 6,
+                padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}>Discard & Close</button>
+              <button onClick={async () => { setShowUnsavedWarning(false); await handleManualSave(); onClose(); }} style={{
+                background: "#F59E0B", color: "#fff", border: "none", borderRadius: 6,
+                padding: "7px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>Save & Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{
         position: "fixed", top: 0, right: 0, width: 440, height: "100vh",
         background: "#FFF", borderLeft: `1px solid ${C.brd}`, zIndex: 1000,
@@ -216,7 +235,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   {showFilters ? "Hide Filters" : `Filters${hasActiveFilters ? " ●" : ""}`}
                 </button>
               )}
-              <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 18, padding: "0 2px", lineHeight: 1, marginLeft: 2 }}>✕</button>
+              <button onClick={handleClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 18, padding: "0 2px", lineHeight: 1, marginLeft: 2 }}>✕</button>
             </div>
 
             {/* Row 2: filter dropdowns (collapsible) */}
@@ -280,8 +299,21 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                     {contact.followUpDate && <span style={{ fontSize: 11, fontWeight: 700, color: isOverdue(contact.followUpDate) ? C.red : C.mut }}>{contact.followUpDate}</span>}
                   </div>
                 </div>
-                <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 20, padding: 4, lineHeight: 1, flexShrink: 0 }}>✕</button>
+                <button onClick={handleClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.mut, fontSize: 20, padding: 4, lineHeight: 1, flexShrink: 0 }}>✕</button>
               </div>
+              {hasChanges && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0 8px", borderTop: `1px solid ${C.brd}` }}>
+                  <span style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>Unsaved changes</span>
+                  <button onClick={handleManualSave} disabled={saving} style={{
+                    background: "#F59E0B", color: "#fff", border: "none", borderRadius: 6,
+                    padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: saving ? "default" : "pointer",
+                    opacity: saving ? 0.6 : 1,
+                  }}>{saving ? "Saving..." : "Save Changes"}</button>
+                </div>
+              )}
+              {saveMsg && !hasChanges && (
+                <div style={{ fontSize: 11, color: C.grn, fontWeight: 600, padding: "4px 0" }}>{saveMsg}</div>
+              )}
               <div style={{ display: "flex", gap: 5, paddingBottom: 12, flexWrap: "wrap" }}>
                 {contact.phone && (
                   <a href={`tel:${contact.phone}`} onClick={() => onAttempt({ id: contact.id, name: contact.name })} style={{ flex: 1, minWidth: 60, padding: "8px 4px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F, textAlign: "center", textDecoration: "none", display: "block" }}>Call</a>

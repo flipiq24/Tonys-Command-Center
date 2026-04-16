@@ -103,12 +103,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
     refreshContact(contactId, true);
   }, [contactId, refreshContact]);
 
-  // Silently refresh activity data periodically while drawer is open (catches email sends, etc.)
-  useEffect(() => {
-    if (!contactId) return;
-    const interval = setInterval(() => refreshContact(contactId, false), 5000);
-    return () => clearInterval(interval);
-  }, [contactId, refreshContact]);
+  // No periodic refresh — data refreshes on tab switch or after user actions
 
   useEffect(() => {
     if (activeTab !== "meetings" || meetingsLoaded || !contact?.name) return;

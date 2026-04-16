@@ -6,7 +6,7 @@ import { readGoogleDoc } from "../../lib/google-drive";
 import { businessContextTable, contactIntelligenceTable, communicationLogTable, planItemsTable } from "../../lib/schema-v2";
 import { sync411FromSheet, syncTeamFromSheet } from "./business";
 import { eq, desc, asc } from "drizzle-orm";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates";
 
 const router: IRouter = Router();
@@ -85,7 +85,7 @@ export async function syncContactsTab(): Promise<void> {
     for (const n of allNotes) {
       if (!n.contactId) continue;
       const arr = notesByContact.get(n.contactId) || [];
-      arr.push(`Note ${arr.length + 1}: ${(n.content || "").substring(0, 200)}`);
+      arr.push(`Note ${arr.length + 1}: ${(n.text || "").substring(0, 200)}`);
       notesByContact.set(n.contactId, arr);
     }
     const commsByContact = new Map<string, string[]>();
@@ -93,7 +93,8 @@ export async function syncContactsTab(): Promise<void> {
       if (!c.contactId) continue;
       const arr = commsByContact.get(c.contactId) || [];
       const dateStr = c.loggedAt ? new Date(c.loggedAt).toLocaleDateString("en-US", { timeZone: "America/Los_Angeles" }) : "";
-      arr.push(`${c.channel || "unknown"} (${dateStr}): ${(c.summary || c.subject || "").substring(0, 150)}`);
+      let summary = (c.summary || c.subject || "").substring(0, 150).replace(/```[\s\S]*?```/g, "").replace(/\{[\s\S]*?\}/g, "").replace(/\n/g, " ").trim();
+      arr.push(`${c.channel || "unknown"} (${dateStr}): ${summary}`);
       commsByContact.set(c.contactId, arr);
     }
 
@@ -169,7 +170,7 @@ export async function syncContextIngest(): Promise<void> {
     }
     let summary = docText.substring(0, 500);
     try {
-      const msg = await anthropic.messages.create({
+      const msg = await createTrackedMessage("sheets_sync", {
         model: "claude-haiku-4-5",
         max_tokens: 256,
         messages: [{
@@ -277,7 +278,7 @@ router.post("/sheets/ingest-90-day-plan", async (req, res): Promise<void> => {
     // Use Claude to summarize the document
     let summary = docText.substring(0, 500);
     try {
-      const msg = await anthropic.messages.create({
+      const msg = await createTrackedMessage("sheets_sync", {
         model: "claude-haiku-4-5",
         max_tokens: 256,
         messages: [{
@@ -319,7 +320,7 @@ router.post("/sheets/ingest-business-plan", async (_req, res): Promise<void> => 
     }
     let summary = docText.substring(0, 500);
     try {
-      const msg = await anthropic.messages.create({
+      const msg = await createTrackedMessage("sheets_sync", {
         model: "claude-haiku-4-5",
         max_tokens: 256,
         messages: [{

@@ -83,76 +83,234 @@ export async function syncTasksTab(): Promise<void> {
   }
 }
 
-// ─── Sheets → DB reverse sync: pull Type + Sub-Type (parent master title) back into DB ───
-export async function syncTasksFromSheet(): Promise<{ ok: boolean; updated: number; skipped: number; error?: string }> {
-  if (!BUSINESS_MASTER_SHEET_ID) return { ok: false, updated: 0, skipped: 0, error: "BUSINESS_MASTER_SHEET_ID not set" };
+// ─── Sheets → DB FULL RESYNC ───
+// Flushes all level="task" rows in DB, then re-imports everything from "Master Task List" sheet.
+// Uses Sprint ID pattern to determine hierarchy:
+//   - ADP-02 = master
+//   - ADP-02.1, ADP-02.3 = sub-tasks of ADP-02 (parent inferred by stripping decimal)
+// Category/subcategory rows (level != "task") are left untouched.
+export async function syncTasksFromSheet(): Promise<{ ok: boolean; inserted: number; masters: number; subs: number; skipped: number; flushed: number; error?: string }> {
+  if (!BUSINESS_MASTER_SHEET_ID) return { ok: false, inserted: 0, masters: 0, subs: 0, skipped: 0, flushed: 0, error: "BUSINESS_MASTER_SHEET_ID not set" };
   try {
     const rows = await getSheetValues(BUSINESS_MASTER_SHEET_ID, "Master Task List!A:Z");
-    if (rows.length < 2) return { ok: true, updated: 0, skipped: 0 };
+    console.log(`[sheets-sync] syncTasksFromSheet: fetched ${rows.length} rows from sheet`);
+    if (rows.length < 2) return { ok: false, inserted: 0, masters: 0, subs: 0, skipped: 0, flushed: 0, error: `Sheet returned only ${rows.length} rows. Check tab name 'Master Task List' or sheet permissions.` };
 
     const header = rows[0].map(h => (h || "").toString().trim().toLowerCase());
-    const titleIdx = header.indexOf("task");
-    const typeIdx = header.findIndex(h => h === "type");
-    const subTypeIdx = header.findIndex(h => h === "sub-type" || h === "subtype" || h === "parent task" || h === "parent");
-    const linearIdx = header.indexOf("linear id");
+    const idx = (...names: string[]) => {
+      for (const n of names) {
+        const i = header.indexOf(n.toLowerCase());
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+    const sprintIdIdx = idx("sprint id", "sprintid");
+    const typeIdx = idx("type");
+    const titleIdx = idx("task", "title");
+    const sourceIdx = idx("source");
+    const ownerIdx = idx("owner");
+    const coOwnerIdx = idx("co-owner", "coowner");
+    const priorityIdx = idx("priority");
+    const statusIdx = idx("status");
+    const categoryIdx = idx("category");
+    const subcategoryIdx = idx("subcategory", "sub-category");
+    const tierIdx = idx("execution tier", "tier");
+    const completedIdx = idx("completed date", "completed");
+    const dueIdx = idx("due date", "due");
+    const notesIdx = idx("notes");
+    const kpiIdx = idx("atomic kpi", "kpi");
+    const linearIdx = idx("linear id");
 
-    if (titleIdx === -1) {
-      return { ok: false, updated: 0, skipped: 0, error: "'Task' column not found in sheet header" };
-    }
+    if (sprintIdIdx === -1) return { ok: false, inserted: 0, masters: 0, subs: 0, skipped: 0, flushed: 0, error: `'Sprint ID' column not found. Headers seen: ${JSON.stringify(header)}` };
+    if (titleIdx === -1) return { ok: false, inserted: 0, masters: 0, subs: 0, skipped: 0, flushed: 0, error: `'Task' column not found. Headers seen: ${JSON.stringify(header)}` };
 
-    // Load all DB tasks once
-    const dbTasks = await db.select().from(planItemsTable).where(eq(planItemsTable.level, "task"));
-    const byTitle = new Map(dbTasks.map(t => [t.title.trim().toLowerCase(), t]));
-    const byLinear = new Map(dbTasks.filter(t => t.linearId).map(t => [t.linearId!, t]));
-
-    const normalizeType = (raw: string): "master" | "subtask" | "note" => {
-      const v = (raw || "").trim().toLowerCase();
-      if (v === "sub" || v === "subtask" || v === "sub-task") return "subtask";
-      if (v === "note") return "note";
-      return "master";
+    const normalizeCategory = (c: string) => (c || "").toLowerCase().trim();
+    const normalizeStatus = (s: string): string => {
+      const v = (s || "").toLowerCase().trim();
+      if (v === "completed" || v === "done") return "completed";
+      if (v === "not started" || v === "pending") return "pending";
+      return "active";
+    };
+    const normalizePriority = (p: string): string => {
+      const v = (p || "").toUpperCase().trim();
+      return v === "P0" || v === "P1" || v === "P2" ? v : "P2";
+    };
+    const stripTreePrefix = (t: string) => t.replace(/^[└├─│\s]+/, "").trim();
+    const parseDate = (d: string): string | null => {
+      if (!d) return null;
+      const trimmed = d.trim();
+      if (!trimmed) return null;
+      // Accept YYYY-MM-DD directly; try parsing other formats
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+      const parsed = new Date(trimmed);
+      if (isNaN(parsed.getTime())) return null;
+      return parsed.toISOString().split("T")[0];
     };
 
-    let updated = 0, skipped = 0;
+    interface SheetRow {
+      sprintId: string;
+      parentSprintId: string | null;
+      isSub: boolean;
+      typeHint: string; // "Master" | "Sub" | "Note" | ""
+      title: string;
+      category: string;
+      subcategory: string;
+      owner: string;
+      coOwner: string;
+      priority: string;
+      status: string;
+      tier: string;
+      dueDate: string | null;
+      completedDate: string | null;
+      notes: string;
+      kpi: string;
+      source: string;
+      linearId: string;
+    }
 
-    // Two-pass: first pass updates taskType on all rows, second pass resolves parentTaskId (needs masters' taskType set first)
-    const plan: { dbId: string; taskType: "master" | "subtask" | "note"; parentTitle: string }[] = [];
+    const sheetRows: SheetRow[] = [];
+    let skipped = 0;
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      const title = (row[titleIdx] || "").toString().trim();
-      if (!title) { skipped++; continue; }
-      const linearId = linearIdx >= 0 ? (row[linearIdx] || "").toString().trim() : "";
-      const match = (linearId && byLinear.get(linearId)) || byTitle.get(title.toLowerCase());
-      if (!match) { skipped++; continue; }
-      const taskType = typeIdx >= 0 ? normalizeType(row[typeIdx]) : "master";
-      const parentTitle = subTypeIdx >= 0 ? (row[subTypeIdx] || "").toString().trim() : "";
-      plan.push({ dbId: match.id, taskType, parentTitle });
+      const sprintId = (row[sprintIdIdx] || "").toString().trim();
+      const title = stripTreePrefix((row[titleIdx] || "").toString());
+      if (!sprintId || !title) { skipped++; continue; }
+      const decimalMatch = sprintId.match(/^([A-Z]+-\d+)\.(\d+)$/);
+      const isSub = !!decimalMatch;
+      const parentSprintId = isSub ? decimalMatch![1] : null;
+      sheetRows.push({
+        sprintId,
+        parentSprintId,
+        isSub,
+        typeHint: typeIdx >= 0 ? (row[typeIdx] || "").toString().trim() : "",
+        title,
+        category: normalizeCategory((row[categoryIdx] || "").toString()),
+        subcategory: subcategoryIdx >= 0 ? (row[subcategoryIdx] || "").toString().trim() : "",
+        owner: ownerIdx >= 0 ? (row[ownerIdx] || "").toString().trim() : "",
+        coOwner: coOwnerIdx >= 0 ? (row[coOwnerIdx] || "").toString().trim() : "",
+        priority: normalizePriority(priorityIdx >= 0 ? (row[priorityIdx] || "").toString() : ""),
+        status: normalizeStatus(statusIdx >= 0 ? (row[statusIdx] || "").toString() : ""),
+        tier: tierIdx >= 0 ? (row[tierIdx] || "").toString().trim() : "Sprint",
+        dueDate: parseDate(dueIdx >= 0 ? (row[dueIdx] || "").toString() : ""),
+        completedDate: parseDate(completedIdx >= 0 ? (row[completedIdx] || "").toString() : ""),
+        notes: notesIdx >= 0 ? (row[notesIdx] || "").toString().trim() : "",
+        kpi: kpiIdx >= 0 ? (row[kpiIdx] || "").toString().trim() : "",
+        source: sourceIdx >= 0 ? (row[sourceIdx] || "").toString().trim() : "manual",
+        linearId: linearIdx >= 0 ? (row[linearIdx] || "").toString().trim() : "",
+      });
     }
 
-    // Pass 1: set taskType on all rows
-    for (const p of plan) {
-      await db.update(planItemsTable).set({ taskType: p.taskType }).where(eq(planItemsTable.id, p.dbId));
+    // Load category/subcategory rows to resolve parentId FK
+    const catRows = await db.select().from(planItemsTable).where(eq(planItemsTable.level, "category"));
+    const subcatRows = await db.select().from(planItemsTable).where(eq(planItemsTable.level, "subcategory"));
+    const catByName = new Map(catRows.map(c => [c.category.toLowerCase(), c.id]));
+    const subcatByName = new Map(subcatRows.map(s => [`${(s.category || "").toLowerCase()}|${(s.title || "").toLowerCase()}`, s.id]));
+
+    // FLUSH all existing tasks (preserve category/subcategory rows)
+    const flushResult = await db.delete(planItemsTable).where(eq(planItemsTable.level, "task")).returning({ id: planItemsTable.id });
+    const flushed = flushResult.length;
+
+    // Split into masters + subs
+    const masterRows = sheetRows.filter(r => !r.isSub);
+    const subRows = sheetRows.filter(r => r.isSub);
+
+    // Sort by sprintId naturally so priorityOrder matches the sheet sequence
+    const natSort = (a: SheetRow, b: SheetRow) => a.sprintId.localeCompare(b.sprintId, undefined, { numeric: true });
+    masterRows.sort(natSort);
+    subRows.sort(natSort);
+
+    // Insert masters first, build sprintId → uuid map
+    const sprintToUuid = new Map<string, string>();
+    const perCategoryCounter = new Map<string, number>();
+    let mastersInserted = 0;
+
+    for (const r of masterRows) {
+      const catId = catByName.get(r.category) || null;
+      const subcatId = r.subcategory ? subcatByName.get(`${r.category}|${r.subcategory.toLowerCase()}`) : null;
+      const order = perCategoryCounter.get(r.category) ?? 0;
+      perCategoryCounter.set(r.category, order + 1);
+      const isNote = r.typeHint.toLowerCase() === "note";
+
+      const [inserted] = await db.insert(planItemsTable).values({
+        level: "task",
+        taskType: isNote ? "note" : "master",
+        category: r.category,
+        subcategory: r.subcategory || null,
+        title: r.title,
+        owner: r.owner || null,
+        coOwner: r.coOwner || null,
+        priority: isNote ? null : r.priority,
+        status: isNote ? null : r.status,
+        priorityOrder: order,
+        parentId: subcatId || catId,
+        parentTaskId: null,
+        dueDate: isNote ? null : r.dueDate,
+        completedAt: r.status === "completed" && r.completedDate
+          ? new Date(`${r.completedDate}T00:00:00Z`)
+          : null,
+        atomicKpi: r.kpi || null,
+        workNotes: r.notes || null,
+        source: r.source || "manual",
+        executionTier: r.tier || "Sprint",
+        linearId: r.linearId || null,
+        month: "2026-04",
+      }).returning();
+
+      sprintToUuid.set(r.sprintId, inserted.id);
+      mastersInserted++;
     }
 
-    // Refresh title→id map (now with updated taskType so we can find masters)
-    const refreshed = await db.select().from(planItemsTable).where(eq(planItemsTable.level, "task"));
-    const mastersByTitle = new Map(refreshed.filter(t => t.taskType === "master").map(t => [t.title.trim().toLowerCase(), t.id]));
+    // Insert subs, linking via parentTaskId from sprintToUuid map
+    const perParentCounter = new Map<string, number>();
+    let subsInserted = 0;
+    let orphanSkipped = 0;
 
-    // Pass 2: resolve parent titles → ids for subtasks and notes
-    for (const p of plan) {
-      if (p.taskType === "subtask" || p.taskType === "note") {
-        const parentId = p.parentTitle ? mastersByTitle.get(p.parentTitle.toLowerCase()) : null;
-        await db.update(planItemsTable).set({ parentTaskId: parentId || null }).where(eq(planItemsTable.id, p.dbId));
-      } else {
-        await db.update(planItemsTable).set({ parentTaskId: null }).where(eq(planItemsTable.id, p.dbId));
+    for (const r of subRows) {
+      const parentUuid = sprintToUuid.get(r.parentSprintId!);
+      if (!parentUuid) {
+        orphanSkipped++;
+        continue;
       }
-      updated++;
+      const catId = catByName.get(r.category) || null;
+      const subcatId = r.subcategory ? subcatByName.get(`${r.category}|${r.subcategory.toLowerCase()}`) : null;
+      const order = perParentCounter.get(parentUuid) ?? 0;
+      perParentCounter.set(parentUuid, order + 1);
+      const isNote = r.typeHint.toLowerCase() === "note";
+
+      await db.insert(planItemsTable).values({
+        level: "task",
+        taskType: isNote ? "note" : "subtask",
+        category: r.category,
+        subcategory: r.subcategory || null,
+        title: r.title,
+        owner: r.owner || null,
+        coOwner: r.coOwner || null,
+        priority: isNote ? null : r.priority,
+        status: isNote ? null : r.status,
+        priorityOrder: order,
+        parentId: subcatId || catId,
+        parentTaskId: parentUuid,
+        dueDate: isNote ? null : r.dueDate,
+        completedAt: r.status === "completed" && r.completedDate
+          ? new Date(`${r.completedDate}T00:00:00Z`)
+          : null,
+        atomicKpi: r.kpi || null,
+        workNotes: r.notes || null,
+        source: r.source || "manual",
+        executionTier: r.tier || "Sprint",
+        linearId: r.linearId || null,
+        month: "2026-04",
+      });
+
+      subsInserted++;
     }
 
-    console.log(`[sheets-sync] syncTasksFromSheet: ${updated} updated, ${skipped} skipped`);
-    return { ok: true, updated, skipped };
+    const inserted = mastersInserted + subsInserted;
+    console.log(`[sheets-sync] syncTasksFromSheet: flushed=${flushed}, inserted=${inserted} (${mastersInserted} masters, ${subsInserted} subs), skipped=${skipped + orphanSkipped}`);
+    return { ok: true, inserted, masters: mastersInserted, subs: subsInserted, skipped: skipped + orphanSkipped, flushed };
   } catch (err) {
     console.warn("[sheets-sync] syncTasksFromSheet failed:", (err as Error).message);
-    return { ok: false, updated: 0, skipped: 0, error: (err as Error).message };
+    return { ok: false, inserted: 0, masters: 0, subs: 0, skipped: 0, flushed: 0, error: (err as Error).message };
   }
 }
 
@@ -283,17 +441,10 @@ export async function syncContextIngest(): Promise<void> {
 }
 
 export function startAutoSync(): void {
-  if (!BUSINESS_MASTER_SHEET_ID) {
-    console.log("[sheets-sync] BUSINESS_MASTER_SHEET_ID not set — Business Master Sheet sync disabled");
-    return;
-  }
-  console.log("[sheets-sync] Starting Business Master Sheet auto-sync (every 5 minutes)");
-  const runSync = async () => {
-    await Promise.allSettled([syncTasksTab(), syncContactsTab(), syncCommsTab(), sync411FromSheet(), syncTeamFromSheet()]);
-  };
-  // Run immediately on startup, then every 5 minutes
-  runSync();
-  setInterval(runSync, 5 * 60 * 1000);
+  // DISABLED — unidirectional auto-sync kept overwriting Tony's Google Sheet.
+  // Bidirectional sync will be implemented later via webhook triggers.
+  // Manual sync is still available via POST /sheets/sync-master and /sheets/sync-tasks-from-sheet.
+  console.log("[sheets-sync] Auto-sync DISABLED. Use manual endpoints or the UI Refresh button.");
 }
 
 // ─── Check-in append — with deduplication on today's date ─────────────────────

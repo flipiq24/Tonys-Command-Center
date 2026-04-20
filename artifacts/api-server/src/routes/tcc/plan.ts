@@ -8,7 +8,11 @@ import { syncTasksTab } from "./sheets-sync";
 const router: IRouter = Router();
 
 // Helper: trigger Google Sheets sync after task mutations (fire-and-forget)
-function triggerSheetsSync() { syncTasksTab().catch(() => {}); }
+// DISABLED — unidirectional push overwrote Tony's Sheet. Webhook-based bidirectional
+// sync will replace this. `syncTasksTab` is still importable and callable manually.
+function triggerSheetsSync() { /* no-op — see webhook migration */ }
+// Keep the import usage silenced for the linter; remove-once webhook lands.
+void syncTasksTab;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

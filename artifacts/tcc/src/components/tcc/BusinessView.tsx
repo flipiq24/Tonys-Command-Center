@@ -2632,11 +2632,16 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   }
   async function handleRefreshFromSheets() {
     setRefreshMenuOpen(false);
+    if (!confirm("This will FLUSH all tasks from the DB and reimport from Google Sheets. Continue?")) return;
     setSyncing(true);
     try {
-      const r = await post<{ ok: boolean; updated: number; skipped: number; error?: string }>("/sheets/sync-tasks-from-sheet", {});
-      if (r.ok) { setToast(`✓ Pulled Sheets → DB (${r.updated} updated, ${r.skipped} skipped)`); await loadPlan(true); }
-      else setErr(r.error || "Pull failed");
+      const r = await post<{ ok: boolean; inserted: number; masters: number; subs: number; skipped: number; flushed: number; error?: string }>("/sheets/sync-tasks-from-sheet", {});
+      if (r.ok) {
+        setToast(`✓ Sheets → DB: flushed ${r.flushed}, imported ${r.masters} masters + ${r.subs} subs${r.skipped > 0 ? ` (${r.skipped} skipped)` : ""}`);
+        await loadPlan(true);
+      } else {
+        setErr(r.error || "Pull failed");
+      }
     } catch { setErr("Refresh from Sheets failed"); }
     finally { setSyncing(false); }
   }

@@ -7,7 +7,9 @@ import { syncContactsTab } from "./sheets-sync";
 
 const router: IRouter = Router();
 
-function triggerContactSync() { syncContactsTab().catch(() => {}); }
+// DISABLED — unidirectional push overwrote Tony's Sheet. Webhook-based bidirectional sync coming later.
+function triggerContactSync() { /* no-op */ }
+void syncContactsTab;
 
 router.get("/contacts", async (req, res): Promise<void> => {
   const { status, stage, type, category, search, limit = "50", offset = "0" } = req.query as Record<string, string>;

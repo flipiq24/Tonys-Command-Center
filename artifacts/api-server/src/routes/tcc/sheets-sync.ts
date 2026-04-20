@@ -346,13 +346,13 @@ export async function syncContactsTab(): Promise<void> {
     const header = [
       "ID", "Name", "Company", "Status", "Pipeline Stage", "Phone", "Email",
       "Type", "Category", "Title", "Lead Source", "Source",
-      "Deal Value", "Probability", "Follow-Up Date", "Expected Close",
+      "Deal Value", "Pain Points", "Probability", "Follow-Up Date", "Expected Close",
       "Next Step", "LinkedIn", "Website", "Tags",
       "Last Contact Date", "Notes", "Activity Log",
       "Created At", "Updated At",
     ];
     const rows: (string | null)[][] = contacts.map(c => [
-      c.id,
+      c.sheetId || c.id,
       c.name,
       c.company || null,
       c.status || null,
@@ -365,6 +365,7 @@ export async function syncContactsTab(): Promise<void> {
       c.leadSource || null,
       c.source || null,
       c.dealValue ? String(c.dealValue) : null,
+      c.painPoints || null,
       c.dealProbability ? String(c.dealProbability) : null,
       c.followUpDate || null,
       c.expectedCloseDate || null,
@@ -382,6 +383,184 @@ export async function syncContactsTab(): Promise<void> {
     console.log(`[sheets-sync] Contacts tab synced: ${rows.length} rows (${header.length} columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncContactsTab failed:", (err as Error).message);
+  }
+}
+
+// ─── Sheets → DB FULL RESYNC for contacts ───
+// Flushes all contacts (and cascades contact_notes; NULLs call_log/phone_log FKs).
+// Re-imports every row from the "Contact Master" tab, header-driven (robust to column reordering).
+// The sheet's ID column (e.g. LEAD-0001) is preserved in contacts.sheet_id.
+export async function syncContactsFromSheet(): Promise<{ ok: boolean; inserted: number; flushed: number; skipped: number; error?: string }> {
+  if (!BUSINESS_MASTER_SHEET_ID) return { ok: false, inserted: 0, flushed: 0, skipped: 0, error: "BUSINESS_MASTER_SHEET_ID not set" };
+  try {
+    const rows = await getSheetValues(BUSINESS_MASTER_SHEET_ID, "Contact Master!A:AZ");
+    console.log(`[sheets-sync] syncContactsFromSheet: fetched ${rows.length} rows from sheet`);
+    if (rows.length < 2) return { ok: false, inserted: 0, flushed: 0, skipped: 0, error: `Sheet returned only ${rows.length} rows. Check tab name 'Contact Master' or sheet permissions.` };
+
+    const header = rows[0].map(h => (h || "").toString().trim().toLowerCase());
+    const idx = (...names: string[]) => {
+      for (const n of names) {
+        const i = header.indexOf(n.toLowerCase());
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    const sheetIdIdx = idx("id");
+    const nameIdx = idx("name");
+    const companyIdx = idx("company");
+    const statusIdx = idx("status");
+    const pipelineIdx = idx("pipeline stage");
+    const phoneIdx = idx("phone");
+    const emailIdx = idx("email");
+    const typeIdx = idx("type");
+    const categoryIdx = idx("category");
+    const titleIdx = idx("title");
+    const leadSourceIdx = idx("lead source");
+    const sourceIdx = idx("source");
+    const dealValueIdx = idx("deal value");
+    const painPointsIdx = idx("pain points", "pain point", "pain point(s)");
+    const probabilityIdx = idx("probability");
+    const followUpIdx = idx("follow-up date", "follow up date");
+    const expectedCloseIdx = idx("expected close", "expected close date");
+    const nextStepIdx = idx("next step");
+    const linkedinIdx = idx("linkedin");
+    const websiteIdx = idx("website");
+    const tagsIdx = idx("tags");
+    const lastContactIdx = idx("last contact date");
+    const notesIdx = idx("notes");
+    // Activity Log (col X) is computed — we skip on reverse sync
+    const createdAtIdx = idx("created at");
+    const updatedAtIdx = idx("updated at");
+
+    if (nameIdx === -1) return { ok: false, inserted: 0, flushed: 0, skipped: 0, error: `'Name' column not found. Headers seen: ${JSON.stringify(header)}` };
+
+    const parseDate = (d: string): string | null => {
+      if (!d) return null;
+      const trimmed = d.trim();
+      if (!trimmed) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+      const parsed = new Date(trimmed);
+      if (isNaN(parsed.getTime())) return null;
+      return parsed.toISOString().split("T")[0];
+    };
+    const parseNumber = (v: string): string | null => {
+      if (!v) return null;
+      const cleaned = v.replace(/[$,\s]/g, "").trim();
+      if (!cleaned) return null;
+      const n = Number(cleaned);
+      return isNaN(n) ? null : String(n);
+    };
+    const parseInt2 = (v: string): number | null => {
+      if (!v) return null;
+      const n = parseInt(v.replace(/[%\s]/g, "").trim(), 10);
+      return isNaN(n) ? null : n;
+    };
+    const parseTags = (v: string): string[] | null => {
+      if (!v) return null;
+      const parts = v.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+      return parts.length ? parts : null;
+    };
+    const cell = (row: string[], i: number): string => (i >= 0 && row[i] !== undefined) ? row[i].toString().trim() : "";
+
+    interface ContactRow {
+      sheetId: string;
+      name: string;
+      company: string | null;
+      status: string | null;
+      pipelineStage: string | null;
+      phone: string | null;
+      email: string | null;
+      type: string | null;
+      category: string | null;
+      title: string | null;
+      leadSource: string | null;
+      source: string | null;
+      dealValue: string | null;
+      painPoints: string | null;
+      dealProbability: number | null;
+      followUpDate: string | null;
+      expectedCloseDate: string | null;
+      nextStep: string | null;
+      linkedinUrl: string | null;
+      website: string | null;
+      tags: string[] | null;
+      lastContactDate: string | null;
+      notes: string | null;
+    }
+
+    const contactRows: ContactRow[] = [];
+    let skipped = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const name = cell(row, nameIdx);
+      if (!name) { skipped++; continue; }
+      contactRows.push({
+        sheetId: cell(row, sheetIdIdx),
+        name,
+        company: cell(row, companyIdx) || null,
+        status: cell(row, statusIdx) || null,
+        pipelineStage: cell(row, pipelineIdx) || null,
+        phone: cell(row, phoneIdx) || null,
+        email: cell(row, emailIdx) || null,
+        type: cell(row, typeIdx) || null,
+        category: cell(row, categoryIdx) || null,
+        title: cell(row, titleIdx) || null,
+        leadSource: cell(row, leadSourceIdx) || null,
+        source: cell(row, sourceIdx) || null,
+        dealValue: parseNumber(cell(row, dealValueIdx)),
+        painPoints: cell(row, painPointsIdx) || null,
+        dealProbability: parseInt2(cell(row, probabilityIdx)),
+        followUpDate: parseDate(cell(row, followUpIdx)),
+        expectedCloseDate: parseDate(cell(row, expectedCloseIdx)),
+        nextStep: cell(row, nextStepIdx) || null,
+        linkedinUrl: cell(row, linkedinIdx) || null,
+        website: cell(row, websiteIdx) || null,
+        tags: parseTags(cell(row, tagsIdx)),
+        lastContactDate: parseDate(cell(row, lastContactIdx)),
+        notes: cell(row, notesIdx) || null,
+      });
+    }
+
+    // FLUSH — contact_notes cascade out; call_log / phone_log FKs set to null.
+    const flushResult = await db.delete(contactsTable).returning({ id: contactsTable.id });
+    const flushed = flushResult.length;
+
+    let inserted = 0;
+    for (const r of contactRows) {
+      await db.insert(contactsTable).values({
+        name: r.name,
+        company: r.company,
+        status: r.status || "New",
+        phone: r.phone,
+        email: r.email,
+        type: r.type,
+        category: r.category,
+        title: r.title,
+        nextStep: r.nextStep,
+        lastContactDate: r.lastContactDate,
+        notes: r.notes,
+        source: r.source,
+        pipelineStage: r.pipelineStage || "Lead",
+        dealValue: r.dealValue,
+        leadSource: r.leadSource,
+        linkedinUrl: r.linkedinUrl,
+        website: r.website,
+        tags: r.tags,
+        followUpDate: r.followUpDate,
+        expectedCloseDate: r.expectedCloseDate,
+        dealProbability: r.dealProbability,
+        painPoints: r.painPoints,
+        sheetId: r.sheetId || null,
+      });
+      inserted++;
+    }
+
+    console.log(`[sheets-sync] syncContactsFromSheet: flushed=${flushed}, inserted=${inserted}, skipped=${skipped}`);
+    return { ok: true, inserted, flushed, skipped };
+  } catch (err) {
+    console.warn("[sheets-sync] syncContactsFromSheet failed:", (err as Error).message);
+    return { ok: false, inserted: 0, flushed: 0, skipped: 0, error: (err as Error).message };
   }
 }
 
@@ -505,6 +684,13 @@ router.post("/sheets/sync-master", async (req, res): Promise<void> => {
 // ─── Sheets → DB reverse sync for tasks (pulls Type + Sub-Type back into DB) ────
 router.post("/sheets/sync-tasks-from-sheet", async (req, res): Promise<void> => {
   const result = await syncTasksFromSheet();
+  if (result.ok) res.json(result);
+  else res.status(500).json(result);
+});
+
+// ─── Sheets → DB reverse sync for contacts (flush + reimport from Contact Master tab) ────
+router.post("/sheets/sync-contacts-from-sheet", async (req, res): Promise<void> => {
+  const result = await syncContactsFromSheet();
   if (result.ok) res.json(result);
   else res.status(500).json(result);
 });

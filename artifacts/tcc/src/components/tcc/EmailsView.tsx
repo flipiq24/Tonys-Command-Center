@@ -208,15 +208,7 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
           )}
 
           {visibleEmails.map(e => (
-            <HoverCard key={e.id} rows={[
-              { label: "From", value: e.from },
-              { label: "Subject", value: e.subj || "—" },
-              { label: "Priority", value: e.p === "high" ? "High" : e.p === "med" ? "Medium" : "Normal", color: e.p === "high" ? C.red : e.p === "med" ? C.amb : undefined },
-              { label: "Why", value: e.why || "—" },
-              ...(e.contactContext ? [{ label: "Context", value: e.contactContext, color: C.blu }] : []),
-              ...(e.time ? [{ label: "Time", value: e.time }] : []),
-            ]}>
-            <div style={{ marginBottom: 10 }}>
+            <div key={e.id} style={{ marginBottom: 10 }}>
               <div style={{ padding: 14, background: e.p === "high" ? C.redBg : "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${e.p === "high" ? C.red : e.p === "med" ? C.amb : C.mut}` }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <a
@@ -232,12 +224,21 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                       style={{ fontSize: 13, color: C.blu, textDecoration: "none", lineHeight: 1 }}>✉</a>
                   </div>
                 </div>
-                <a
-                  href={gmailUrl(e)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ fontSize: 14, fontWeight: 600, marginTop: 2, display: "block", color: C.tx, textDecoration: "none" }}
-                >{e.subj}</a>
+                <HoverCard rows={[
+                  { label: "From", value: e.from },
+                  { label: "Subject", value: e.subj || "—" },
+                  { label: "Priority", value: e.p === "high" ? "High" : e.p === "med" ? "Medium" : "Normal", color: e.p === "high" ? C.red : e.p === "med" ? C.amb : undefined },
+                  { label: "Why", value: e.why || "—" },
+                  ...(e.contactContext ? [{ label: "Context", value: e.contactContext, color: C.blu }] : []),
+                  ...(e.time ? [{ label: "Time", value: e.time }] : []),
+                ]}>
+                  <a
+                    href={gmailUrl(e)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 14, fontWeight: 600, marginTop: 2, display: "inline-block", color: C.tx, textDecoration: "none" }}
+                  >{e.subj}</a>
+                </HoverCard>
 
                 {/* Info grid: Why / Action / Context */}
                 <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -383,7 +384,6 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                 </div>
               )}
             </div>
-            </HoverCard>
           ))}
 
           {unresolved === 0 && <div style={{ padding: 16, textAlign: "center", color: C.grn, fontWeight: 700, background: C.grnBg, borderRadius: 10 }}>All handled ✓</div>}

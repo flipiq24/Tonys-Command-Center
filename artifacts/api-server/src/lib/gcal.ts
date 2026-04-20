@@ -1,4 +1,5 @@
 import { getCalendar } from "./google-auth";
+import { pacificDayRangeISO } from "./dates";
 
 export async function listTodayEvents(): Promise<{
   id: string;
@@ -10,14 +11,13 @@ export async function listTodayEvents(): Promise<{
 }[]> {
   try {
     const calendar = await getCalendar();
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+    const { timeMin, timeMax } = pacificDayRangeISO();
 
     const events = await calendar.events.list({
       calendarId: "primary",
-      timeMin: startOfDay.toISOString(),
-      timeMax: endOfDay.toISOString(),
+      timeMin,
+      timeMax,
+      timeZone: "America/Los_Angeles",
       singleEvents: true,
       orderBy: "startTime",
       maxResults: 50,

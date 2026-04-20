@@ -56,6 +56,8 @@ export interface Contact {
   followUpDate?: string | null;
   expectedCloseDate?: string | null;
   dealProbability?: number | null;
+  painPoints?: string;
+  sheetId?: string;
   createdAt?: string;
   updatedAt?: string;
   _notes?: ContactNote[];

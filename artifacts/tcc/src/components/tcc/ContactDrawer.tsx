@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { get, patch, post, del } from "@/lib/api";
 import { C, F, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import { VoiceField } from "./VoiceField";
+import { PainPointsSelect } from "./PainPointsSelect";
 import type { Contact, ContactNote, CallEntry } from "./types";
 
 interface FilterState {
@@ -126,7 +127,7 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
       const fields: (keyof Contact)[] = [
         "name", "company", "title", "phone", "email", "status", "pipelineStage",
           "type", "category", "dealValue", "dealProbability", "leadSource", "linkedinUrl", "website",
-          "nextStep", "notes", "followUpDate", "expectedCloseDate", "lastContactDate", "tags",
+          "nextStep", "notes", "followUpDate", "expectedCloseDate", "lastContactDate", "tags", "painPoints",
         ];
         for (const f of fields) {
           if (f in draft) payload[f] = (draft as Record<string, unknown>)[f];
@@ -477,6 +478,11 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                   <div style={fieldRow}>
                     <label style={lbl}>Tags (comma-separated)</label>
                     <VoiceField value={(draft.tags ?? []).join(", ")} onChange={v => updateDraft("tags", v.split(",").map(t => t.trim()).filter(Boolean))} style={inp} placeholder="investor, warm, referral…" />
+                  </div>
+
+                  <div style={fieldRow}>
+                    <label style={lbl}>Pain Points</label>
+                    <PainPointsSelect value={draft.painPoints} onChange={v => updateDraft("painPoints", v)} compact />
                   </div>
 
                   <div style={fieldRow}>

@@ -129,8 +129,17 @@ const PPM      = 2;                   // pixels per minute → 1800px total
 const TL_W     = TL_TOTAL * PPM;     // 1800px
 
 function getCurrentMins() {
-  const n = new Date();
-  return n.getHours() * 60 + n.getMinutes() + n.getSeconds() / 60 + n.getMilliseconds() / 60000;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === "hour")?.value || "0");
+  const m = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+  const s = parseInt(parts.find(p => p.type === "second")?.value || "0");
+  return (h === 24 ? 0 : h) * 60 + m + s / 60;
 }
 
 function DayTimeline({ meetings, autoBlocks, onNavigate }: { meetings: CalItem[]; autoBlocks: WorkBlock[]; onNavigate?: (v: NavView) => void }) {

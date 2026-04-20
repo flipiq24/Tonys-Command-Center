@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { post } from "@/lib/api";
 import { C, F, FS, PIPELINE_STAGES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES, LEAD_SOURCES } from "./constants";
 import { VoiceField } from "./VoiceField";
+import { PainPointsSelect } from "./PainPointsSelect";
 import type { Contact } from "./types";
 
 interface Props {
@@ -23,7 +24,7 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
   const [form, setForm] = useState({
     name: "", company: "", title: "", phone: "", email: "",
     status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "",
-    notes: "",
+    notes: "", painPoints: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -113,9 +114,10 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
         type: form.type || undefined,
         category: form.category || undefined,
         notes: form.notes || undefined,
+        painPoints: form.painPoints || undefined,
       });
       onCreated(contact);
-      setForm({ name: "", company: "", title: "", phone: "", email: "", status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "", notes: "" });
+      setForm({ name: "", company: "", title: "", phone: "", email: "", status: "New", pipelineStage: "Lead", leadSource: "", type: "", category: "", notes: "", painPoints: "" });
       setCardPreview(null);
       setScanMsg("");
       onClose();
@@ -262,6 +264,11 @@ export function AddContactModal({ open, onClose, onCreated }: Props) {
               <option value="">— Select —</option>
               {LEAD_SOURCES.map(s => <option key={s}>{s}</option>)}
             </select>
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Pain Points</label>
+            <PainPointsSelect value={form.painPoints} onChange={v => setForm(p => ({ ...p, painPoints: v }))} />
           </div>
 
           <div style={{ marginBottom: 20 }}>

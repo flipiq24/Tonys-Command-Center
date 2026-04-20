@@ -7,7 +7,7 @@ import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
 import { getSlackChannelHistory } from "../../lib/slack.js";
 import { getLinearIssues, getRecentlyCompletedLinearIssues } from "../../lib/linear.js";
-import { todayPacific } from "../../lib/dates.js";
+import { todayPacific, pacificDayRangeISO } from "../../lib/dates.js";
 
 // ─── Full seed defaults — matches TCC_Seed_Data JSON ─────────────────────────
 
@@ -193,22 +193,27 @@ Promotions shape: { "from": string, "subj": string, "why": string }`,
 async function fetchLiveCalendar(): Promise<CalItem[] | null> {
   try {
     const cal = await getCalendar();
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const { timeMin, timeMax } = pacificDayRangeISO();
 
     const response = await cal.events.list({
       calendarId: "primary",
-      timeMin: startOfDay.toISOString(),
-      timeMax: endOfDay.toISOString(),
+      timeMin,
+      timeMax,
+      timeZone: "America/Los_Angeles",
       singleEvents: true,
       orderBy: "startTime",
     });
 
-    const calEvents = response.data.items || [];
+    // Skip all-day events — they have no time and don't belong on the time grid.
+    // Also skip cancelled instances.
+    const calEvents = (response.data.items || []).filter(e => {
+      if (e.status === "cancelled") return false;
+      if (e.start?.date && !e.start?.dateTime) return false;
+      return true;
+    });
     return await Promise.all(calEvents.map(async (e) => {
-      const startRaw = e.start?.dateTime || e.start?.date || "";
-      const endRaw = e.end?.dateTime || e.end?.date || "";
+      const startRaw = e.start?.dateTime || "";
+      const endRaw = e.end?.dateTime || "";
       const timeLabel = startRaw
         ? new Date(startRaw).toLocaleTimeString("en-US", {
             hour: "numeric",

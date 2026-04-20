@@ -78,6 +78,8 @@ export const contactsTable = pgTable("contacts", {
   followUpDate: date("follow_up_date"),
   expectedCloseDate: date("expected_close_date"),
   dealProbability: integer("deal_probability"),
+  painPoints: text("pain_points"),
+  sheetId: text("sheet_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [
@@ -87,6 +89,7 @@ export const contactsTable = pgTable("contacts", {
   index("contacts_pipeline_stage_idx").on(t.pipelineStage),
   index("contacts_follow_up_idx").on(t.followUpDate),
   index("contacts_phone_normalized_idx").on(t.phoneNormalized),
+  index("contacts_sheet_id_idx").on(t.sheetId),
 ]);
 
 export const callLogTable = pgTable("call_log", {

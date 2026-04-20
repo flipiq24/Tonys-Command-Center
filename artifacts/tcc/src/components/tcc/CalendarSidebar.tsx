@@ -8,7 +8,7 @@ interface Props {
   onSchedule: () => void;
 }
 
-function parseTime(t: string): Date | null {
+function parseTimeToPacificMinutes(t: string): number | null {
   const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
   if (!m) return null;
   let h = parseInt(m[1]);
@@ -16,9 +16,19 @@ function parseTime(t: string): Date | null {
   const ampm = m[3].toUpperCase();
   if (ampm === "PM" && h < 12) h += 12;
   if (ampm === "AM" && h === 12) h = 0;
-  const d = new Date();
-  d.setHours(h, min, 0, 0);
-  return d;
+  return h * 60 + min;
+}
+
+function getPacificNowMinutes(): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === "hour")?.value || "0");
+  const m = parseInt(parts.find(p => p.type === "minute")?.value || "0");
+  return (h === 24 ? 0 : h) * 60 + m;
 }
 
 function calendarUrl(htmlLink?: string, eventId?: string): string {
@@ -31,10 +41,10 @@ function calendarUrl(htmlLink?: string, eventId?: string): string {
 }
 
 export function CalendarSidebar({ items, onClose, onSchedule }: Props) {
-  const [now, setNow] = useState(new Date());
+  const [nowMin, setNowMin] = useState(getPacificNowMinutes);
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 60000);
+    const timer = setInterval(() => setNowMin(getPacificNowMinutes()), 60000);
     return () => clearInterval(timer);
   }, []);
 
@@ -56,13 +66,13 @@ export function CalendarSidebar({ items, onClose, onSchedule }: Props) {
 
       {/* Items */}
       {items.map((c, i) => {
-        const itemTime = parseTime(c.t);
-        const isPast = itemTime ? itemTime < now : false;
+        const itemMin = parseTimeToPacificMinutes(c.t);
+        const isPast = itemMin !== null ? itemMin < nowMin : false;
         const isCurrent = (() => {
-          if (!itemTime) return false;
+          if (itemMin === null) return false;
           const nextItem = items[i + 1];
-          const nextTime = nextItem ? parseTime(nextItem.t) : null;
-          return itemTime <= now && (!nextTime || nextTime > now);
+          const nextMin = nextItem ? parseTimeToPacificMinutes(nextItem.t) : null;
+          return itemMin <= nowMin && (nextMin === null || nextMin > nowMin);
         })();
 
         return (

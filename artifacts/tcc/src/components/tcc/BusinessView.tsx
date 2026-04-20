@@ -1395,6 +1395,30 @@ const CAT_PREFIX_CLIENT: Record<string, string> = {
   adaptation: "ADP", sales: "SLS", tech: "TCH", capital: "CAP", team: "TME",
 };
 
+// Build a CSV string from header + rows, with proper quoting + UTF-8 BOM for Excel.
+function buildCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
+  const esc = (v: string | number | null | undefined): string => {
+    if (v === null || v === undefined) return "";
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const lines = [headers.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))];
+  return "\uFEFF" + lines.join("\r\n");
+}
+
+function downloadBlob(filename: string, mime: string, content: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Split a Linear ID field value into individual ticket IDs (comma-separated supported).
 // Trims whitespace, drops empties, dedupes while preserving order.
 function splitLinearIds(raw: string | null | undefined): string[] {
@@ -1785,6 +1809,38 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
     setSubmittingTraining(false);
   }
 
+  function exportTasksToCsv() {
+    const titleById = new Map(tasks.map(t => [t.id, t.title] as const));
+    const headers = [
+      "Sprint ID", "Type", "Parent", "Task", "Owner", "Co-Owner",
+      "Priority", "Status", "Category", "Subcategory", "Execution Tier",
+      "Due Date", "Completed Date", "Atomic KPI", "Notes", "Source", "Linear ID",
+    ];
+    const rows = displayed.map(t => [
+      t.sprintId || "",
+      t.taskType === "subtask" ? "Sub" : t.taskType === "note" ? "Note" : "Master",
+      t.parentTaskId ? (titleById.get(t.parentTaskId) || "") : "",
+      t.title,
+      t.owner || "",
+      t.coOwner || "",
+      t.priority || "",
+      t.status || "",
+      t.category || "",
+      t.subcategory || "",
+      t.executionTier || "",
+      t.dueDate || "",
+      t.completedAt ? new Date(t.completedAt).toISOString().slice(0, 10) : "",
+      t.atomicKpi || "",
+      t.workNotes || "",
+      t.source || "",
+      t.linearId || "",
+    ]);
+    const csv = buildCsv(headers, rows);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const scope = filterCat ? `-${filterCat}` : "";
+    downloadBlob(`master-tasks${scope}-${stamp}.csv`, "text/csv;charset=utf-8", csv);
+  }
+
   async function runAiOrganize() {
     setOrganizing(true);
     try {
@@ -2019,6 +2075,20 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
             }}
           >
             {organizing ? "🧠 Thinking…" : "🧠 AI Organize"}
+          </button>
+          <button
+            onClick={exportTasksToCsv}
+            disabled={loading || displayed.length === 0}
+            title={`Export ${displayed.length} task${displayed.length === 1 ? "" : "s"} as CSV (opens in Excel)`}
+            style={{
+              padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.grn}`,
+              background: C.grnBg, color: C.grn,
+              fontSize: 12, fontWeight: 700,
+              cursor: loading || displayed.length === 0 ? "not-allowed" : "pointer",
+              fontFamily: F, opacity: loading || displayed.length === 0 ? 0.5 : 1,
+            }}
+          >
+            📥 Export
           </button>
           <button onClick={() => setShowAdd(true)} style={{ padding: "7px 16px", borderRadius: 8, border: "none", background: "#F97316", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>+ Add task</button>
         </div>

@@ -212,26 +212,31 @@ export default function App() {
     return () => clearInterval(i);
   }, []);
 
-  // 5-min meeting warnings
+  // 5-min meeting warnings (Pacific-timezone aware — times from API are Pacific)
   useEffect(() => {
     if (!brief?.calendarData) return;
-    const now = new Date();
-    const parseTime = (t: string) => {
+    const nowParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    }).formatToParts(new Date());
+    const nowH = parseInt(nowParts.find(p => p.type === "hour")?.value || "0");
+    const nowM = parseInt(nowParts.find(p => p.type === "minute")?.value || "0");
+    const nowS = parseInt(nowParts.find(p => p.type === "second")?.value || "0");
+    const nowPacificMin = (nowH === 24 ? 0 : nowH) * 60 + nowM + nowS / 60;
+    const parseTimeToMin = (t: string): number | null => {
       const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
       if (!m) return null;
       let h = parseInt(m[1]); const min = parseInt(m[2]); const ampm = m[3].toUpperCase();
       if (ampm === "PM" && h < 12) h += 12;
       if (ampm === "AM" && h === 12) h = 0;
-      const d = new Date(now);
-      d.setHours(h, min, 0, 0);
-      return d;
+      return h * 60 + min;
     };
     const timers: ReturnType<typeof setTimeout>[] = [];
     for (const item of brief.calendarData) {
       if (!item.real) continue;
-      const start = parseTime(item.t);
-      if (!start) continue;
-      const msUntilWarning = start.getTime() - now.getTime() - 5 * 60 * 1000;
+      const startMin = parseTimeToMin(item.t);
+      if (startMin === null) continue;
+      const msUntilWarning = (startMin - nowPacificMin - 5) * 60 * 1000;
       if (msUntilWarning > 0 && msUntilWarning < 8 * 60 * 60 * 1000) {
         timers.push(setTimeout(() => setMeetingWarning({ title: item.n, time: item.t, location: item.loc, attendeeBrief: (item as any).attendeeBrief || item.note || undefined }), msUntilWarning));
       }

@@ -8,7 +8,8 @@
       "Bash(source .env)",
       "Bash(set +a)",
       "Bash(source ../../.env)",
-      "Read(//c/Users/LENOVO/OneDrive/Desktop/New folder/**)"
+      "Read(//c/Users/LENOVO/OneDrive/Desktop/New folder/**)",
+      "Bash(curl -s -X POST http://localhost:8080/api/sheets/sync-contacts-from-sheet -H \"x-tcc-token: 2580\" -H \"Content-Type: application/json\")"
     ]
   }
 }

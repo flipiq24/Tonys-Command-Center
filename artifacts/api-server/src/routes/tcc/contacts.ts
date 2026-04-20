@@ -110,6 +110,7 @@ router.post("/contacts", async (req, res): Promise<void> => {
     followUpDate: body.followUpDate ? String(body.followUpDate) : undefined,
     expectedCloseDate: body.expectedCloseDate ? String(body.expectedCloseDate) : undefined,
     dealProbability: body.dealProbability ? Number(body.dealProbability) : undefined,
+    painPoints: body.painPoints ? String(body.painPoints) : undefined,
   }).returning();
 
   triggerContactSync();
@@ -146,6 +147,7 @@ router.patch("/contacts/:id", async (req, res): Promise<void> => {
   if ("followUpDate" in body) updateFields.followUpDate = body.followUpDate ? String(body.followUpDate) : null;
   if ("expectedCloseDate" in body) updateFields.expectedCloseDate = body.expectedCloseDate ? String(body.expectedCloseDate) : null;
   if ("dealProbability" in body) updateFields.dealProbability = body.dealProbability != null ? Number(body.dealProbability) : null;
+  if ("painPoints" in body) updateFields.painPoints = body.painPoints ? String(body.painPoints) : null;
   updateFields.updatedAt = new Date();
 
   const [updated] = await db.update(contactsTable).set(updateFields).where(eq(contactsTable.id, id)).returning();

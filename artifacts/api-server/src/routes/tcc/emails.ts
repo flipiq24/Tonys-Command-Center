@@ -261,21 +261,38 @@ Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Pl
       res.status(400).json({ ok: false, error: "sender, subject, and body are required" });
       return;
     }
+    if (!gmailMessageId) {
+      res.status(400).json({ ok: false, error: "gmailMessageId is required to send a reply" });
+      return;
+    }
 
-    // Extract plain email address from "Name <email@example.com>" format
-    const toMatch = sender.match(/<([^>]+)>/);
-    const toEmail = toMatch ? toMatch[1] : sender;
-
-    // Look up the Gmail thread ID so this reply is threaded correctly
+    // Resolve recipient address + thread from the original Gmail message.
+    // EmailItem.from is just the display name (brief.ts strips the address),
+    // so we read the real "From" header off the source message instead.
+    let toEmail: string | null = null;
     let threadId: string | undefined;
-    if (gmailMessageId) {
-      try {
-        const gmail = await getGmail();
-        const msg = await gmail.users.messages.get({ userId: "me", id: gmailMessageId, format: "metadata" });
-        threadId = msg.data.threadId || undefined;
-      } catch (err) {
-        req.log.warn({ err }, "Could not fetch threadId for send_reply — sending without thread");
-      }
+    try {
+      const gmail = await getGmail();
+      const msg = await gmail.users.messages.get({
+        userId: "me",
+        id: gmailMessageId,
+        format: "metadata",
+        metadataHeaders: ["From"],
+      });
+      threadId = msg.data.threadId || undefined;
+      const fromHeader = msg.data.payload?.headers?.find(h => h.name === "From")?.value || "";
+      const bracket = fromHeader.match(/<([^>]+)>/);
+      if (bracket) toEmail = bracket[1];
+      else if (/^[^\s@]+@[^\s@]+$/.test(fromHeader.trim())) toEmail = fromHeader.trim();
+    } catch (err) {
+      req.log.warn({ err }, "Could not fetch original message for send_reply");
+      res.status(400).json({ ok: false, error: "Could not fetch original message to resolve recipient" });
+      return;
+    }
+
+    if (!toEmail) {
+      res.status(400).json({ ok: false, error: "Could not determine recipient email address" });
+      return;
     }
 
     // Append Tony's signature

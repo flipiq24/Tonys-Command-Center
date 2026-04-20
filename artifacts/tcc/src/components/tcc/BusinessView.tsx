@@ -708,6 +708,19 @@ function AddTaskModal({
   const [err, setErr] = useState("");
   const [manualOffset, setManualOffset] = useState(0); // user drags the new-task row in preview panel
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // Linear ticket flow (only shown when source === "Linear")
+  const [hasTicketId, setHasTicketId] = useState<"yes" | "no" | null>(null);
+  const [notifyOwnerForTicket, setNotifyOwnerForTicket] = useState(true);
+
+  // Reset the Linear sub-flow whenever the user changes Source away from / to Linear
+  useEffect(() => {
+    if (form.source !== "Linear") {
+      setHasTicketId(null);
+      setNotifyOwnerForTicket(true);
+      if (form.linearId) setForm(f => ({ ...f, linearId: "" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.source]);
 
   // Master tasks available for Sub-Task / Note parent selection
   const masterTasks = (allTasks || []).filter(t => t.taskType === "master" || !t.taskType);
@@ -742,11 +755,20 @@ function AddTaskModal({
       setErr(`${form.taskType === "note" ? "Note" : "Sub-Task"} requires a parent master task`);
       return;
     }
+    // Linear source flow validation
+    if (form.source === "Linear") {
+      if (!hasTicketId) { setErr("Pick whether you already have the Linear ticket ID"); return; }
+      if (hasTicketId === "yes" && !form.linearId.trim()) { setErr("Linear Issue ID is required"); return; }
+    }
     setLoading(true); setErr("");
     try {
       // Month derives from dueDate on backend; week has been removed entirely
       const payload: any = {
         ...form,
+        // If source=Linear + ticket not yet created, ensure linearId is null
+        linearId: form.source === "Linear" && hasTicketId === "yes" ? form.linearId : null,
+        // Ask backend to Slack-notify the owner to create the Linear ticket
+        requiresLinearTicket: form.source === "Linear" && hasTicketId === "no" && notifyOwnerForTicket,
         parentTaskId: form.parentTaskId || undefined,
         // User may have nudged the placement ▲/▼ in the preview panel
         manualPosition: manualOffset !== 0 ? finalIdx : undefined,
@@ -917,10 +939,62 @@ function AddTaskModal({
           </div>
 
           {form.source === "Linear" && (
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>Linear Issue ID</label>
-              <input value={form.linearId} onChange={e => set("linearId", e.target.value)} placeholder="e.g. FLI-123 or paste Linear issue URL" style={inputStyle} />
-              <div style={{ fontSize: 10, color: C.mut, marginTop: 3 }}>Links this task to Linear — completion will sync both ways</div>
+            <div style={{ marginBottom: 18, padding: "12px 14px", border: `1px solid ${C.brd}`, borderRadius: 8, background: "#FAFAFA" }}>
+              <label style={labelStyle}>Do you already have the Linear ticket ID?</label>
+              <div style={{ display: "flex", gap: 14, marginTop: 4 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: C.tx }}>
+                  <input
+                    type="radio"
+                    name="hasTicketId"
+                    checked={hasTicketId === "yes"}
+                    onChange={() => setHasTicketId("yes")}
+                    style={{ accentColor: "#F97316" }}
+                  />
+                  Yes, I have it
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: C.tx }}>
+                  <input
+                    type="radio"
+                    name="hasTicketId"
+                    checked={hasTicketId === "no"}
+                    onChange={() => setHasTicketId("no")}
+                    style={{ accentColor: "#F97316" }}
+                  />
+                  No, assign owner to create it
+                </label>
+              </div>
+
+              {hasTicketId === "yes" && (
+                <div style={{ marginTop: 12 }}>
+                  <label style={labelStyle}>Linear Issue ID *</label>
+                  <input
+                    value={form.linearId}
+                    onChange={e => set("linearId", e.target.value)}
+                    placeholder="e.g. FLI-123 or paste Linear issue URL"
+                    style={inputStyle}
+                  />
+                  <div style={{ fontSize: 10, color: C.mut, marginTop: 3 }}>Links this task to Linear — completion will sync both ways</div>
+                </div>
+              )}
+
+              {hasTicketId === "no" && (
+                <div style={{ marginTop: 12 }}>
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={notifyOwnerForTicket}
+                      onChange={e => setNotifyOwnerForTicket(e.target.checked)}
+                      style={{ marginTop: 2, accentColor: "#F97316" }}
+                    />
+                    <span style={{ fontSize: 12, color: C.tx, lineHeight: 1.4 }}>
+                      Notify <strong>{form.owner || "the owner"}</strong> via Slack to create the Linear ticket
+                      <div style={{ fontSize: 10, color: C.mut, marginTop: 2 }}>
+                        The task will be saved with source=Linear and no ID. Once {form.owner || "the owner"} creates the ticket, paste the Linear ID back here.
+                      </div>
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
           )}
 
@@ -1349,6 +1423,7 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   const [filterPriority, setFilterPriority] = useState("");
   const [filterWeek, setFilterWeek] = useState("");
   const [filterParent, setFilterParent] = useState(initialParentFilter || "");
+  const [filterLinearOnly, setFilterLinearOnly] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [searchQ, setSearchQ] = useState("");
 
@@ -1427,6 +1502,10 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   if (filterParent) {
     // Show the selected master + all its children (subs and notes)
     displayed = displayed.filter(t => t.id === filterParent || t.parentTaskId === filterParent);
+  }
+  if (filterLinearOnly) {
+    // Linear-only: source is "Linear" OR row has a linearId (covers edge cases where source wasn't set explicitly)
+    displayed = displayed.filter(t => t.source === "Linear" || !!t.linearId);
   }
   if (searchQ.trim()) {
     const q = searchQ.trim().toLowerCase();
@@ -1845,6 +1924,19 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
               }}
             >{label}</button>
           ))}
+          {/* Linear-only filter */}
+          <button
+            type="button"
+            onClick={() => setFilterLinearOnly(v => !v)}
+            title="Show only tasks tied to a Linear ticket"
+            style={{
+              padding: "4px 11px", borderRadius: 20,
+              border: `1px solid ${filterLinearOnly ? "#5E6AD2" : C.brd}`,
+              background: filterLinearOnly ? "#EEF0FB" : "transparent",
+              color: filterLinearOnly ? "#5E6AD2" : C.sub,
+              fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F, whiteSpace: "nowrap",
+            }}
+          >◼ Linear only</button>
           <span style={{ marginLeft: "auto", fontSize: 11, color: C.mut }}>
             {loading ? "Loading…" : `${displayed.length} tasks`}
           </span>

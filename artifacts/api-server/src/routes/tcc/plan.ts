@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { planItemsTable, brainTrainingLogTable, businessContextTable } from "../../lib/schema-v2";
+import { planItemsTable, brainTrainingLogTable, businessContextTable, teamRolesTable } from "../../lib/schema-v2";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncTasksTab } from "./sheets-sync";
+import { postSlackMessage } from "../../lib/slack";
 
 const router: IRouter = Router();
 
@@ -601,7 +602,7 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
 // POST /plan/task — create a new task with smart priority placement
 router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition } = req.body;
+    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition, requiresLinearTicket } = req.body;
 
     if (!category || !title) {
       res.status(400).json({ error: "category and title are required" });
@@ -719,6 +720,26 @@ router.post("/plan/task", async (req, res): Promise<void> => {
     const nextTask = taskIdx < allTasksAfter.length - 1 ? existingTasks[taskIdx] : null;
 
     triggerSheetsSync();
+
+    // If this task needs a Linear ticket created by the owner, DM them on Slack
+    let slackNotified: { ok: boolean; owner: string; slackId?: string; error?: string } | null = null;
+    if (requiresLinearTicket && owner) {
+      try {
+        const [tm] = await db.select().from(teamRolesTable).where(eq(teamRolesTable.name, owner)).limit(1);
+        if (tm?.slackId) {
+          const dueLine = dueDate ? `\n*Due:* ${dueDate}` : "";
+          const priorityLine = priority ? ` • *Priority:* ${priority}` : "";
+          const text = `🎯 *Tony assigned you a task — please create a Linear ticket*\n> ${title}\n*Category:* ${category}${priorityLine}${dueLine}\n\nOnce the Linear ticket is created, paste its ID into the task in TCC so both systems stay in sync.`;
+          const r = await postSlackMessage({ channel: tm.slackId, text });
+          slackNotified = { ok: r.ok, owner, slackId: tm.slackId, error: r.error };
+        } else {
+          slackNotified = { ok: false, owner, error: "no_slack_id_on_team_roster" };
+        }
+      } catch (err) {
+        slackNotified = { ok: false, owner, error: (err as Error).message };
+      }
+    }
+
     res.json({
       ok: true,
       task: { ...created, sprintId },
@@ -727,6 +748,7 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       total: allTasksAfter.length,
       prevTask: prevTask ? { title: prevTask.title, sprintId: `${prefix}-${String(taskIdx).padStart(2,"0")}` } : null,
       nextTask: nextTask ? { title: nextTask.title, sprintId: `${prefix}-${String(taskIdx + 2).padStart(2,"0")}` } : null,
+      slackNotified,
     });
   } catch (err: any) {
     console.error("[plan] POST /plan/task error:", err);

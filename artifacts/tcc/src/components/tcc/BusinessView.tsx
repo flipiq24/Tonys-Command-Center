@@ -1481,6 +1481,9 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragTaskRef = useRef<string | null>(null);
   const justDroppedRef = useRef<number>(0); // timestamp of last drop; used to suppress click-open of detail panel
+  // When a task is just created, scroll its row into view and pulse-highlight it briefly
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const [selectedTask, setSelectedTask] = useState<(PlanItem & { sprintId?: string }) | null>(null);
   type HoverInfo = { task: PlanItem & { sprintId?: string }; x: number; y: number };
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
@@ -1811,7 +1814,26 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
     loadTasks();
     onRefreshAll();
     setPlacementToast(`✓ ${result.sprintId} added · position ${result.position}/${result.total}${result.prevTask ? ` · after "${result.prevTask.title.split(":")[0].trim()}"` : ""}`);
+    // Track the new task's id — the useEffect below will scroll to it and apply a pulse once the row is rendered
+    if (result?.task?.id) {
+      setJustCreatedId(result.task.id);
+    }
   }
+
+  // When a new task is created, scroll its row into view and clear the pulse after 3s
+  useEffect(() => {
+    if (!justCreatedId) return;
+    // Wait one frame for the row ref to attach after loadTasks() re-renders
+    const scrollTimer = setTimeout(() => {
+      const el = rowRefs.current[justCreatedId];
+      if (el?.scrollIntoView) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 150);
+    // Clear the pulse highlight after the animation completes (3s total)
+    const clearTimer = setTimeout(() => setJustCreatedId(null), 3000);
+    return () => { clearTimeout(scrollTimer); clearTimeout(clearTimer); };
+  }, [justCreatedId]);
 
   const selStyle: React.CSSProperties = { fontSize: 12, padding: "6px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, background: C.card };
 
@@ -1823,6 +1845,17 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
 
   return (
     <div>
+      {/* Keyframes for the "just created" pulse — injected once inside the component */}
+      <style>{`
+        @keyframes tccRowPulse {
+          0%   { background-color: #FFF7ED; box-shadow: inset 0 0 0 2px #F97316, 0 0 0 0 rgba(249,115,22,0.45); }
+          40%  { background-color: #FFEDD5; box-shadow: inset 0 0 0 2px #F97316, 0 0 0 6px rgba(249,115,22,0.25); }
+          70%  { background-color: #FFF7ED; box-shadow: inset 0 0 0 2px #F97316, 0 0 0 12px rgba(249,115,22,0); }
+          100% { background-color: #FFF7ED; box-shadow: inset 0 0 0 2px #F97316, 0 0 0 0 rgba(249,115,22,0); }
+        }
+        .tcc-row-pulse { animation: tccRowPulse 1.2s ease-out 2; }
+      `}</style>
+
       {/* Sticky header: nav bar + filter row */}
       <div style={{
         position: "sticky", top: 75, zIndex: 30,
@@ -2015,9 +2048,12 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
               const rowBg = isDraggingOver ? "#EFF6FF" : done ? "#F9FFF9" : isLate ? "#FFF8F8" : "#fff";
               const pc = personColor(task.owner || "");
 
+              const isJustCreated = task.id === justCreatedId;
               return (
                 <tr
                   key={task.id}
+                  ref={el => { rowRefs.current[task.id] = el; }}
+                  className={isJustCreated ? "tcc-row-pulse" : undefined}
                   draggable
                   onDragStart={() => onDragStart(task.id)}
                   onDragOver={e => onDragOver(e, task.id)}
@@ -2040,7 +2076,14 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
                     if (hoverTimer.current) clearTimeout(hoverTimer.current);
                     setHoverInfo(null);
                   }}
-                  style={{ background: rowBg, borderBottom: `1px solid ${C.brd}`, borderTop: isDraggingOver ? `2px solid ${C.blu}` : undefined, transition: "background 0.1s", cursor: "pointer" }}
+                  style={{
+                    background: isJustCreated ? "#FFF7ED" : rowBg,
+                    borderBottom: `1px solid ${C.brd}`,
+                    borderTop: isDraggingOver ? `2px solid ${C.blu}` : undefined,
+                    transition: "background 0.3s",
+                    cursor: "pointer",
+                    boxShadow: isJustCreated ? "inset 0 0 0 2px #F97316" : undefined,
+                  }}
                 >
                   {/* Drag + checkbox combined */}
                   <td onClick={e => e.stopPropagation()} style={{ padding: "6px 8px", textAlign: "center", cursor: "grab", color: C.mut, fontSize: 14, whiteSpace: "nowrap" }}>

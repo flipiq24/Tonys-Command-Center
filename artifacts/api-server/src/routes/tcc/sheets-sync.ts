@@ -146,18 +146,7 @@ export async function syncTasksFromSheet(): Promise<{ ok: boolean; inserted: num
       if (isNaN(parsed.getTime())) return null;
       return parsed.toISOString().split("T")[0];
     };
-    // Derive a 1-4 week number from a YYYY-MM-DD date by bucketing the day of month.
-    // Aligns with APRIL_WEEKS client constant: wk1 ≤ 11, wk2 12–18, wk3 19–25, wk4 26+.
-    const weekFromDate = (d: string | null): number | null => {
-      if (!d) return null;
-      const m = d.match(/^\d{4}-\d{2}-(\d{2})$/);
-      if (!m) return null;
-      const day = parseInt(m[1], 10);
-      if (day <= 11) return 1;
-      if (day <= 18) return 2;
-      if (day <= 25) return 3;
-      return 4;
-    };
+    // Week is now derived from dueDate on read (see /plan/weekly). We only store `month`.
     const monthFromDate = (d: string | null): string | null => d?.match(/^(\d{4}-\d{2})/)?.[1] ?? null;
 
     interface SheetRow {
@@ -258,7 +247,6 @@ export async function syncTasksFromSheet(): Promise<{ ok: boolean; inserted: num
         parentId: subcatId || catId,
         parentTaskId: null,
         dueDate: isNote ? null : r.dueDate,
-        weekNumber: isNote ? null : weekFromDate(r.dueDate),
         month: monthFromDate(r.dueDate) || "2026-04",
         completedAt: r.status === "completed" && r.completedDate
           ? new Date(`${r.completedDate}T00:00:00Z`)
@@ -305,7 +293,6 @@ export async function syncTasksFromSheet(): Promise<{ ok: boolean; inserted: num
         parentId: subcatId || catId,
         parentTaskId: parentUuid,
         dueDate: isNote ? null : r.dueDate,
-        weekNumber: isNote ? null : weekFromDate(r.dueDate),
         month: monthFromDate(r.dueDate) || "2026-04",
         completedAt: r.status === "completed" && r.completedDate
           ? new Date(`${r.completedDate}T00:00:00Z`)

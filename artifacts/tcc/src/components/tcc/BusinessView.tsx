@@ -15,7 +15,6 @@ type PlanItem = {
   priority?: string | null;
   status?: string | null;
   dueDate?: string | null;
-  weekNumber?: number | null;
   month?: string | null;
   completedAt?: string | null;
   atomicKpi?: string | null;
@@ -469,8 +468,9 @@ const CAT_COLOR: Record<string, string> = {
   team:       "#374151",
 };
 
-function WeeklyGrid({ byOwner, onToggleTask, onTaskClick }: {
+function WeeklyGrid({ byOwner, childStats, onToggleTask, onTaskClick }: {
   byOwner: Record<string, Record<number, PlanItem[]>>;
+  childStats?: Record<string, { total: number; done: number }>;
   onToggleTask: (id: string, complete: boolean) => void;
   onTaskClick?: (task: PlanItem) => void;
 }) {
@@ -576,24 +576,50 @@ function WeeklyGrid({ byOwner, onToggleTask, onTaskClick }: {
                   )}
                   {[row.w1, row.w2, row.w3, row.w4].map((task, wi) => {
                     const weekNum = wi + 1;
+                    // If this (owner, week) cell is "All done", render a single rowSpan'd td in ri=0 and skip the rest
+                    if (allDoneByWeek[weekNum]) {
+                      if (!isFirstRow) return null;
+                      return (
+                        <td
+                          key={wi}
+                          rowSpan={ROWS_PER_PERSON}
+                          style={{
+                            borderBottom: "2px solid #aaa",
+                            borderLeft: "1px solid #e5e7eb",
+                            borderRight: wi === 3 ? "1px solid #e5e7eb" : undefined,
+                            padding: "8px 10px",
+                            verticalAlign: "middle",
+                            textAlign: "center",
+                            background: "#F6FBF7",
+                          }}
+                        >
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, background: "#E8F5E9", border: `1px solid ${C.grn}40` }}>
+                            <span style={{ fontSize: 13, color: C.grn, fontWeight: 700 }}>✓</span>
+                            <span style={{ fontSize: 11, color: C.grn, fontWeight: 600, fontFamily: F, letterSpacing: 0.2 }}>All done</span>
+                          </div>
+                        </td>
+                      );
+                    }
                     const done = task?.status === "completed";
                     const cat = task?.category ?? "";
                     const sub = task?.subcategory ?? null;
                     const txColor = done ? "#bbb" : (CAT_COLOR[cat] ?? "#1565C0");
-                    const showAllDone = !task && ri === 0 && allDoneByWeek[weekNum];
+                    const stats = task ? childStats?.[task.id] : undefined;
+                    const pct = stats && stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : null;
                     return (
                       <td
                         key={wi}
                         style={{
                           borderBottom: isLastRow ? "2px solid #aaa" : "1px solid #ddd",
-                          borderLeft: task ? `3px solid ${done ? "#ddd" : (CAT_COLOR[cat] ?? "#1565C0")}` : "3px solid transparent",
+                          borderLeft: `${task ? 3 : 1}px solid ${task ? (done ? "#ddd" : (CAT_COLOR[cat] ?? "#1565C0")) : "#e5e7eb"}`,
+                          borderRight: wi === 3 ? "1px solid #e5e7eb" : undefined,
                           padding: "4px 7px",
                           verticalAlign: "top",
                           background: "#fff",
                           minHeight: 34,
                         }}
                       >
-                        {task ? (
+                        {task && (
                           <div style={{ display: "flex", gap: 5, alignItems: "flex-start" }}>
                             <button
                               onClick={(e) => { e.stopPropagation(); onToggleTask(task.id, !done); }}
@@ -615,10 +641,25 @@ function WeeklyGrid({ byOwner, onToggleTask, onTaskClick }: {
                                 textDecoration: done ? "line-through" : "none",
                                 fontFamily: F, lineHeight: 1.3,
                                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                display: "flex", alignItems: "center", gap: 4,
                               }}>
-                                {task.title.replace(/^[^:]+:\s*/, "")}
-                                {task.priority && <span style={{ marginLeft: 4, fontSize: 8, fontWeight: 700, color: task.priority === "P0" ? C.red : task.priority === "P1" ? C.amb : C.grn }}>{task.priority}</span>}
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title.replace(/^[^:]+:\s*/, "")}</span>
+                                {task.priority && <span style={{ fontSize: 8, fontWeight: 700, color: task.priority === "P0" ? C.red : task.priority === "P1" ? C.amb : C.grn, flexShrink: 0 }}>{task.priority}</span>}
                               </div>
+                              {stats && stats.total > 0 && (
+                                <div style={{
+                                  marginTop: 2,
+                                  display: "flex", alignItems: "center", gap: 5,
+                                  fontSize: 9, fontFamily: F,
+                                  color: done ? "#bbb" : (pct === 100 ? C.grn : C.mut),
+                                }}>
+                                  <span style={{ fontWeight: 600 }}>{stats.done}/{stats.total}</span>
+                                  <div style={{ flex: 1, height: 3, background: "#eee", borderRadius: 2, overflow: "hidden", minWidth: 28, maxWidth: 60 }}>
+                                    <div style={{ height: "100%", width: `${pct}%`, background: pct === 100 ? C.grn : pc, transition: "width 0.2s" }} />
+                                  </div>
+                                  <span style={{ fontWeight: 600 }}>{pct}%</span>
+                                </div>
+                              )}
                               {sub && (
                                 <div style={{
                                   marginTop: 1,
@@ -632,11 +673,7 @@ function WeeklyGrid({ byOwner, onToggleTask, onTaskClick }: {
                               )}
                             </div>
                           </div>
-                        ) : showAllDone ? (
-                          <div style={{ fontSize: 11, color: C.grn, fontWeight: 600, fontFamily: F, fontStyle: "italic" }}>
-                            ✓ All done
-                          </div>
-                        ) : null}
+                        )}
                       </td>
                     );
                   })}
@@ -662,7 +699,7 @@ function AddTaskModal({
   allTasks?: PlanItem[];
 }) {
   const [form, setForm] = useState(() => {
-    const defaults = { title: "", category: "", subcategoryName: "", owner: "", coOwner: "", priority: "P1", dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "", taskType: "master", parentTaskId: "" };
+    const defaults = { title: "", category: "", subcategoryName: "", owner: "", coOwner: "", priority: "P1", dueDate: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "", taskType: "master", parentTaskId: "" };
     if (prefill) return { ...defaults, ...Object.fromEntries(Object.entries(prefill).filter(([_, v]) => v != null && v !== "")) };
     return defaults;
   });
@@ -707,10 +744,9 @@ function AddTaskModal({
     }
     setLoading(true); setErr("");
     try {
+      // Month derives from dueDate on backend; week has been removed entirely
       const payload: any = {
         ...form,
-        month: "2026-04",
-        weekNumber: form.weekNumber ? parseInt(form.weekNumber) : undefined,
         parentTaskId: form.parentTaskId || undefined,
         // User may have nudged the placement ▲/▼ in the preview panel
         manualPosition: manualOffset !== 0 ? finalIdx : undefined,
@@ -846,19 +882,11 @@ function AddTaskModal({
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
-            {/* Due date */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            {/* Due date — week is auto-derived from this on the weekly grid */}
             <div>
-              <label style={labelStyle}>Due date</label>
+              <label style={labelStyle}>Due date <span style={{ fontWeight: 400, color: C.mut, textTransform: "none", letterSpacing: 0 }}>— week is auto-computed</span></label>
               <input type="date" value={form.dueDate} onChange={e => set("dueDate", e.target.value)} style={inputStyle} />
-            </div>
-            {/* Week */}
-            <div>
-              <label style={labelStyle}>Week</label>
-              <select value={form.weekNumber} onChange={e => set("weekNumber", e.target.value)} style={inputStyle}>
-                <option value="">None</option>
-                {getWeeksForDate(form.dueDate || undefined).map(w => <option key={w.n} value={String(w.n)}>{w.label} ({w.dates})</option>)}
-              </select>
             </div>
             {/* Execution tier */}
             <div>
@@ -1383,7 +1411,19 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   if (filterOwner) displayed = displayed.filter(t => t.owner === filterOwner);
   if (filterStatus) displayed = displayed.filter(t => t.status === filterStatus);
   if (filterPriority) displayed = displayed.filter(t => t.priority === filterPriority);
-  if (filterWeek) displayed = displayed.filter(t => String(t.weekNumber) === filterWeek);
+  if (filterWeek) {
+    // Week is derived from dueDate day-of-month: ≤11=1, ≤18=2, ≤25=3, else 4.
+    const weekOf = (d?: string | null) => {
+      if (!d) return null;
+      const day = parseInt(d.slice(8, 10), 10);
+      if (isNaN(day)) return null;
+      if (day <= 11) return 1;
+      if (day <= 18) return 2;
+      if (day <= 25) return 3;
+      return 4;
+    };
+    displayed = displayed.filter(t => String(weekOf(t.dueDate)) === filterWeek);
+  }
   if (filterParent) {
     // Show the selected master + all its children (subs and notes)
     displayed = displayed.filter(t => t.id === filterParent || t.parentTaskId === filterParent);
@@ -2763,6 +2803,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   const [pendingParentFilter, setPendingParentFilter] = useState<string | null>(null);
   const [categories, setCategories] = useState<CategoryWithSubs[]>([]);
   const [byOwner, setByOwner] = useState<Record<string, Record<number, PlanItem[]>>>({});
+  const [childStats, setChildStats] = useState<Record<string, { total: number; done: number }>>({});
 
   const handleWeeklyTaskClick = (task: PlanItem) => {
     setPendingParentFilter(task.id);
@@ -2792,6 +2833,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
     try {
       const data:any = await get("/plan/weekly/2026-04");
       setByOwner(data.byOwner || {});
+      setChildStats(data.childStats || {});
     } catch { /**/ }
   }, []);
 
@@ -2971,7 +3013,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
                   categories={categories}
                   onToggleTask={handleToggleTask}
                 />
-                <WeeklyGrid byOwner={byOwner} onToggleTask={handleToggleTask} onTaskClick={handleWeeklyTaskClick} />
+                <WeeklyGrid byOwner={byOwner} childStats={childStats} onToggleTask={handleToggleTask} onTaskClick={handleWeeklyTaskClick} />
               </>
             )}
           </>

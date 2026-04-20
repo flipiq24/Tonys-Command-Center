@@ -286,7 +286,6 @@ async function seedPlanIfEmpty(): Promise<void> {
       owner: t.owner,
       priority: t.priority,
       dueDate: t.dueDate,
-      weekNumber: t.weekNumber,
       month: t.month,
       atomicKpi: t.atomicKpi,
       source: t.source,
@@ -406,24 +405,53 @@ router.get("/plan", async (_req, res): Promise<void> => {
   }
 });
 
-// GET /plan/weekly/:month — weekly grid data
+// GET /plan/weekly/:month — weekly grid data (week computed from dueDate, not stored)
 router.get("/plan/weekly/:month", async (req, res): Promise<void> => {
   try {
-    const { month } = req.params;
-    const tasks = await db.select().from(planItemsTable)
-      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.month, month)))
-      .orderBy(asc(planItemsTable.weekNumber), asc(planItemsTable.priorityOrder));
+    const { month } = req.params; // e.g. "2026-04"
+    // Fetch ALL level=task rows — masters AND their children — so we can compute child stats
+    const allTasks = await db.select().from(planItemsTable)
+      .where(eq(planItemsTable.level, "task"))
+      .orderBy(asc(planItemsTable.priorityOrder));
+
+    // Child stats per master (total children + completed children), computed across all months
+    const childStats: Record<string, { total: number; done: number }> = {};
+    for (const t of allTasks) {
+      if (t.parentTaskId && (t.taskType === "subtask" || t.taskType === "note")) {
+        const s = childStats[t.parentTaskId] || { total: 0, done: 0 };
+        s.total += 1;
+        if (t.status === "completed") s.done += 1;
+        childStats[t.parentTaskId] = s;
+      }
+    }
+
+    // Bucket by (owner, computed week), filtering to the requested month
+    const weekFromDue = (d: string | null): number | null => {
+      if (!d) return null;
+      const m = d.match(/^\d{4}-\d{2}-(\d{2})$/);
+      if (!m) return null;
+      const day = parseInt(m[1], 10);
+      if (day <= 11) return 1;
+      if (day <= 18) return 2;
+      if (day <= 25) return 3;
+      return 4;
+    };
 
     const byOwner: Record<string, Record<number, PlanItem[]>> = {};
-    for (const task of tasks) {
+    for (const task of allTasks) {
+      // Only masters render on the weekly grid; subs/notes stay in the Master Task list
+      if ((task.taskType ?? "master") !== "master") continue;
+      if (!task.dueDate) continue;
+      if (!task.dueDate.startsWith(month)) continue;
+      const week = weekFromDue(task.dueDate);
+      if (!week) continue;
       const owner = task.owner || "Unassigned";
-      const week = task.weekNumber || 0;
       if (!byOwner[owner]) byOwner[owner] = {};
       if (!byOwner[owner][week]) byOwner[owner][week] = [];
       byOwner[owner][week].push(task);
     }
 
-    res.json({ month, byOwner });
+    res.json({ month, byOwner, childStats });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -556,7 +584,7 @@ router.post("/plan/task/:id/uncomplete", async (req, res): Promise<void> => {
 router.patch("/plan/item/:id", async (req, res): Promise<void> => {
   try {
     const { id } = req.params;
-    const allowed = ["title","owner","coOwner","priority","dueDate","weekNumber","status","workNotes","atomicKpi","source","executionTier","linearId","subcategory"];
+    const allowed = ["title","owner","coOwner","priority","dueDate","status","workNotes","atomicKpi","source","executionTier","linearId","subcategory"];
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
@@ -573,7 +601,7 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
 // POST /plan/task — create a new task with smart priority placement
 router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition } = req.body;
+    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition } = req.body;
 
     if (!category || !title) {
       res.status(400).json({ error: "category and title are required" });
@@ -657,8 +685,7 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       coOwner: coOwner || null,
       priority: normalizedType === "note" ? null : (priority || "P2"),
       dueDate: normalizedType === "note" ? null : (dueDate || null),
-      weekNumber: weekNumber ? parseInt(weekNumber) : null,
-      month: month || "2026-04",
+      month: (dueDate && /^\d{4}-\d{2}/.test(dueDate)) ? dueDate.slice(0, 7) : (month || "2026-04"),
       atomicKpi: atomicKpi || null,
       source: source || "manual",
       executionTier: executionTier || "Sprint",

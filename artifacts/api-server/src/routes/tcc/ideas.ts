@@ -515,8 +515,7 @@ Return ONLY valid JSON with these exact fields:
   "executionTier": "Sprint|Strategic|Maintenance",
   "atomicKpi": "how this moves toward 2 deals/month",
   "source": "TCC",
-  "workNotes": "context from the original idea",
-  "weekNumber": 1-4 (current week of month)
+  "workNotes": "context from the original idea"
 }
 
 Set coOwner to whoever should support the primary owner based on idea domain and team expertise. Use null if no clear second owner.`,

@@ -229,7 +229,6 @@ export const planItemsTable = pgTable("plan_items", {
   status: text("status").default("active"),
   priorityOrder: integer("priority_order").default(0),
   parentId: uuid("parent_id"),
-  weekNumber: integer("week_number"),
   month: text("month"),
   dueDate: date("due_date"),
   completedAt: timestamp("completed_at", { withTimezone: true }),

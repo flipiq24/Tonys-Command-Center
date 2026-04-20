@@ -45,32 +45,114 @@ export async function syncTasksTab(): Promise<void> {
       .orderBy(asc(planItemsTable.priorityOrder))
       .limit(500);
 
+    // Build id → title map for resolving parentTaskId to parent master's title
+    const idToTitle = new Map(planTasks.map(t => [t.id, t.title]));
+
     const header = [
-      "Task", "Source", "Owner", "Co-Owner", "Priority", "Status",
+      "Task", "Type", "Sub-Type", "Source", "Owner", "Co-Owner", "Priority", "Status",
       "Category", "Subcategory", "Execution Tier", "Completed Date", "Due Date", "Notes",
       "Atomic KPI", "Linear ID",
     ];
-    const rows: (string | number | null)[][] = planTasks.map(t => [
-      t.title,
-      t.source || "manual",
-      t.owner || "Unassigned",
-      t.coOwner || null,
-      t.priority || "P2",
-      t.status === "completed" ? "Completed" : "Active",
-      t.category || null,
-      t.subcategory || null,
-      t.executionTier || null,
-      t.completedAt ? new Date(t.completedAt).toLocaleDateString("en-US") : null,
-      t.dueDate || null,
-      t.workNotes || null,
-      t.atomicKpi || null,
-      t.linearId || null,
-    ]);
+    const rows: (string | number | null)[][] = planTasks.map(t => {
+      const typeLabel = t.taskType === "subtask" ? "Sub" : t.taskType === "note" ? "Note" : "Master";
+      const subType = t.parentTaskId ? (idToTitle.get(t.parentTaskId) || "") : "";
+      return [
+        t.title,
+        typeLabel,
+        subType,
+        t.source || "manual",
+        t.owner || "Unassigned",
+        t.coOwner || null,
+        t.priority || "P2",
+        t.status === "completed" ? "Completed" : "Active",
+        t.category || null,
+        t.subcategory || null,
+        t.executionTier || null,
+        t.completedAt ? new Date(t.completedAt).toLocaleDateString("en-US") : null,
+        t.dueDate || null,
+        t.workNotes || null,
+        t.atomicKpi || null,
+        t.linearId || null,
+      ];
+    });
 
     await clearAndWriteTab(BUSINESS_MASTER_SHEET_ID, "Master Task List", [header, ...rows]);
     console.log(`[sheets-sync] Tasks tab synced: ${rows.length} rows (${header.length} columns)`);
   } catch (err) {
     console.warn("[sheets-sync] syncTasksTab failed:", (err as Error).message);
+  }
+}
+
+// ─── Sheets → DB reverse sync: pull Type + Sub-Type (parent master title) back into DB ───
+export async function syncTasksFromSheet(): Promise<{ ok: boolean; updated: number; skipped: number; error?: string }> {
+  if (!BUSINESS_MASTER_SHEET_ID) return { ok: false, updated: 0, skipped: 0, error: "BUSINESS_MASTER_SHEET_ID not set" };
+  try {
+    const rows = await getSheetValues(BUSINESS_MASTER_SHEET_ID, "Master Task List!A:Z");
+    if (rows.length < 2) return { ok: true, updated: 0, skipped: 0 };
+
+    const header = rows[0].map(h => (h || "").toString().trim().toLowerCase());
+    const titleIdx = header.indexOf("task");
+    const typeIdx = header.findIndex(h => h === "type");
+    const subTypeIdx = header.findIndex(h => h === "sub-type" || h === "subtype" || h === "parent task" || h === "parent");
+    const linearIdx = header.indexOf("linear id");
+
+    if (titleIdx === -1) {
+      return { ok: false, updated: 0, skipped: 0, error: "'Task' column not found in sheet header" };
+    }
+
+    // Load all DB tasks once
+    const dbTasks = await db.select().from(planItemsTable).where(eq(planItemsTable.level, "task"));
+    const byTitle = new Map(dbTasks.map(t => [t.title.trim().toLowerCase(), t]));
+    const byLinear = new Map(dbTasks.filter(t => t.linearId).map(t => [t.linearId!, t]));
+
+    const normalizeType = (raw: string): "master" | "subtask" | "note" => {
+      const v = (raw || "").trim().toLowerCase();
+      if (v === "sub" || v === "subtask" || v === "sub-task") return "subtask";
+      if (v === "note") return "note";
+      return "master";
+    };
+
+    let updated = 0, skipped = 0;
+
+    // Two-pass: first pass updates taskType on all rows, second pass resolves parentTaskId (needs masters' taskType set first)
+    const plan: { dbId: string; taskType: "master" | "subtask" | "note"; parentTitle: string }[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const title = (row[titleIdx] || "").toString().trim();
+      if (!title) { skipped++; continue; }
+      const linearId = linearIdx >= 0 ? (row[linearIdx] || "").toString().trim() : "";
+      const match = (linearId && byLinear.get(linearId)) || byTitle.get(title.toLowerCase());
+      if (!match) { skipped++; continue; }
+      const taskType = typeIdx >= 0 ? normalizeType(row[typeIdx]) : "master";
+      const parentTitle = subTypeIdx >= 0 ? (row[subTypeIdx] || "").toString().trim() : "";
+      plan.push({ dbId: match.id, taskType, parentTitle });
+    }
+
+    // Pass 1: set taskType on all rows
+    for (const p of plan) {
+      await db.update(planItemsTable).set({ taskType: p.taskType }).where(eq(planItemsTable.id, p.dbId));
+    }
+
+    // Refresh title→id map (now with updated taskType so we can find masters)
+    const refreshed = await db.select().from(planItemsTable).where(eq(planItemsTable.level, "task"));
+    const mastersByTitle = new Map(refreshed.filter(t => t.taskType === "master").map(t => [t.title.trim().toLowerCase(), t.id]));
+
+    // Pass 2: resolve parent titles → ids for subtasks and notes
+    for (const p of plan) {
+      if (p.taskType === "subtask" || p.taskType === "note") {
+        const parentId = p.parentTitle ? mastersByTitle.get(p.parentTitle.toLowerCase()) : null;
+        await db.update(planItemsTable).set({ parentTaskId: parentId || null }).where(eq(planItemsTable.id, p.dbId));
+      } else {
+        await db.update(planItemsTable).set({ parentTaskId: null }).where(eq(planItemsTable.id, p.dbId));
+      }
+      updated++;
+    }
+
+    console.log(`[sheets-sync] syncTasksFromSheet: ${updated} updated, ${skipped} skipped`);
+    return { ok: true, updated, skipped };
+  } catch (err) {
+    console.warn("[sheets-sync] syncTasksFromSheet failed:", (err as Error).message);
+    return { ok: false, updated: 0, skipped: 0, error: (err as Error).message };
   }
 }
 
@@ -265,6 +347,13 @@ router.post("/sheets/sync-master", async (req, res): Promise<void> => {
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message });
   }
+});
+
+// ─── Sheets → DB reverse sync for tasks (pulls Type + Sub-Type back into DB) ────
+router.post("/sheets/sync-tasks-from-sheet", async (req, res): Promise<void> => {
+  const result = await syncTasksFromSheet();
+  if (result.ok) res.json(result);
+  else res.status(500).json(result);
 });
 
 // ─── Ingest 90-day plan document into business_context table ─────────────────

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { planItemsTable, brainTrainingLogTable, businessContextTable } from "../../lib/schema-v2";
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncTasksTab } from "./sheets-sync";
 
@@ -569,11 +569,27 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
 // POST /plan/task — create a new task with smart priority placement
 router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId } = req.body;
+    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId } = req.body;
 
     if (!category || !title) {
       res.status(400).json({ error: "category and title are required" });
       return;
+    }
+
+    const normalizedType: "master" | "subtask" | "note" =
+      taskType === "subtask" || taskType === "note" ? taskType : "master";
+
+    // Sub-tasks and notes must have a parent master
+    if ((normalizedType === "subtask" || normalizedType === "note") && !parentTaskId) {
+      res.status(400).json({ error: `${normalizedType} requires parentTaskId` });
+      return;
+    }
+    if (parentTaskId) {
+      const [parentRow] = await db.select().from(planItemsTable).where(eq(planItemsTable.id, parentTaskId));
+      if (!parentRow || parentRow.level !== "task" || parentRow.taskType !== "master") {
+        res.status(400).json({ error: "parentTaskId must reference an existing Master task" });
+        return;
+      }
     }
 
     // Find parent subcategory
@@ -590,22 +606,30 @@ router.post("/plan/task", async (req, res): Promise<void> => {
     ));
     if (!catRow) { res.status(400).json({ error: "Category not found" }); return; }
 
-    // Get all tasks in this category sorted by priority+order
+    // Scope sibling tasks: masters among masters (in category), subs/notes among children of parentTaskId
+    const siblingWhere = normalizedType === "master"
+      ? and(eq(planItemsTable.level, "task"), eq(planItemsTable.category, category), eq(planItemsTable.taskType, "master"))
+      : and(eq(planItemsTable.level, "task"), eq(planItemsTable.parentTaskId, parentTaskId));
+
     const existingTasks = await db.select().from(planItemsTable)
-      .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.category, category)))
+      .where(siblingWhere)
       .orderBy(asc(planItemsTable.priorityOrder));
 
-    // Find insertion position based on priority rank
+    // Find insertion position based on priority rank (notes go to end — no priority sort)
     const newRank = PRIORITY_RANK[priority] ?? 2;
     let insertAfterOrder = -1;
-    for (const t of existingTasks) {
-      const tRank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
-      if (tRank <= newRank) insertAfterOrder = t.priorityOrder ?? 0;
+    if (normalizedType === "note") {
+      insertAfterOrder = existingTasks.length > 0 ? (existingTasks[existingTasks.length - 1].priorityOrder ?? 0) : -1;
+    } else {
+      for (const t of existingTasks) {
+        const tRank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
+        if (tRank <= newRank) insertAfterOrder = t.priorityOrder ?? 0;
+      }
     }
 
     const insertOrder = insertAfterOrder + 1;
 
-    // Shift all items at or after the insertion point up by 1
+    // Shift all siblings at or after the insertion point up by 1
     for (const t of existingTasks) {
       if ((t.priorityOrder ?? 0) >= insertOrder) {
         await db.update(planItemsTable).set({ priorityOrder: (t.priorityOrder ?? 0) + 1 })
@@ -621,8 +645,8 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       title,
       owner: owner || null,
       coOwner: coOwner || null,
-      priority: priority || "P2",
-      dueDate: dueDate || null,
+      priority: normalizedType === "note" ? null : (priority || "P2"),
+      dueDate: normalizedType === "note" ? null : (dueDate || null),
       weekNumber: weekNumber ? parseInt(weekNumber) : null,
       month: month || "2026-04",
       atomicKpi: atomicKpi || null,
@@ -632,7 +656,9 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       linearId: linearId || null,
       parentId: subcatRow?.id || catRow.id,
       priorityOrder: insertOrder,
-      status: "active",
+      status: normalizedType === "note" ? null : "active",
+      taskType: normalizedType,
+      parentTaskId: normalizedType === "master" ? null : parentTaskId,
     }).returning();
 
     // Re-normalize priority orders (make them sequential integers)
@@ -777,14 +803,16 @@ router.get("/plan/brain/order", async (req, res): Promise<void> => {
     const taskList = activeTasks.map((t, i) => {
       const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
       const prank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
-      return `${i + 1}. [${t.id}] ${t.category}/${t.subcategory || "—"} | "${t.title}" | Owner:${t.owner || "?"} | Priority:${t.priority || "?"} (rank ${prank}) | Due:${t.dueDate || "none"} | Source:${t.source || "?"}`;
+      const typeLabel = t.taskType === "subtask" ? "SUB" : t.taskType === "note" ? "NOTE" : "MASTER";
+      const parentRef = t.parentTaskId ? ` | Parent:${t.parentTaskId}` : "";
+      return `${i + 1}. [${t.id}] ${typeLabel} | ${t.category}/${t.subcategory || "—"} | "${t.title}" | Owner:${t.owner || "?"} | Priority:${t.priority || "?"} (rank ${prank}) | Due:${t.dueDate || "none"} | Source:${t.source || "?"}${parentRef}`;
     }).join("\n");
 
     const trainingHistory = recentLogs.length > 0
       ? recentLogs.map(l => `- Moved "${l.movedItemTitle}" above ${(l.displacedItemTitles || []).slice(0, 3).join(", ")} because: "${l.tonyExplanation}"`).join("\n")
       : "No training history yet.";
 
-    const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Your job is to determine the optimal work priority order for all active tasks.
+    const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Your job is to determine the optimal work priority order within a two-tier hierarchy: Master tasks at top, Sub-tasks and Notes under their parent Master.
 
 NORTH STAR METRIC: Every Acquisition Associate closes 2 deals/month. If it doesn't move an AA toward 2 deals/month, it is noise.
 
@@ -797,16 +825,22 @@ ${trainingHistory}
 ACTIVE TASKS (current order, positions 1 to ${activeTasks.length}):
 ${taskList}
 
-Re-rank ALL ${activeTasks.length} tasks in optimal sprint priority order. Consider:
+HIERARCHY RULES (STRICT — do not violate):
+- MASTER tasks compete with other MASTER tasks. Rank them among themselves.
+- SUB tasks belong to their Parent master. Rank SUBs ONLY within their parent's children group.
+- NOTES belong to their Parent master but have no priority — list them AFTER all SUBs of the same parent.
+- A SUB must NEVER be reassigned to a different parent. Keep its Parent:<id> unchanged.
+- Output should be structured so each Master is followed by all its SUBs (ordered) then its NOTES (in existing order).
+
+Ranking criteria within each tier:
 1. Priority field (P0 > P1 > P2)
 2. Due date urgency
-3. Revenue / AA deal impact (higher = earlier)
-4. Training history (respect Tony's established patterns)
-5. Owner availability patterns
-6. Dependencies (don't block downstream tasks)
+3. Revenue / AA deal impact
+4. Training history (respect Tony's patterns)
+5. Dependencies
 
-Return ONLY a JSON object with the key "priorityOrder" containing an array of ALL task IDs in optimal order (no markdown, no explanation):
-{"priorityOrder": ["id1","id2","id3",...]}`;
+Return ONLY a JSON object with key "priorityOrder" — array of ALL task IDs in optimal flattened tree order (Master → its SUBs → its NOTES → next Master → ...). No markdown, no explanation:
+{"priorityOrder": ["masterA-id","masterA-sub1-id","masterA-sub2-id","masterA-note1-id","masterB-id","masterB-sub1-id",...]}`;
 
     const msg = await createTrackedMessage("plan_organize", {
       model: "claude-sonnet-4-5",
@@ -884,13 +918,62 @@ router.get("/plan/brain/context", async (req, res): Promise<void> => {
   }
 });
 
-// DELETE /plan/task/:id — delete a task
+// DELETE /plan/task/:id — delete a task, with orphan handling for Master tasks
+// Query params: ?action=promote|cascade|orphan (default: cascade when Master has children)
 router.delete("/plan/task/:id", async (req, res): Promise<void> => {
   try {
     const { id } = req.params;
+    const action = (req.query.action as string) || "cascade";
+
+    const [target] = await db.select().from(planItemsTable).where(eq(planItemsTable.id, id));
+    if (!target) { res.status(404).json({ error: "Task not found" }); return; }
+
+    // Only Master tasks can have children, so orphan logic only applies to them
+    if (target.taskType === "master") {
+      const children = await db.select().from(planItemsTable)
+        .where(eq(planItemsTable.parentTaskId, id));
+
+      if (children.length > 0) {
+        if (action === "promote") {
+          // Promote subtasks to masters; delete notes (useless without context)
+          const subChildIds = children.filter(c => c.taskType === "subtask").map(c => c.id);
+          const noteChildIds = children.filter(c => c.taskType === "note").map(c => c.id);
+          if (subChildIds.length > 0) {
+            await db.update(planItemsTable)
+              .set({ taskType: "master", parentTaskId: null })
+              .where(inArray(planItemsTable.id, subChildIds));
+          }
+          if (noteChildIds.length > 0) {
+            await db.delete(planItemsTable).where(inArray(planItemsTable.id, noteChildIds));
+          }
+        } else if (action === "cascade") {
+          // Delete all children (sub-tasks and notes)
+          await db.delete(planItemsTable).where(eq(planItemsTable.parentTaskId, id));
+        } else if (action === "orphan") {
+          // Leave children with dangling parentTaskId (they'll render in "Orphaned" group)
+          // No-op — children stay as-is
+        }
+      }
+    }
+
     await db.delete(planItemsTable).where(eq(planItemsTable.id, id));
     triggerSheetsSync();
-    res.json({ ok: true });
+    res.json({ ok: true, action });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// GET /plan/task/:id/children — count children (for delete-confirmation dialog)
+router.get("/plan/task/:id/children", async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const children = await db.select({ id: planItemsTable.id, taskType: planItemsTable.taskType, title: planItemsTable.title })
+      .from(planItemsTable)
+      .where(eq(planItemsTable.parentTaskId, id));
+    const subCount = children.filter(c => c.taskType === "subtask").length;
+    const noteCount = children.filter(c => c.taskType === "note").length;
+    res.json({ ok: true, total: children.length, subCount, noteCount, children });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

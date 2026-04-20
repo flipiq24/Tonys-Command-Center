@@ -240,12 +240,16 @@ export const planItemsTable = pgTable("plan_items", {
   atomicKpi: text("atomic_kpi"),
   workNotes: text("work_notes"),
   executionTier: text("execution_tier"),
+  taskType: text("task_type").default("master"),
+  parentTaskId: uuid("parent_task_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => [
   index("idx_pi_level").on(table.level),
   index("idx_pi_category").on(table.category),
   index("idx_pi_parent_id").on(table.parentId),
+  index("idx_pi_parent_task_id").on(table.parentTaskId),
+  index("idx_pi_task_type").on(table.taskType),
   index("idx_pi_month").on(table.month),
   index("idx_pi_status").on(table.status),
 ]);

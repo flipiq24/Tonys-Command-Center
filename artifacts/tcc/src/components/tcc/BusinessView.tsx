@@ -26,6 +26,8 @@ type PlanItem = {
   priorityOrder?: number;
   parentId?: string | null;
   sprintId?: string;
+  taskType?: "master" | "subtask" | "note" | null;
+  parentTaskId?: string | null;
 };
 
 type SubcategoryWithTasks = PlanItem & { tasks: PlanItem[]; totalTasks: number; completedTasks: number };
@@ -597,21 +599,28 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
 // ─── Add Task Modal ───────────────────────────────────────────────────────────
 
 function AddTaskModal({
-  onClose, onCreated, categories, prefill,
+  onClose, onCreated, categories, prefill, allTasks,
 }: {
   onClose: () => void;
   onCreated: (task: PlanItem & { sprintId: string; position: number; total: number; prevTask?: { title: string; sprintId: string } | null; nextTask?: { title: string; sprintId: string } | null }) => void;
   categories: CategoryWithSubs[];
   prefill?: Record<string, string> | null;
+  allTasks?: PlanItem[];
 }) {
   const [form, setForm] = useState(() => {
-    const defaults = { title: "", category: "", subcategoryName: "", owner: "", coOwner: "", priority: "P1", dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "" };
+    const defaults = { title: "", category: "", subcategoryName: "", owner: "", coOwner: "", priority: "P1", dueDate: "", weekNumber: "", atomicKpi: "", source: "manual", executionTier: "Sprint", workNotes: "", linearId: "", taskType: "master", parentTaskId: "" };
     if (prefill) return { ...defaults, ...Object.fromEntries(Object.entries(prefill).filter(([_, v]) => v != null && v !== "")) };
     return defaults;
   });
   const [subcats, setSubcats] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  // Master tasks available for Sub-Task / Note parent selection
+  const masterTasks = (allTasks || []).filter(t => t.taskType === "master" || !t.taskType);
+  const selectedParent = form.parentTaskId ? masterTasks.find(m => m.id === form.parentTaskId) : null;
+  const siblings = selectedParent ? (allTasks || []).filter(t => t.parentTaskId === selectedParent.id) : [];
+  const masterSiblings = !selectedParent ? masterTasks : [];
 
   useEffect(() => {
     if (!form.category) { setSubcats([]); return; }
@@ -633,9 +642,19 @@ function AddTaskModal({
     e.preventDefault();
     if (!form.title.trim()) { setErr("Task title is required"); return; }
     if (!form.category) { setErr("Category is required"); return; }
+    if ((form.taskType === "subtask" || form.taskType === "note") && !form.parentTaskId) {
+      setErr(`${form.taskType === "note" ? "Note" : "Sub-Task"} requires a parent master task`);
+      return;
+    }
     setLoading(true); setErr("");
     try {
-      const result:any = await post("/plan/task", { ...form, month: "2026-04", weekNumber: form.weekNumber ? parseInt(form.weekNumber) : undefined });
+      const payload: any = {
+        ...form,
+        month: "2026-04",
+        weekNumber: form.weekNumber ? parseInt(form.weekNumber) : undefined,
+        parentTaskId: form.parentTaskId || undefined,
+      };
+      const result:any = await post("/plan/task", payload);
       onCreated(result);
     } catch (e: any) {
       setErr(e.message || "Failed to create task");
@@ -647,11 +666,32 @@ function AddTaskModal({
   const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, fontSize: 13, background: "#fff", boxSizing: "border-box" };
   const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: F, marginBottom: 4, display: "block" };
 
+  // Visualizer computes preview placement based on priority rank
+  const previewList = (() => {
+    const rank = (p: string | null | undefined) => ({ P0: 0, P1: 1, P2: 2 }[p || "P2"] ?? 2);
+    const newItem = { id: "__new__", title: form.title || "(new task)", priority: form.priority, isNew: true } as any;
+    if (form.taskType === "master") {
+      const items = [...masterSiblings].sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+      // Insert at position matching new priority
+      const idx = items.findIndex(t => rank(t.priority) > rank(form.priority));
+      if (idx === -1) items.push(newItem); else items.splice(idx, 0, newItem);
+      return items;
+    } else {
+      const items = [...siblings].sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+      if (form.taskType === "note") items.push(newItem);
+      else {
+        const idx = items.findIndex(t => rank(t.priority) > rank(form.priority));
+        if (idx === -1) items.push(newItem); else items.splice(idx, 0, newItem);
+      }
+      return items;
+    }
+  })();
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: C.bg, borderRadius: "16px 16px 0 0", padding: "24px 28px 32px", width: "100%", maxWidth: 680, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 -8px 40px rgba(0,0,0,0.2)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ background: C.bg, borderRadius: "16px 16px 0 0", width: "100%", maxWidth: 980, maxHeight: "92vh", boxShadow: "0 -8px 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "20px 28px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: C.tx, fontFamily: F }}>Add task to 411 Plan</div>
             <div style={{ fontSize: 12, color: C.sub, fontFamily: F, marginTop: 2 }}>Fill in the details and the task will be placed by priority</div>
@@ -659,11 +699,41 @@ function AddTaskModal({
           <button onClick={onClose} style={{ background: "none", border: "none", color: C.mut, fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
 
+        <div style={{ display: "flex", flex: 1, overflow: "hidden", gap: 0 }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "16px 28px 28px" }}>
         <form onSubmit={submit}>
           {/* Title */}
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>Task title *</label>
             <input value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Tony: close 2 new operators" style={inputStyle} />
+          </div>
+
+          {/* Type + Parent */}
+          <div style={{ display: "grid", gridTemplateColumns: form.taskType === "master" ? "1fr" : "1fr 1.4fr", gap: 14, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>Task type *</label>
+              <select
+                value={form.taskType}
+                onChange={e => {
+                  const nextType = e.target.value;
+                  setForm(f => ({ ...f, taskType: nextType, parentTaskId: nextType === "master" ? "" : f.parentTaskId }));
+                }}
+                style={inputStyle}
+              >
+                <option value="master">📌 Master Task — top-level</option>
+                <option value="subtask">↳ Sub-Task — child of a master</option>
+                <option value="note">📝 Note — info attached to master</option>
+              </select>
+            </div>
+            {form.taskType !== "master" && (
+              <div>
+                <label style={labelStyle}>Parent master task *</label>
+                <select value={form.parentTaskId} onChange={e => set("parentTaskId", e.target.value)} style={inputStyle}>
+                  <option value="">Select parent master…</option>
+                  {masterTasks.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+                </select>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
@@ -774,6 +844,51 @@ function AddTaskModal({
             </button>
           </div>
         </form>
+          </div>
+          {/* ── Sidebar visualizer ── */}
+          <div style={{ width: 280, flexShrink: 0, borderLeft: `1px solid ${C.brd}`, background: "#F9FAFB", overflowY: "auto", padding: "16px 18px 28px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Preview placement</div>
+            <div style={{ fontSize: 10, color: C.mut, marginBottom: 14 }}>
+              {form.taskType === "master" && "Among master tasks, sorted by priority"}
+              {form.taskType === "subtask" && selectedParent && `Under "${selectedParent.title}", by priority`}
+              {form.taskType === "subtask" && !selectedParent && "Pick a parent master task first"}
+              {form.taskType === "note" && selectedParent && `Attached to "${selectedParent.title}"`}
+              {form.taskType === "note" && !selectedParent && "Pick a parent master task first"}
+            </div>
+            {(form.taskType === "master" || selectedParent) && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {previewList.slice(0, 20).map((t: any, i: number) => {
+                  const isNew = t.id === "__new__";
+                  return (
+                    <div
+                      key={t.id + "-" + i}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: 6,
+                        border: `1px solid ${isNew ? "#F97316" : C.brd}`,
+                        background: isNew ? "#FFF7ED" : "#fff",
+                        fontSize: 11,
+                        fontFamily: F,
+                        color: isNew ? "#C2410C" : C.tx,
+                        fontWeight: isNew ? 700 : 400,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <span style={{ fontSize: 9, color: C.mut, minWidth: 22 }}>#{i + 1}</span>
+                      {form.taskType !== "master" && <span style={{ color: C.mut }}>↳</span>}
+                      <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
+                      {t.priority && form.taskType !== "note" && <span style={{ fontSize: 9, fontWeight: 700, color: t.priority === "P0" ? C.red : t.priority === "P1" ? C.amb : C.grn }}>{t.priority}</span>}
+                    </div>
+                  );
+                })}
+                {previewList.length === 0 && <div style={{ fontSize: 11, color: C.mut, fontStyle: "italic" }}>No siblings — this will be the first.</div>}
+                {previewList.length > 20 && <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>+{previewList.length - 20} more…</div>}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1172,6 +1287,75 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     }
   }
 
+  // ── Hierarchical flattening: Master → its subtasks/notes → next Master ──
+  // When no manual sort column is chosen, arrange by hierarchy
+  if (!sortCol) {
+    const displayedIds = new Set(displayed.map(t => t.id));
+    const masters = displayed.filter(t => (t.taskType ?? "master") === "master")
+      .sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+
+    const childrenOf = (mid: string) => displayed
+      .filter(t => t.parentTaskId === mid && (t.taskType === "subtask" || t.taskType === "note"))
+      .sort((a, b) => {
+        // notes go to the end within a parent
+        const aIsNote = a.taskType === "note" ? 1 : 0;
+        const bIsNote = b.taskType === "note" ? 1 : 0;
+        if (aIsNote !== bIsNote) return aIsNote - bIsNote;
+        return (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0);
+      });
+
+    const tree: (PlanItem & { sprintId?: string })[] = [];
+    for (const m of masters) {
+      tree.push(m);
+      for (const c of childrenOf(m.id)) tree.push(c);
+    }
+
+    // Orphans: children whose parent isn't in `displayed` (filtered out, or missing)
+    const orphans = displayed.filter(t =>
+      (t.taskType === "subtask" || t.taskType === "note") &&
+      t.parentTaskId &&
+      !masters.some(m => m.id === t.parentTaskId)
+    ).sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+    for (const o of orphans) tree.push(o);
+
+    displayed = tree.filter(t => displayedIds.has(t.id));
+  }
+
+  // ── Delete-confirmation dialog state (for Master with children) ──
+  const [deleteDialog, setDeleteDialog] = useState<{
+    taskId: string;
+    taskTitle: string;
+    subCount: number;
+    noteCount: number;
+  } | null>(null);
+
+  async function handleDeleteTask(id: string) {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    // For Master tasks, check for children and show dialog
+    if ((task.taskType ?? "master") === "master") {
+      try {
+        const children = await get<{ total: number; subCount: number; noteCount: number }>(`/plan/task/${id}/children`);
+        if (children.total > 0) {
+          setDeleteDialog({ taskId: id, taskTitle: task.title, subCount: children.subCount, noteCount: children.noteCount });
+          return;
+        }
+      } catch { /* fallthrough to direct delete */ }
+    }
+    // Direct delete (subtask, note, or master with no children)
+    try { await del(`/plan/task/${id}?action=cascade`); } catch { /* */ }
+    await loadTasks(true);
+    onRefreshAll();
+  }
+
+  async function confirmDelete(action: "promote" | "cascade" | "orphan") {
+    if (!deleteDialog) return;
+    try { await del(`/plan/task/${deleteDialog.taskId}?action=${action}`); } catch { /* */ }
+    setDeleteDialog(null);
+    await loadTasks(true);
+    onRefreshAll();
+  }
+
   async function handleToggle(id: string, complete: boolean) {
     // Optimistic UI update — instant visual feedback
     setTasks(prev => prev.map(t =>
@@ -1451,7 +1635,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1400 }}>
           <thead>
             <tr style={{ background: C.card, borderBottom: `2px solid ${C.brd}` }}>
-              {["","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Co-Owner","Source","Priority","Status","Due Date","Completed","Notes","Linear"].map((h, i) => (
+              {["","Type","Sprint ID","Tier","Category","Sub-Category","Task","Atomic KPI","Owner","Co-Owner","Source","Priority","Status","Due Date","Completed","Notes","Linear",""].map((h, i) => (
                 <th key={i} onClick={() => {
                   if (!h) return;
                   if (sortCol === h) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -1496,10 +1680,18 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                   {/* Drag + checkbox combined */}
                   <td onClick={e => e.stopPropagation()} style={{ padding: "6px 8px", textAlign: "center", cursor: "grab", color: C.mut, fontSize: 14, whiteSpace: "nowrap" }}>
                     <span style={{ marginRight: 4, opacity: 0.4 }}>⠿</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); handleToggle(task.id, !done); }}
-                      style={{ width: 15, height: 15, borderRadius: 3, border: `1.5px solid ${done ? C.grn : "#d1d5db"}`, background: done ? C.grn : "transparent", color: "#fff", fontSize: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
-                    >{done ? "✓" : ""}</button>
+                    {task.taskType !== "note" && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleToggle(task.id, !done); }}
+                        style={{ width: 15, height: 15, borderRadius: 3, border: `1.5px solid ${done ? C.grn : "#d1d5db"}`, background: done ? C.grn : "transparent", color: "#fff", fontSize: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                      >{done ? "✓" : ""}</button>
+                    )}
+                  </td>
+                  {/* Type */}
+                  <td style={{ padding: "8px 10px", fontSize: 11, whiteSpace: "nowrap" }}>
+                    {(task.taskType ?? "master") === "master" && <span style={{ color: "#F97316", fontWeight: 700 }}>📌 Master</span>}
+                    {task.taskType === "subtask" && <span style={{ color: C.sub, fontWeight: 500 }}>↳ Sub</span>}
+                    {task.taskType === "note" && <span style={{ color: C.mut, fontWeight: 500, fontStyle: "italic" }}>📝 Note</span>}
                   </td>
                   {/* Sprint ID */}
                   <td style={{ padding: "8px 10px", fontSize: 11, fontWeight: 700, color: C.sub, fontFamily: "monospace", whiteSpace: "nowrap" }}>{task.sprintId || "—"}</td>
@@ -1511,9 +1703,21 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                   </td>
                   {/* Subcategory */}
                   <td style={{ padding: "8px 10px", fontSize: 11, color: C.sub }}>{task.subcategory || "—"}</td>
-                  {/* Task title */}
+                  {/* Task title — with tree indent for subs/notes */}
                   <td style={{ padding: "8px 10px", maxWidth: 220, minWidth: 140 }}>
-                    <span style={{ fontSize: 12, color: done ? C.mut : C.tx, textDecoration: done ? "line-through" : "none", lineHeight: 1.4, display: "block" }}>{task.title}</span>
+                    <span style={{
+                      fontSize: task.taskType === "note" ? 11 : 12,
+                      color: done ? C.mut : task.taskType === "note" ? C.sub : C.tx,
+                      textDecoration: done ? "line-through" : "none",
+                      lineHeight: 1.4,
+                      display: "block",
+                      paddingLeft: (task.taskType === "subtask" || task.taskType === "note") ? 20 : 0,
+                      fontStyle: task.taskType === "note" ? "italic" : "normal",
+                      fontWeight: (task.taskType ?? "master") === "master" ? 600 : 400,
+                    }}>
+                      {(task.taskType === "subtask" || task.taskType === "note") && <span style={{ color: C.mut, marginRight: 4 }}>↳</span>}
+                      {task.title}
+                    </span>
                   </td>
                   {/* Atomic KPI */}
                   <td style={{ padding: "8px 10px", maxWidth: 160, fontSize: 11, color: C.sub }}>{task.atomicKpi || "—"}</td>
@@ -1549,6 +1753,16 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                       <span style={{ color: C.mut }}>—</span>
                     )}
                   </td>
+                  {/* Delete */}
+                  <td onClick={e => e.stopPropagation()} style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                      title="Delete task"
+                      style={{ background: "none", border: "none", color: C.mut, cursor: "pointer", fontSize: 14, padding: 2 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                      onMouseLeave={e => (e.currentTarget.style.color = C.mut)}
+                    >🗑</button>
+                  </td>
                 </tr>
               );
             })}
@@ -1565,8 +1779,57 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
           onCreated={handleAddCreated}
           categories={categories}
           prefill={prefillData}
+          allTasks={tasks}
         />
       )}
+
+      {/* Delete-confirmation dialog — shown when deleting a Master task with children */}
+      {deleteDialog && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={e => { if (e.target === e.currentTarget) setDeleteDialog(null); }}>
+          <div style={{ background: "#fff", borderRadius: 12, width: 460, maxWidth: "92vw", padding: 24, boxShadow: "0 16px 48px rgba(0,0,0,0.24)" }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: C.tx, fontFamily: F, marginBottom: 6 }}>Delete Master Task</div>
+            <div style={{ fontSize: 13, color: C.sub, fontFamily: F, marginBottom: 4 }}>"{deleteDialog.taskTitle}"</div>
+            <div style={{ fontSize: 12, color: C.mut, fontFamily: F, marginBottom: 16 }}>
+              This master has {deleteDialog.subCount} sub-task{deleteDialog.subCount === 1 ? "" : "s"}
+              {deleteDialog.noteCount > 0 && ` and ${deleteDialog.noteCount} note${deleteDialog.noteCount === 1 ? "" : "s"}`}.
+              What should happen to {deleteDialog.subCount + deleteDialog.noteCount === 1 ? "it" : "them"}?
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              <button
+                onClick={() => confirmDelete("promote")}
+                style={{ padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${C.grn}`, background: C.grnBg, color: C.grn, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left", fontFamily: F }}
+              >
+                📌 Promote sub-tasks to Master
+                <div style={{ fontSize: 11, fontWeight: 400, color: C.sub, marginTop: 2 }}>Sub-tasks become independent; notes will be deleted (no context without parent)</div>
+              </button>
+              <button
+                onClick={() => confirmDelete("cascade")}
+                style={{ padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${C.red}`, background: C.redBg, color: C.red, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left", fontFamily: F }}
+              >
+                🗑 Delete all children with parent
+                <div style={{ fontSize: 11, fontWeight: 400, color: C.sub, marginTop: 2 }}>Cascade delete — everything under this master is removed</div>
+              </button>
+              <button
+                onClick={() => confirmDelete("orphan")}
+                style={{ padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${C.brd}`, background: C.card, color: C.tx, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left", fontFamily: F }}
+              >
+                👻 Keep as orphans
+                <div style={{ fontSize: 11, fontWeight: 400, color: C.sub, marginTop: 2 }}>Children stay with dangling parent reference — shown in an "Orphaned" group at the bottom</div>
+              </button>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setDeleteDialog(null)}
+                style={{ padding: "8px 18px", borderRadius: 7, border: `1px solid ${C.brd}`, background: "transparent", color: C.sub, fontSize: 12, cursor: "pointer", fontFamily: F }}
+              >Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {placementToast && <Toast msg={placementToast} onDismiss={() => setPlacementToast(null)} />}
 
       {/* Hover tooltip — shows after 500ms hover */}
@@ -2357,6 +2620,27 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
     finally { setSyncing(false); }
   }
 
+  const [refreshMenuOpen, setRefreshMenuOpen] = useState(false);
+  async function handleRefreshFromDb() {
+    setRefreshMenuOpen(false);
+    setSyncing(true);
+    try {
+      await post("/sheets/sync-master", {});
+      setToast("✓ Pushed DB → Sheets");
+    } catch { setErr("Refresh from DB failed"); }
+    finally { setSyncing(false); }
+  }
+  async function handleRefreshFromSheets() {
+    setRefreshMenuOpen(false);
+    setSyncing(true);
+    try {
+      const r = await post<{ ok: boolean; updated: number; skipped: number; error?: string }>("/sheets/sync-tasks-from-sheet", {});
+      if (r.ok) { setToast(`✓ Pulled Sheets → DB (${r.updated} updated, ${r.skipped} skipped)`); await loadPlan(true); }
+      else setErr(r.error || "Pull failed");
+    } catch { setErr("Refresh from Sheets failed"); }
+    finally { setSyncing(false); }
+  }
+
   const totalTasks = categories.reduce((s, c) => s + c.totalTasks, 0);
   const doneTasks = categories.reduce((s, c) => s + c.completedTasks, 0);
 
@@ -2385,12 +2669,46 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, position: "relative" }}>
               {tab === "goals" && (
                 <>
                   <button onClick={handlePullFromSheet} disabled={syncing} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.brd}`, background: C.card, color: C.sub, fontSize: 12, cursor: "pointer", fontFamily: F }}>↓ Pull</button>
                   <button onClick={handlePushToSheet} disabled={syncing} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.grn}`, background: C.grnBg, color: C.grn, fontSize: 12, cursor: "pointer", fontFamily: F }}>↑ Push</button>
                 </>
+              )}
+              {(tab === "tasks" || tab === "goals") && (
+                <div style={{ position: "relative" }}>
+                  <button
+                    onClick={() => setRefreshMenuOpen(v => !v)}
+                    disabled={syncing}
+                    style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.brd}`, background: C.card, color: C.sub, fontSize: 12, cursor: syncing ? "wait" : "pointer", fontFamily: F, display: "flex", alignItems: "center", gap: 4 }}
+                  >
+                    {syncing ? "⟳ Syncing..." : "↻ Refresh ▾"}
+                  </button>
+                  {refreshMenuOpen && (
+                    <>
+                      <div onClick={() => setRefreshMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, background: "#fff", border: `1px solid ${C.brd}`, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999, minWidth: 200, padding: 4 }}>
+                        <button
+                          onClick={handleRefreshFromDb}
+                          style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontFamily: F, color: C.tx, borderRadius: 6 }}
+                          onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                        >
+                          ↑ From DB <span style={{ color: C.mut, marginLeft: 8 }}>— push to Sheets</span>
+                        </button>
+                        <button
+                          onClick={handleRefreshFromSheets}
+                          style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontFamily: F, color: C.tx, borderRadius: 6 }}
+                          onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
+                          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                        >
+                          ↓ From Sheets <span style={{ color: C.mut, marginLeft: 8 }}>— pull Type/Sub-Type into DB</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

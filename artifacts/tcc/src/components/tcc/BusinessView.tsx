@@ -615,12 +615,17 @@ function AddTaskModal({
   const [subcats, setSubcats] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [manualOffset, setManualOffset] = useState(0); // user drags the new-task row in preview panel
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   // Master tasks available for Sub-Task / Note parent selection
   const masterTasks = (allTasks || []).filter(t => t.taskType === "master" || !t.taskType);
   const selectedParent = form.parentTaskId ? masterTasks.find(m => m.id === form.parentTaskId) : null;
   const siblings = selectedParent ? (allTasks || []).filter(t => t.parentTaskId === selectedParent.id) : [];
   const masterSiblings = !selectedParent ? masterTasks : [];
+
+  // Reset the user's nudge when the base position changes
+  useEffect(() => { setManualOffset(0); }, [form.taskType, form.parentTaskId, form.priority]);
 
   useEffect(() => {
     if (!form.category) { setSubcats([]); return; }
@@ -653,6 +658,8 @@ function AddTaskModal({
         month: "2026-04",
         weekNumber: form.weekNumber ? parseInt(form.weekNumber) : undefined,
         parentTaskId: form.parentTaskId || undefined,
+        // User may have nudged the placement ▲/▼ in the preview panel
+        manualPosition: manualOffset !== 0 ? finalIdx : undefined,
       };
       const result:any = await post("/plan/task", payload);
       onCreated(result);
@@ -666,26 +673,28 @@ function AddTaskModal({
   const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, fontSize: 13, background: "#fff", boxSizing: "border-box" };
   const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: F, marginBottom: 4, display: "block" };
 
-  // Visualizer computes preview placement based on priority rank
-  const previewList = (() => {
+  // Visualizer computes preview placement based on priority rank + any user nudge
+  const { previewList, baseIdx, finalIdx } = (() => {
     const rank = (p: string | null | undefined) => ({ P0: 0, P1: 1, P2: 2 }[p || "P2"] ?? 2);
     const newItem = { id: "__new__", title: form.title || "(new task)", priority: form.priority, isNew: true } as any;
-    if (form.taskType === "master") {
-      const items = [...masterSiblings].sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
-      // Insert at position matching new priority
-      const idx = items.findIndex(t => rank(t.priority) > rank(form.priority));
-      if (idx === -1) items.push(newItem); else items.splice(idx, 0, newItem);
-      return items;
+    const isNote = form.taskType === "note";
+    const isMaster = form.taskType === "master";
+    const sourceSiblings = isMaster ? masterSiblings : siblings;
+    const items = [...sourceSiblings].sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+    // Auto-placement by priority (or end-of-list for notes)
+    let baseIdx: number;
+    if (isNote) {
+      baseIdx = items.length;
     } else {
-      const items = [...siblings].sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
-      if (form.taskType === "note") items.push(newItem);
-      else {
-        const idx = items.findIndex(t => rank(t.priority) > rank(form.priority));
-        if (idx === -1) items.push(newItem); else items.splice(idx, 0, newItem);
-      }
-      return items;
+      const found = items.findIndex(t => rank(t.priority) > rank(form.priority));
+      baseIdx = found === -1 ? items.length : found;
     }
+    // Apply user's ▲ ▼ nudge, clamped to valid range
+    const finalIdx = Math.max(0, Math.min(items.length, baseIdx + manualOffset));
+    items.splice(finalIdx, 0, newItem);
+    return { previewList: items, baseIdx, finalIdx };
   })();
+  void baseIdx; // used inside the drag-drop handler below
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
@@ -847,8 +856,18 @@ function AddTaskModal({
           </div>
           {/* ── Sidebar visualizer ── */}
           <div style={{ width: 280, flexShrink: 0, borderLeft: `1px solid ${C.brd}`, background: "#F9FAFB", overflowY: "auto", padding: "16px 18px 28px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Preview placement</div>
-            <div style={{ fontSize: 10, color: C.mut, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>Preview placement</div>
+              {manualOffset !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setManualOffset(0)}
+                  title="Reset to auto placement"
+                  style={{ fontSize: 9, background: "none", border: `1px solid ${C.brd}`, borderRadius: 4, padding: "2px 6px", color: C.sub, cursor: "pointer", fontFamily: F }}
+                >↺ reset auto</button>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: C.mut, marginBottom: 6 }}>
               {form.taskType === "master" && "Among master tasks, sorted by priority"}
               {form.taskType === "subtask" && selectedParent && `Under "${selectedParent.title}", by priority`}
               {form.taskType === "subtask" && !selectedParent && "Pick a parent master task first"}
@@ -856,37 +875,88 @@ function AddTaskModal({
               {form.taskType === "note" && !selectedParent && "Pick a parent master task first"}
             </div>
             {(form.taskType === "master" || selectedParent) && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {previewList.slice(0, 20).map((t: any, i: number) => {
-                  const isNew = t.id === "__new__";
-                  return (
-                    <div
-                      key={t.id + "-" + i}
-                      style={{
-                        padding: "7px 10px",
-                        borderRadius: 6,
-                        border: `1px solid ${isNew ? "#F97316" : C.brd}`,
-                        background: isNew ? "#FFF7ED" : "#fff",
-                        fontSize: 11,
-                        fontFamily: F,
-                        color: isNew ? "#C2410C" : C.tx,
-                        fontWeight: isNew ? 700 : 400,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <span style={{ fontSize: 9, color: C.mut, minWidth: 22 }}>#{i + 1}</span>
-                      {form.taskType !== "master" && <span style={{ color: C.mut }}>↳</span>}
-                      <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</span>
-                      {t.priority && form.taskType !== "note" && <span style={{ fontSize: 9, fontWeight: 700, color: t.priority === "P0" ? C.red : t.priority === "P1" ? C.amb : C.grn }}>{t.priority}</span>}
-                    </div>
-                  );
-                })}
-                {previewList.length === 0 && <div style={{ fontSize: 11, color: C.mut, fontStyle: "italic" }}>No siblings — this will be the first.</div>}
-                {previewList.length > 20 && <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>+{previewList.length - 20} more…</div>}
+              <div style={{ fontSize: 9, color: C.mut, fontStyle: "italic", marginBottom: 10 }}>
+                ⠿ Drag the highlighted row to change its placement
               </div>
             )}
+            {manualOffset !== 0 && (
+              <div style={{ fontSize: 10, color: "#F97316", marginBottom: 10, fontWeight: 600 }}>
+                ⚠ Manually placed at #{finalIdx + 1} (auto would put it at #{finalIdx - manualOffset + 1})
+              </div>
+            )}
+            {(form.taskType === "master" || selectedParent) && (() => {
+              // Window 6 items before + new item + 6 after, so the highlighted row is always visible.
+              const newIdx = previewList.findIndex((t: any) => t.id === "__new__");
+              const WINDOW = 6;
+              const start = Math.max(0, newIdx - WINDOW);
+              const end = Math.min(previewList.length, newIdx + WINDOW + 1);
+              const visible = previewList.slice(start, end);
+              const hiddenBefore = start;
+              const hiddenAfter = previewList.length - end;
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {hiddenBefore > 0 && <div style={{ fontSize: 10, color: C.mut, fontStyle: "italic", textAlign: "center", padding: "4px 0" }}>↑ {hiddenBefore} earlier task{hiddenBefore === 1 ? "" : "s"}</div>}
+                  {visible.map((t: any, i: number) => {
+                    const isNew = t.id === "__new__";
+                    const absIdx = start + i;
+                    return (
+                      <div
+                        key={t.id + "-" + absIdx}
+                        draggable={isNew}
+                        onDragStart={isNew ? (e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", "__new__"); } : undefined}
+                        onDragOver={!isNew ? (e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          // Determine if dropping on top-half or bottom-half of this row
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const dropAfter = (e.clientY - rect.top) > rect.height / 2;
+                          setDragOverIdx(dropAfter ? absIdx + 1 : absIdx);
+                        } : undefined}
+                        onDragLeave={!isNew ? () => setDragOverIdx(null) : undefined}
+                        onDrop={!isNew ? (e) => {
+                          e.preventDefault();
+                          if (dragOverIdx === null) return;
+                          // Compute target index in the sibling list (i.e. WITHOUT the new item).
+                          // previewList indices include the new item; removing it shifts everything after finalIdx by -1.
+                          // dragOverIdx is an index in previewList (which includes the new item).
+                          // Convert to sibling-list index:
+                          let targetIdx = dragOverIdx;
+                          if (dragOverIdx > finalIdx) targetIdx = dragOverIdx - 1; // remove new item's slot
+                          setManualOffset(targetIdx - baseIdx);
+                          setDragOverIdx(null);
+                        } : undefined}
+                        style={{
+                          padding: isNew ? "10px 12px" : "7px 10px",
+                          borderRadius: 6,
+                          border: `${isNew ? 2 : 1}px solid ${isNew ? "#F97316" : C.brd}`,
+                          background: isNew ? "#FFF7ED" : "#fff",
+                          fontSize: 11,
+                          fontFamily: F,
+                          color: isNew ? "#C2410C" : C.tx,
+                          fontWeight: isNew ? 700 : 400,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          boxShadow: isNew ? "0 2px 8px rgba(249,115,22,0.25)" : "none",
+                          cursor: isNew ? "grab" : "default",
+                          borderTop: dragOverIdx === absIdx && !isNew ? `2px solid #F97316` : undefined,
+                          borderBottom: dragOverIdx === absIdx + 1 && !isNew ? `2px solid #F97316` : undefined,
+                        }}
+                      >
+                        {isNew && <span style={{ fontSize: 10, color: "#F97316", opacity: 0.6, cursor: "grab" }}>⠿</span>}
+                        <span style={{ fontSize: 9, color: isNew ? "#F97316" : C.mut, minWidth: 26, fontWeight: isNew ? 700 : 400 }}>#{absIdx + 1}</span>
+                        {form.taskType !== "master" && <span style={{ color: C.mut }}>↳</span>}
+                        {isNew && <span style={{ fontSize: 10 }}>⭐</span>}
+                        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isNew ? (t.title || "(new task)") : t.title}</span>
+                        {t.priority && form.taskType !== "note" && <span style={{ fontSize: 9, fontWeight: 700, color: t.priority === "P0" ? C.red : t.priority === "P1" ? C.amb : C.grn }}>{t.priority}</span>}
+                      </div>
+                    );
+                  })}
+                  {hiddenAfter > 0 && <div style={{ fontSize: 10, color: C.mut, fontStyle: "italic", textAlign: "center", padding: "4px 0" }}>↓ {hiddenAfter} later task{hiddenAfter === 1 ? "" : "s"}</div>}
+                  {previewList.length === 0 && <div style={{ fontSize: 11, color: C.mut, fontStyle: "italic" }}>No siblings — this will be the first.</div>}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -1191,6 +1261,8 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterWeek, setFilterWeek] = useState("");
+  const [filterParent, setFilterParent] = useState("");
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [searchQ, setSearchQ] = useState("");
   const [sortCol, setSortCol] = useState<string>("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -1244,6 +1316,10 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   if (filterStatus) displayed = displayed.filter(t => t.status === filterStatus);
   if (filterPriority) displayed = displayed.filter(t => t.priority === filterPriority);
   if (filterWeek) displayed = displayed.filter(t => String(t.weekNumber) === filterWeek);
+  if (filterParent) {
+    // Show the selected master + all its children (subs and notes)
+    displayed = displayed.filter(t => t.id === filterParent || t.parentTaskId === filterParent);
+  }
   if (searchQ.trim()) {
     const q = searchQ.trim().toLowerCase();
     displayed = displayed.filter(t =>
@@ -1259,8 +1335,10 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     );
   }
 
-  // Sort
-  if (sortCol) {
+  // ── Hierarchical flatten with sort applied WITHIN each tier ──
+  // Masters sort among masters. Subs sort within their parent's children. Notes always land last within a parent.
+  // When no sort column is active, both tiers fall back to priorityOrder.
+  {
     const SORT_KEYS: Record<string, (t: PlanItem & { sprintId?: string }) => string> = {
       "Sprint ID": t => t.sprintId || "",
       "Tier": t => t.executionTier || "",
@@ -1278,48 +1356,68 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
       "Notes": t => t.workNotes || "",
       "Linear": t => t.linearId || "",
     };
-    const keyFn = SORT_KEYS[sortCol];
-    if (keyFn) {
-      displayed = [...displayed].sort((a, b) => {
+    const keyFn = sortCol ? SORT_KEYS[sortCol] : null;
+    const cmp = (a: PlanItem & { sprintId?: string }, b: PlanItem & { sprintId?: string }) => {
+      if (keyFn) {
         const av = keyFn(a).toLowerCase(), bv = keyFn(b).toLowerCase();
-        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-      });
-    }
-  }
+        const r = sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+        if (r !== 0) return r;
+      }
+      return (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0);
+    };
 
-  // ── Hierarchical flattening: Master → its subtasks/notes → next Master ──
-  // When no manual sort column is chosen, arrange by hierarchy
-  if (!sortCol) {
     const displayedIds = new Set(displayed.map(t => t.id));
-    const masters = displayed.filter(t => (t.taskType ?? "master") === "master")
-      .sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+    const masters = displayed
+      .filter(t => (t.taskType ?? "master") === "master")
+      .sort(cmp);
 
-    const childrenOf = (mid: string) => displayed
-      .filter(t => t.parentTaskId === mid && (t.taskType === "subtask" || t.taskType === "note"))
-      .sort((a, b) => {
-        // notes go to the end within a parent
-        const aIsNote = a.taskType === "note" ? 1 : 0;
-        const bIsNote = b.taskType === "note" ? 1 : 0;
-        if (aIsNote !== bIsNote) return aIsNote - bIsNote;
-        return (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0);
-      });
+    const childrenOf = (mid: string) => {
+      const kids = displayed.filter(t => t.parentTaskId === mid && (t.taskType === "subtask" || t.taskType === "note"));
+      const subs = kids.filter(t => t.taskType === "subtask").sort(cmp);
+      const notes = kids.filter(t => t.taskType === "note").sort(cmp);
+      return [...subs, ...notes];
+    };
 
     const tree: (PlanItem & { sprintId?: string })[] = [];
     for (const m of masters) {
       tree.push(m);
-      for (const c of childrenOf(m.id)) tree.push(c);
+      // If this master is collapsed, skip its children
+      if (!collapsedIds.has(m.id)) {
+        for (const c of childrenOf(m.id)) tree.push(c);
+      }
     }
 
-    // Orphans: children whose parent isn't in `displayed` (filtered out, or missing)
-    const orphans = displayed.filter(t =>
-      (t.taskType === "subtask" || t.taskType === "note") &&
-      t.parentTaskId &&
-      !masters.some(m => m.id === t.parentTaskId)
-    ).sort((a, b) => (a.priorityOrder ?? 0) - (b.priorityOrder ?? 0));
+    // Orphans: subs/notes whose parent was filtered out of `displayed`
+    const orphans = displayed
+      .filter(t => (t.taskType === "subtask" || t.taskType === "note") && t.parentTaskId && !masters.some(m => m.id === t.parentTaskId))
+      .sort(cmp);
     for (const o of orphans) tree.push(o);
 
     displayed = tree.filter(t => displayedIds.has(t.id));
   }
+
+  // Child count per master (used to decide whether the chevron shows)
+  const childCountByMaster = (() => {
+    const counts = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.parentTaskId && (t.taskType === "subtask" || t.taskType === "note")) {
+        counts.set(t.parentTaskId, (counts.get(t.parentTaskId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  })();
+
+  const toggleCollapse = (masterId: string) => {
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(masterId)) next.delete(masterId); else next.add(masterId);
+      return next;
+    });
+  };
+
+  const allMasters = tasks.filter(t => (t.taskType ?? "master") === "master").sort((a, b) => (a.sprintId || "").localeCompare(b.sprintId || "", undefined, { numeric: true }));
+  const anyCollapsed = collapsedIds.size > 0;
+  const anyExpandable = Array.from(childCountByMaster.values()).some(c => c > 0);
 
   // ── Delete-confirmation dialog state (for Master with children) ──
   const [deleteDialog, setDeleteDialog] = useState<{
@@ -1583,6 +1681,35 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
             <option value="3">Week 3</option>
             <option value="4">Week 4</option>
           </select>
+          <select value={filterParent} onChange={e => setFilterParent(e.target.value)} style={selStyle}>
+            <option value="">All parents</option>
+            {allMasters.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.sprintId ? `${m.sprintId} — ` : ""}{(m.title || "").slice(0, 60)}
+              </option>
+            ))}
+          </select>
+          {anyExpandable && (
+            <button
+              type="button"
+              onClick={() => {
+                if (anyCollapsed) {
+                  setCollapsedIds(new Set());
+                } else {
+                  const allMasterIds = new Set(tasks.filter(t => (t.taskType ?? "master") === "master" && (childCountByMaster.get(t.id) ?? 0) > 0).map(t => t.id));
+                  setCollapsedIds(allMasterIds);
+                }
+              }}
+              title={anyCollapsed ? "Expand all masters" : "Collapse all masters"}
+              style={{
+                padding: "4px 11px", borderRadius: 20, border: `1px solid ${C.brd}`,
+                background: "transparent", color: C.sub, fontSize: 11, fontWeight: 600,
+                cursor: "pointer", fontFamily: F, whiteSpace: "nowrap",
+              }}
+            >
+              {anyCollapsed ? "▼ Expand all" : "▶ Collapse all"}
+            </button>
+          )}
           {/* Priority chips */}
           {[["", "All"], ["P0", "P0"], ["P1", "P1"], ["P2", "P2"]].map(([val, label]) => (
             <button
@@ -1687,9 +1814,34 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
                       >{done ? "✓" : ""}</button>
                     )}
                   </td>
-                  {/* Type */}
-                  <td style={{ padding: "8px 10px", fontSize: 11, whiteSpace: "nowrap" }}>
-                    {(task.taskType ?? "master") === "master" && <span style={{ color: "#F97316", fontWeight: 700 }}>📌 Master</span>}
+                  {/* Type (with collapse chevron on masters that have children) */}
+                  <td style={{ padding: "8px 10px", fontSize: 11, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
+                    {(task.taskType ?? "master") === "master" && (() => {
+                      const kidCount = childCountByMaster.get(task.id) ?? 0;
+                      const collapsed = collapsedIds.has(task.id);
+                      return (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          {kidCount > 0 ? (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); toggleCollapse(task.id); }}
+                              title={collapsed ? `Expand ${kidCount} child${kidCount === 1 ? "" : "ren"}` : "Collapse"}
+                              style={{
+                                background: "transparent", border: "none", cursor: "pointer",
+                                color: "#F97316", fontSize: 10, padding: 0, width: 14, height: 14,
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                                transition: "transform 0.15s",
+                              }}
+                            >▼</button>
+                          ) : (
+                            <span style={{ width: 14, display: "inline-block" }}></span>
+                          )}
+                          <span style={{ color: "#F97316", fontWeight: 700 }}>📌 Master</span>
+                          {kidCount > 0 && <span style={{ color: C.mut, fontWeight: 500, fontSize: 10 }}>· {kidCount}</span>}
+                        </span>
+                      );
+                    })()}
                     {task.taskType === "subtask" && <span style={{ color: C.sub, fontWeight: 500 }}>↳ Sub</span>}
                     {task.taskType === "note" && <span style={{ color: C.mut, fontWeight: 500, fontStyle: "italic" }}>📝 Note</span>}
                   </td>

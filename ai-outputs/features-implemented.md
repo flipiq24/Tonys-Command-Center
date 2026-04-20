@@ -133,3 +133,130 @@ The `🧠 AI Organize` button now enforces hierarchy when re-ranking tasks:
 - [ ] Click Refresh ▾ → From Sheets → verify Tony's Type/Sub-Type data populates in DB and UI re-renders with hierarchy
 - [ ] Click Refresh ▾ → From DB → verify Type + Sub-Type columns appear in Google Sheets
 - [ ] Run AI Organize → verify no sub-task jumps to a different parent, masters reordered among themselves
+
+---
+
+# Follow-up Features (same day, April 20, 2026)
+
+## 5. Full Sheets → DB Resync (Sprint ID hierarchy detection)
+
+### Ideal Behavior
+
+- Clicking **Refresh ▾ → From Sheets** now flushes all `level=task` rows and re-imports the full "Master Task List" tab into DB
+- **Parent-child relationships are detected via Sprint ID pattern** — no reliance on title matching:
+  - `ADP-02` with no decimal = master
+  - `ADP-02.1`, `ADP-02.3` = sub-tasks of `ADP-02` (parent inferred by stripping decimal)
+- Two-pass insert: masters first (capture `sprintId → uuid` map), then subs with `parentTaskId` resolved from the map
+- Confirmation prompt before running ("this will FLUSH all tasks from the DB")
+- Toast result: `✓ Sheets → DB: flushed N, imported X masters + Y subs`
+- Category/subcategory rows (level != "task") are never touched
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `artifacts/api-server/src/routes/tcc/sheets-sync.ts` | `syncTasksFromSheet()` rewritten: flush + two-pass Sprint ID reimport |
+| `artifacts/tcc/src/components/tcc/BusinessView.tsx` | `handleRefreshFromSheets()` adds confirm() + updated toast format |
+
+---
+
+## 6. Auto-Sync Disabled (prevents Sheet overwrite)
+
+### Ideal Behavior
+
+The outbound auto-sync previously ran every 5 minutes AND on every task/contact mutation, overwriting Tony's curated Sheet data with the DB's flat view. That behavior is now **fully disabled**:
+
+- `startAutoSync()` no longer starts a `setInterval` — logs `Auto-sync DISABLED`
+- `triggerSheetsSync()` in `plan.ts` is a no-op (was called on every task create/update/delete)
+- `triggerContactSync()` in `contacts.ts` is a no-op (was called on every contact mutation)
+- **Manual Refresh buttons still work** — explicit user click only
+
+Bidirectional sync via webhook triggers is planned for a later sprint — that will replace these `trigger*` helpers.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `artifacts/api-server/src/routes/tcc/sheets-sync.ts` | `startAutoSync()` → no-op |
+| `artifacts/api-server/src/routes/tcc/plan.ts` | `triggerSheetsSync()` → no-op |
+| `artifacts/api-server/src/routes/tcc/contacts.ts` | `triggerContactSync()` → no-op |
+
+---
+
+## 7. Sort Preserves Hierarchy
+
+### Ideal Behavior
+
+Previously, clicking a column header would flat-sort ALL tasks together, interleaving subs with unrelated masters. Now sort is **hierarchy-aware**:
+
+- **Masters are sorted among themselves** by the chosen column
+- **Subs are sorted within their parent's group only** — never jump to a different master
+- **Notes always land at the end** of their parent's group (regardless of sort column)
+- Tiebreaker: `priorityOrder` (preserves drag-reorder state when column values are equal)
+- Orphaned subs (parent filtered out) get their own group sorted by the same column
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `artifacts/tcc/src/components/tcc/BusinessView.tsx` | Merged the old flat-sort block into the hierarchy flattener; single `cmp()` applied at both tiers |
+
+---
+
+## 8. Drag-to-Reorder in AddTaskModal Preview
+
+### Ideal Behavior
+
+The sidebar visualizer in AddTaskModal already showed where the new task would land. Now users can **drag the highlighted new-task row** to any position in the preview:
+
+- `⠿` grab handle on the orange-highlighted new row
+- Drop above or below any other row → orange line indicates drop target
+- `manualOffset` tracks how many slots away from auto-placement the user nudged
+- Header shows `⚠ Manually placed at #N (auto would put it at #M)` + `↺ reset auto` button when nudged
+- Offset resets when Task Type, Parent, or Priority changes (base position recomputed)
+- **Backend accepts `manualPosition`** in POST `/plan/task` — overrides the priority-bucket rule
+- Window of 6 rows before + new + 6 after shown, so the highlighted row is always visible no matter where it lands in a 150+ task list
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `artifacts/tcc/src/components/tcc/BusinessView.tsx` | `manualOffset` + `dragOverIdx` state, drag handlers, windowed preview render |
+| `artifacts/api-server/src/routes/tcc/plan.ts` | POST `/plan/task` accepts `manualPosition`, uses it when present |
+
+---
+
+## 9. Collapsible Masters + Parent Task Filter
+
+### Ideal Behavior
+
+**Collapse/expand:**
+- Every master row that has children shows a **▼ chevron** before the `📌 Master` label, plus a child count (e.g. `📌 Master · 6`)
+- Click the chevron → row rotates to `▶` and all its subs/notes hide from the list
+- Click again → children reappear in their sorted order
+- Masters with zero children show blank space (no chevron) — keeps column alignment
+- **▶ Collapse all / ▼ Expand all** toggle button in the filter row for bulk action
+- Collapse state is in-memory only (per-session, resets on reload) — intentional so filtered views aren't surprising on next visit
+
+**Parent task filter:**
+- New **"All parents"** dropdown in the filter row, after "All weeks"
+- Lists every master in the system, labeled `{sprintId} — {title}` (e.g. `ADP-02 — Operator Assessment baseline…`)
+- When a specific parent is selected → only that master + its subs/notes are shown
+- Combines with owner/priority/status/category/week/search filters (all ANDed together)
+- Hides all other masters and their children
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `artifacts/tcc/src/components/tcc/BusinessView.tsx` | `filterParent` + `collapsedIds` state; parent dropdown + collapse-all button in filter row; chevron + child-count badge in the Type cell; tree flattener skips children of collapsed masters |
+
+### Verification
+
+- [ ] Open Master Task tab → masters with children show `▼ 📌 Master · N` chevron
+- [ ] Click chevron → children disappear, chevron rotates to `▶`
+- [ ] Click "Collapse all" → every master collapses; button changes to "Expand all"
+- [ ] Select a parent from the "All parents" dropdown → only that master + its children render
+- [ ] Combine parent filter with owner=Tony → only tasks under that master that are Tony's show
+- [ ] Sort by Priority while collapsed → masters reorder, children stay hidden
+- [ ] Drag a new task in AddTaskModal preview → `manualPosition` is sent on submit; task lands where dropped

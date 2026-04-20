@@ -573,7 +573,7 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
 // POST /plan/task — create a new task with smart priority placement
 router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId } = req.body;
+    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, weekNumber, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition } = req.body;
 
     if (!category || !title) {
       res.status(400).json({ error: "category and title are required" });
@@ -619,19 +619,25 @@ router.post("/plan/task", async (req, res): Promise<void> => {
       .where(siblingWhere)
       .orderBy(asc(planItemsTable.priorityOrder));
 
-    // Find insertion position based on priority rank (notes go to end — no priority sort)
-    const newRank = PRIORITY_RANK[priority] ?? 2;
-    let insertAfterOrder = -1;
-    if (normalizedType === "note") {
-      insertAfterOrder = existingTasks.length > 0 ? (existingTasks[existingTasks.length - 1].priorityOrder ?? 0) : -1;
+    // Determine insertion position:
+    // - If client sent `manualPosition` (user nudged ▲/▼ in preview panel), use it as the target index within siblings
+    // - Otherwise fall back to priority-rank-based placement (notes always go to end)
+    let insertOrder: number;
+    if (typeof manualPosition === "number" && manualPosition >= 0) {
+      insertOrder = Math.min(manualPosition, existingTasks.length);
     } else {
-      for (const t of existingTasks) {
-        const tRank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
-        if (tRank <= newRank) insertAfterOrder = t.priorityOrder ?? 0;
+      const newRank = PRIORITY_RANK[priority] ?? 2;
+      let insertAfterOrder = -1;
+      if (normalizedType === "note") {
+        insertAfterOrder = existingTasks.length > 0 ? (existingTasks[existingTasks.length - 1].priorityOrder ?? 0) : -1;
+      } else {
+        for (const t of existingTasks) {
+          const tRank = PRIORITY_RANK[t.priority || "P2"] ?? 2;
+          if (tRank <= newRank) insertAfterOrder = t.priorityOrder ?? 0;
+        }
       }
+      insertOrder = insertAfterOrder + 1;
     }
-
-    const insertOrder = insertAfterOrder + 1;
 
     // Shift all siblings at or after the insertion point up by 1
     for (const t of existingTasks) {

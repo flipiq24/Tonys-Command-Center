@@ -970,10 +970,10 @@ function AddTaskModal({
                   <input
                     value={form.linearId}
                     onChange={e => set("linearId", e.target.value)}
-                    placeholder="e.g. FLI-123 or paste Linear issue URL"
+                    placeholder="e.g. FLI-123  or  FLI-123, FLI-456 for multiple"
                     style={inputStyle}
                   />
-                  <div style={{ fontSize: 10, color: C.mut, marginTop: 3 }}>Links this task to Linear — completion will sync both ways</div>
+                  <div style={{ fontSize: 10, color: C.mut, marginTop: 3 }}>Links this task to Linear — completion will sync both ways. Separate multiple IDs with commas for one task spanning multiple tickets.</div>
                 </div>
               )}
 
@@ -1306,8 +1306,8 @@ function TaskDetailModal({ task, onClose, onSaved }: {
 
           {form.source === "Linear" && (
             <div>
-              <label style={lbl}>Linear ID</label>
-              <input value={form.linearId} onChange={e => setForm(p => ({ ...p, linearId: e.target.value }))} style={inp} placeholder="e.g. COM-341" />
+              <label style={lbl}>Linear ID <span style={{ fontWeight: 400, color: C.mut, fontSize: 10 }}>— multiple IDs? separate with commas (e.g. COM-341, COM-342)</span></label>
+              <input value={form.linearId} onChange={e => setForm(p => ({ ...p, linearId: e.target.value }))} style={inp} placeholder="e.g. COM-341 or COM-341, COM-342" />
             </div>
           )}
 
@@ -1327,13 +1327,26 @@ function TaskDetailModal({ task, onClose, onSaved }: {
             />
           </div>
 
-          {(task.linearId || form.linearId) && (
-            <div>
-              <label style={lbl}>Linear Link</label>
-              <a href={`https://linear.app/issue/${form.linearId || task.linearId}`} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: 13, color: C.blu }}>{form.linearId || task.linearId} ↗</a>
-            </div>
-          )}
+          {(() => {
+            const ids = splitLinearIds(form.linearId || task.linearId);
+            if (ids.length === 0) return null;
+            return (
+              <div>
+                <label style={lbl}>Linear {ids.length === 1 ? "Link" : "Links"}</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                  {ids.map((id, i) => (
+                    <a
+                      key={id + i}
+                      href={`https://linear.app/issue/${id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ fontSize: 13, color: C.blu, textDecoration: "none", padding: "4px 8px", borderRadius: 6, background: C.bluBg, border: `1px solid ${C.blu}33` }}
+                    >{id} ↗</a>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Footer */}
@@ -1381,6 +1394,20 @@ function TaskDetailModal({ task, onClose, onSaved }: {
 const CAT_PREFIX_CLIENT: Record<string, string> = {
   adaptation: "ADP", sales: "SLS", tech: "TCH", capital: "CAP", team: "TME",
 };
+
+// Split a Linear ID field value into individual ticket IDs (comma-separated supported).
+// Trims whitespace, drops empties, dedupes while preserving order.
+function splitLinearIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  return raw.split(",").map(s => s.trim()).filter(s => {
+    if (!s) return false;
+    const lower = s.toLowerCase();
+    if (seen.has(lower)) return false;
+    seen.add(lower);
+    return true;
+  });
+}
 
 function recalcSprintIds(taskList: (PlanItem & { sprintId?: string })[]): (PlanItem & { sprintId: string })[] {
   const catCounter: Record<string, number> = {};
@@ -1453,6 +1480,7 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   const [editId, setEditId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragTaskRef = useRef<string | null>(null);
+  const justDroppedRef = useRef<number>(0); // timestamp of last drop; used to suppress click-open of detail panel
   const [selectedTask, setSelectedTask] = useState<(PlanItem & { sprintId?: string }) | null>(null);
   type HoverInfo = { task: PlanItem & { sprintId?: string }; x: number; y: number };
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
@@ -1667,15 +1695,21 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   function onDrop(e: React.DragEvent, targetId: string) {
     e.preventDefault();
     setDragOverId(null);
+    // Mark that a drop just happened — the row's onClick handler checks this to avoid opening the detail panel on top of the training modal
+    justDroppedRef.current = Date.now();
     const fromId = dragTaskRef.current;
+    dragTaskRef.current = null;
     if (!fromId || fromId === targetId) return;
 
     const fromIdx = tasks.findIndex(t => t.id === fromId);
     const toIdx = tasks.findIndex(t => t.id === targetId);
     if (fromIdx === -1 || toIdx === -1) return;
 
-    // Block cross-category moves — tasks can only be reordered within their own category
-    if (tasks[fromIdx].category !== tasks[toIdx].category) return;
+    // Block cross-category moves with a visible toast (was silently failing, confusing users)
+    if (tasks[fromIdx].category !== tasks[toIdx].category) {
+      setPlacementToast(`Can't move across categories: "${tasks[fromIdx].category}" → "${tasks[toIdx].category}"`);
+      return;
+    }
 
     const prevTasks = [...tasks];
     const newTasks = [...tasks];
@@ -1989,7 +2023,11 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
                   onDragOver={e => onDragOver(e, task.id)}
                   onDragLeave={onDragLeave}
                   onDrop={e => onDrop(e, task.id)}
-                  onClick={() => setSelectedTask(task)}
+                  onClick={() => {
+                    // Suppress click if a drag-drop just fired (prevents the detail panel from opening on top of the training modal)
+                    if (Date.now() - justDroppedRef.current < 300) return;
+                    setSelectedTask(task);
+                  }}
                   onMouseEnter={e => {
                     if (hoverTimer.current) clearTimeout(hoverTimer.current);
                     const x = e.clientX; const y = e.clientY;
@@ -2097,13 +2135,25 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
                   </td>
                   {/* Notes */}
                   <td style={{ padding: "8px 10px", fontSize: 11, color: C.sub, maxWidth: 100 }}>{task.workNotes || "—"}</td>
-                  {/* Linear */}
-                  <td style={{ padding: "8px 10px", fontSize: 11 }}>
-                    {task.linearId ? (
-                      <a href={`https://linear.app/issue/${task.linearId}`} target="_blank" rel="noopener noreferrer" style={{ color: C.blu }}>{task.linearId}</a>
-                    ) : (
-                      <span style={{ color: C.mut }}>—</span>
-                    )}
+                  {/* Linear — supports multiple IDs via comma-separated list */}
+                  <td style={{ padding: "8px 10px", fontSize: 11 }} onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const ids = splitLinearIds(task.linearId);
+                      if (ids.length === 0) return <span style={{ color: C.mut }}>—</span>;
+                      return (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {ids.map((id, i) => (
+                            <a
+                              key={id + i}
+                              href={`https://linear.app/issue/${id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: C.blu, textDecoration: "none", borderBottom: `1px dotted ${C.blu}` }}
+                            >{id}</a>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </td>
                   {/* Delete */}
                   <td onClick={e => e.stopPropagation()} style={{ padding: "8px 10px", textAlign: "center", whiteSpace: "nowrap" }}>

@@ -621,7 +621,7 @@ function AddTaskModal({
       setSubcats(cat.subcategories.map(s => s.title));
     } else {
       get(`/plan/subcategories/${form.category}`)
-        .then(d => setSubcats((d.subcategories || []).map((s: { title: string }) => s.title)))
+        .then((d: { subcategories: { title: string }[] }) => setSubcats((d.subcategories || []).map((s: { title: string }) => s.title)))
         .catch(() => setSubcats([]));
     }
     setForm(f => ({ ...f, subcategoryName: "" }));
@@ -635,7 +635,7 @@ function AddTaskModal({
     if (!form.category) { setErr("Category is required"); return; }
     setLoading(true); setErr("");
     try {
-      const result = await post("/plan/task", { ...form, month: "2026-04", weekNumber: form.weekNumber ? parseInt(form.weekNumber) : undefined });
+      const result:any = await post("/plan/task", { ...form, month: "2026-04", weekNumber: form.weekNumber ? parseInt(form.weekNumber) : undefined });
       onCreated(result);
     } catch (e: any) {
       setErr(e.message || "Failed to create task");
@@ -1322,7 +1322,7 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
     <div>
       {/* Sticky header: nav bar + filter row */}
       <div style={{
-        position: "sticky", top: 0, zIndex: 30,
+        position: "sticky", top: 75, zIndex: 30,
         background: "#fff", borderBottom: `2px solid ${C.brd}`,
         paddingBottom: 10,
       }}>
@@ -2287,7 +2287,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   const [top3, setTop3] = useState<PlanTask[]>([]);
 
   const loadTop3 = useCallback(async () => {
-    try { const d = await get("/plan/top3"); setTop3(d.tasks || []); } catch { /**/ }
+    try { const d: { tasks: PlanTask[] } = await get("/plan/top3"); setTop3(d.tasks || []); } catch { /**/ }
   }, []);
 
   const loadPlan = useCallback(async (silent = false) => {
@@ -2301,7 +2301,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
 
   const loadWeekly = useCallback(async () => {
     try {
-      const data = await get("/plan/weekly/2026-04");
+      const data:any = await get("/plan/weekly/2026-04");
       setByOwner(data.byOwner || {});
     } catch { /**/ }
   }, []);
@@ -2370,7 +2370,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
       {/* Header */}
-      <div style={{ position: "sticky", top: 0, zIndex: 50, background: C.bg, borderBottom: `1px solid ${C.brd}`, padding: "0 32px" }}>
+      <div style={{ position: "static", top: 0, zIndex: 50, background: C.bg, borderBottom: `1px solid ${C.brd}`, padding: "0 32px" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto", paddingTop: 18, paddingBottom: 0 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>

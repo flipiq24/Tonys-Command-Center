@@ -309,13 +309,14 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
           </button>
 
           {open && (
+            <>
+            <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
             <div style={{
-              position: "fixed", top: 56, right: 12,
-              background: C.card, border: `1px solid ${C.brd}`,
-              borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.13)",
+              position: "absolute", top: "100%", right: 0, marginTop: 8,
+              background: "#fff", border: `1px solid #e0e0e0`,
+              borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)",
               width: 260, zIndex: 9999, fontFamily: F,
-              padding: "8px 6px",
-              animation: "fadeIn 0.12s ease-out",
+              padding: "8px 6px", maxHeight: "calc(100vh - 80px)", overflowY: "auto",
             }}>
 
               {/* Refresh status row */}
@@ -383,6 +384,7 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
                 </span>
               </div>
             </div>
+            </>
           )}
         </div>
         </div>

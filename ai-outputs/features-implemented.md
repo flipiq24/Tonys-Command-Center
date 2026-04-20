@@ -260,3 +260,45 @@ The sidebar visualizer in AddTaskModal already showed where the new task would l
 - [ ] Combine parent filter with owner=Tony → only tasks under that master that are Tony's show
 - [ ] Sort by Priority while collapsed → masters reorder, children stay hidden
 - [ ] Drag a new task in AddTaskModal preview → `manualPosition` is sent on submit; task lands where dropped
+
+---
+
+## 10. Weekly Board: Unfinished-Only + Priority Sort + Click-Through
+
+### Ideal Behavior
+
+The by-owner-by-week grid on the 411 Plan tab now focuses on what's actually pending:
+
+- **Only Master tasks** appear on the board (subs and notes stay in the Master Task list table)
+- **Checkbox "Show only unfinished tasks"** at the top of the board, **checked by default**
+  - When on: hides completed masters
+  - When off: shows all masters (completed and uncompleted) assigned to each owner per week
+- **Sort within each cell by priority**: P0 first, then P1, then P2 — so the most critical task for that owner-week shows at the top of its cell
+- Priority badge (colored P0/P1/P2 pill) rendered inline next to the task title
+- **"✓ All done" message** appears in a cell when the owner originally had masters for that week but all are completed (and the filter is on) — only renders in the top row to keep the grid clean
+- Empty cells with no tasks ever stay blank (no "All done" misfire)
+
+**Click-through to Master Task list:**
+- Clicking a master task's title area on the weekly board:
+  1. Switches tab to `✅ Master task`
+  2. Pre-selects that master in the **"All parents"** filter dropdown
+  3. Only that master + its sub-tasks/notes render in the table view
+- Clicking the checkbox still toggles completion (event propagation stopped)
+- Tooltip on hover: "View this task and its sub-tasks"
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `artifacts/tcc/src/components/tcc/BusinessView.tsx` | `WeeklyGrid` accepts `onTaskClick` prop + has internal `showUnfinishedOnly` state, priority-sorted filtered cells, "All done" empty state. `MasterTaskTab` accepts `initialParentFilter` + `onInitialParentFilterConsumed` props and adopts them on mount. `BusinessView` tracks `pendingParentFilter`, sets it when a weekly task is clicked, and forwards to the Master Task tab |
+
+### Verification
+
+- [ ] Open 411 Plan tab → weekly grid shows checkbox "Show only unfinished tasks" checked by default
+- [ ] Completed tasks are hidden from the weekly grid by default
+- [ ] Within each cell, tasks are ordered P0 → P1 → P2 with colored priority badge next to title
+- [ ] Uncheck the toggle → completed tasks reappear with line-through styling
+- [ ] A week-cell where all tasks are completed shows "✓ All done" in green italic (only when checkbox is on)
+- [ ] Click a task's title on the board → tab switches to Master Task, "All parents" dropdown pre-selects that master, table filters to only that master + its children
+- [ ] Click the checkbox to the left of a task → only toggles completion, does NOT navigate
+- [ ] Sub-tasks and notes never appear on the weekly board — only masters

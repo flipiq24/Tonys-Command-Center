@@ -469,19 +469,54 @@ const CAT_COLOR: Record<string, string> = {
   team:       "#374151",
 };
 
-function WeeklyGrid({ byOwner, onToggleTask }: {
+function WeeklyGrid({ byOwner, onToggleTask, onTaskClick }: {
   byOwner: Record<string, Record<number, PlanItem[]>>;
   onToggleTask: (id: string, complete: boolean) => void;
+  onTaskClick?: (task: PlanItem) => void;
 }) {
   const ORDERED = ["Tony", "Ethan", "Ramy", "Faisal", "Haris", "Nate", "Bondilyn"];
-  const owners = [...ORDERED.filter(o => byOwner[o]), ...Object.keys(byOwner).filter(o => !ORDERED.includes(o))];
+  const [showUnfinishedOnly, setShowUnfinishedOnly] = useState(true);
+
+  // Filter the board:
+  // 1. Only master tasks (no subs/notes on the weekly board)
+  // 2. If showUnfinishedOnly: drop completed tasks
+  // 3. Sort each cell by priority (P0 → P1 → P2) so the most critical tasks surface first
+  const priorityRank = (p?: string | null) => p === "P0" ? 0 : p === "P1" ? 1 : 2;
+  const filteredByOwner: Record<string, Record<number, PlanItem[]>> = {};
+  const originalCountsByOwner: Record<string, Record<number, number>> = {};
+  for (const [owner, weeks] of Object.entries(byOwner)) {
+    filteredByOwner[owner] = {};
+    originalCountsByOwner[owner] = {};
+    for (const [weekStr, tasks] of Object.entries(weeks)) {
+      const weekNum = Number(weekStr);
+      const masters = tasks.filter(t => (t.taskType ?? "master") === "master");
+      originalCountsByOwner[owner][weekNum] = masters.length;
+      let visible = masters;
+      if (showUnfinishedOnly) visible = masters.filter(t => t.status !== "completed");
+      visible = [...visible].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
+      filteredByOwner[owner][weekNum] = visible;
+    }
+  }
+
+  const owners = [...ORDERED.filter(o => filteredByOwner[o]), ...Object.keys(filteredByOwner).filter(o => !ORDERED.includes(o))];
   if (owners.length === 0) return null;
 
   const dateLabel = "April 7 - 11";
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 11, color: "#666", fontFamily: F, marginLeft: 48, marginBottom: 4 }}>{dateLabel}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginLeft: 48, marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: "#666", fontFamily: F }}>{dateLabel}</div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: C.sub, fontFamily: F, cursor: "pointer", userSelect: "none" }}>
+          <input
+            type="checkbox"
+            checked={showUnfinishedOnly}
+            onChange={e => setShowUnfinishedOnly(e.target.checked)}
+            style={{ cursor: "pointer", accentColor: "#F97316" }}
+          />
+          Show only unfinished tasks
+        </label>
+      </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
         <colgroup>
@@ -500,8 +535,16 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
         </thead>
         <tbody>
           {owners.map(owner => {
-            const weeks = byOwner[owner] || {};
+            const weeks = filteredByOwner[owner] || {};
+            const origWeeks = originalCountsByOwner[owner] || {};
             const pc = personColor(owner);
+            // "All done" fires when: checkbox on, cell was not originally empty, but post-filter is empty
+            const allDoneByWeek: Record<number, boolean> = {
+              1: showUnfinishedOnly && (origWeeks[1] ?? 0) > 0 && (weeks[1]?.length ?? 0) === 0,
+              2: showUnfinishedOnly && (origWeeks[2] ?? 0) > 0 && (weeks[2]?.length ?? 0) === 0,
+              3: showUnfinishedOnly && (origWeeks[3] ?? 0) > 0 && (weeks[3]?.length ?? 0) === 0,
+              4: showUnfinishedOnly && (origWeeks[4] ?? 0) > 0 && (weeks[4]?.length ?? 0) === 0,
+            };
             const rows = Array.from({ length: ROWS_PER_PERSON }, (_, ri) => ({
               w1: (weeks[1] || [])[ri] || null,
               w2: (weeks[2] || [])[ri] || null,
@@ -532,10 +575,12 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                     </td>
                   )}
                   {[row.w1, row.w2, row.w3, row.w4].map((task, wi) => {
+                    const weekNum = wi + 1;
                     const done = task?.status === "completed";
                     const cat = task?.category ?? "";
                     const sub = task?.subcategory ?? null;
                     const txColor = done ? "#bbb" : (CAT_COLOR[cat] ?? "#1565C0");
+                    const showAllDone = !task && ri === 0 && allDoneByWeek[weekNum];
                     return (
                       <td
                         key={wi}
@@ -551,7 +596,7 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                         {task ? (
                           <div style={{ display: "flex", gap: 5, alignItems: "flex-start" }}>
                             <button
-                              onClick={() => onToggleTask(task.id, !done)}
+                              onClick={(e) => { e.stopPropagation(); onToggleTask(task.id, !done); }}
                               style={{
                                 width: 12, height: 12, borderRadius: 2, marginTop: 2, flexShrink: 0,
                                 border: `1.5px solid ${done ? C.grn : (CAT_COLOR[cat] ?? "#aaa")}`,
@@ -560,7 +605,11 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                                 display: "flex", alignItems: "center", justifyContent: "center",
                               }}
                             >{done ? "✓" : ""}</button>
-                            <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{ minWidth: 0, flex: 1, cursor: onTaskClick ? "pointer" : "default" }}
+                              onClick={() => onTaskClick?.(task)}
+                              title={onTaskClick ? "View this task and its sub-tasks" : undefined}
+                            >
                               <div style={{
                                 fontSize: 11, fontWeight: 600, color: txColor,
                                 textDecoration: done ? "line-through" : "none",
@@ -568,6 +617,7 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                               }}>
                                 {task.title.replace(/^[^:]+:\s*/, "")}
+                                {task.priority && <span style={{ marginLeft: 4, fontSize: 8, fontWeight: 700, color: task.priority === "P0" ? C.red : task.priority === "P1" ? C.amb : C.grn }}>{task.priority}</span>}
                               </div>
                               {sub && (
                                 <div style={{
@@ -581,6 +631,10 @@ function WeeklyGrid({ byOwner, onToggleTask }: {
                                 </div>
                               )}
                             </div>
+                          </div>
+                        ) : showAllDone ? (
+                          <div style={{ fontSize: 11, color: C.grn, fontWeight: 600, fontFamily: F, fontStyle: "italic" }}>
+                            ✓ All done
                           </div>
                         ) : null}
                       </td>
@@ -1253,7 +1307,12 @@ type OrganizePreview = {
   currentOrder: (PlanItem & { sprintId?: string })[];
 };
 
-function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void; categories: CategoryWithSubs[] }) {
+function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitialParentFilterConsumed }: {
+  onRefreshAll: () => void;
+  categories: CategoryWithSubs[];
+  initialParentFilter?: string | null;
+  onInitialParentFilterConsumed?: () => void;
+}) {
   const [tasks, setTasks] = useState<(PlanItem & { sprintId?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterCat, setFilterCat] = useState("");
@@ -1261,9 +1320,18 @@ function MasterTaskTab({ onRefreshAll, categories }: { onRefreshAll: () => void;
   const [filterStatus, setFilterStatus] = useState("");
   const [filterPriority, setFilterPriority] = useState("");
   const [filterWeek, setFilterWeek] = useState("");
-  const [filterParent, setFilterParent] = useState("");
+  const [filterParent, setFilterParent] = useState(initialParentFilter || "");
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [searchQ, setSearchQ] = useState("");
+
+  // When parent filter comes from outside (weekly grid click), adopt it and notify caller
+  useEffect(() => {
+    if (initialParentFilter) {
+      setFilterParent(initialParentFilter);
+      onInitialParentFilterConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialParentFilter]);
   const [sortCol, setSortCol] = useState<string>("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [showAdd, setShowAdd] = useState(false);
@@ -2692,8 +2760,14 @@ function BusinessPlanTab() {
 
 export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defaultTab?: Tab }) {
   const [tab, setTab] = useState<Tab>(defaultTab || "goals");
+  const [pendingParentFilter, setPendingParentFilter] = useState<string | null>(null);
   const [categories, setCategories] = useState<CategoryWithSubs[]>([]);
   const [byOwner, setByOwner] = useState<Record<string, Record<number, PlanItem[]>>>({});
+
+  const handleWeeklyTaskClick = (task: PlanItem) => {
+    setPendingParentFilter(task.id);
+    setTab("tasks");
+  };
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -2897,14 +2971,21 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
                   categories={categories}
                   onToggleTask={handleToggleTask}
                 />
-                <WeeklyGrid byOwner={byOwner} onToggleTask={handleToggleTask} />
+                <WeeklyGrid byOwner={byOwner} onToggleTask={handleToggleTask} onTaskClick={handleWeeklyTaskClick} />
               </>
             )}
           </>
         )}
 
         {tab === "team" && <TeamTab />}
-        {tab === "tasks" && <MasterTaskTab onRefreshAll={() => { loadPlan(); loadWeekly(); }} categories={categories} />}
+        {tab === "tasks" && (
+          <MasterTaskTab
+            onRefreshAll={() => { loadPlan(); loadWeekly(); }}
+            categories={categories}
+            initialParentFilter={pendingParentFilter}
+            onInitialParentFilterConsumed={() => setPendingParentFilter(null)}
+          />
+        )}
         {tab === "plan" && <BusinessPlanTab />}
       </div>
 

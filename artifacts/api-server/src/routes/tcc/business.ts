@@ -230,119 +230,6 @@ router.get("/business/goal-completions", async (_req, res): Promise<void> => {
 
 // ─── Sync 411 plan from Google Sheet ─────────────────────────────────────────
 
-export async function sync411FromSheet(): Promise<void> {
-  if (!BUSINESS_MASTER_SHEET_ID) return;
-  try {
-    const rows = await getSheetValues(BUSINESS_MASTER_SHEET_ID, "411 Plan!A:G");
-    if (!rows || rows.length < 2) {
-      console.log("[business] sync411FromSheet: No data in '411 Plan' tab");
-      return;
-    }
-    const header = rows[0].map((h: string) => String(h).toLowerCase().trim());
-    const horizonIdx = header.findIndex((h: string) => h.includes("horizon") || h.includes("timeframe"));
-    const titleIdx = header.findIndex((h: string) => h.includes("goal") || h.includes("one thing") || h.includes("title"));
-    const ownerIdx = header.findIndex((h: string) => h.includes("owner") || h.includes("who"));
-    const statusIdx = header.findIndex((h: string) => h.includes("status"));
-    const dueDateIdx = header.findIndex((h: string) => h.includes("due") || h.includes("date"));
-    const descIdx = header.findIndex((h: string) => h.includes("desc") || h.includes("notes") || h.includes("detail"));
-
-    if (horizonIdx === -1 || titleIdx === -1) {
-      console.warn("[business] sync411FromSheet: Could not find Horizon or Goal/Title column");
-      return;
-    }
-
-    let synced = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      const horizon = String(row[horizonIdx] || "").trim().toLowerCase();
-      const title = String(row[titleIdx] || "").trim();
-      if (!horizon || !title) continue;
-
-      const normalized = horizon.replace(/[^a-z0-9]/g, "").replace("year", "yr").replace("quarter", "quarterly").replace("5yr", "5yr").replace("1yr", "1yr");
-      const finalHorizon = HORIZON_ORDER.includes(normalized) ? normalized : horizon;
-
-      const owner = ownerIdx >= 0 ? String(row[ownerIdx] || "Tony").trim() || "Tony" : "Tony";
-      const status = statusIdx >= 0 ? String(row[statusIdx] || "active").trim().toLowerCase() || "active" : "active";
-      const description = descIdx >= 0 ? String(row[descIdx] || "").trim() || null : null;
-      const dueDate = dueDateIdx >= 0 ? String(row[dueDateIdx] || "").trim() || null : null;
-      const sheetRowRef = String(i + 1);
-      const rowData = {
-        horizon: finalHorizon, title, description, owner, status,
-        dueDate: dueDate || null, position: i - 1, sheetRowRef,
-      };
-
-      // Use sheetRowRef as the stable identity: update if exists, otherwise insert.
-      // This avoids a unique-violation on sheetRowRef when a sheet row's title changes.
-      const existing = await db.select({ id: companyGoalsTable.id })
-        .from(companyGoalsTable)
-        .where(eq(companyGoalsTable.sheetRowRef, sheetRowRef))
-        .limit(1);
-
-      if (existing.length > 0) {
-        await db.update(companyGoalsTable)
-          .set({ ...rowData, updatedAt: new Date() })
-          .where(eq(companyGoalsTable.id, existing[0].id));
-      } else {
-        await db.insert(companyGoalsTable).values(rowData)
-          .onConflictDoUpdate({
-            target: [companyGoalsTable.horizon, companyGoalsTable.title],
-            set: { description, owner, status, dueDate: dueDate || null, position: i - 1, sheetRowRef, updatedAt: new Date() },
-          });
-      }
-      synced++;
-    }
-    console.log(`[business] sync411FromSheet: ${synced} goals synced from sheet`);
-  } catch (err) {
-    console.warn("[business] sync411FromSheet failed:", (err as Error).message);
-  }
-}
-
-export async function syncTeamFromSheet(): Promise<void> {
-  if (!BUSINESS_MASTER_SHEET_ID) return;
-  try {
-    const rows = await getSheetValues(BUSINESS_MASTER_SHEET_ID, "Team Roster!A:G");
-    if (!rows || rows.length < 2) {
-      console.log("[business] syncTeamFromSheet: No data in 'Team Roster' tab");
-      return;
-    }
-    const header = rows[0].map((h: string) => String(h).toLowerCase().trim());
-    const nameIdx = header.findIndex((h: string) => h.includes("name"));
-    const roleIdx = header.findIndex((h: string) => h.includes("role") || h.includes("title"));
-    const emailIdx = header.findIndex((h: string) => h.includes("email"));
-    const focusIdx = header.findIndex((h: string) => h.includes("focus") || h.includes("priority"));
-    const respIdx = header.findIndex((h: string) => h.includes("resp") || h.includes("duties"));
-
-    if (nameIdx === -1 || roleIdx === -1) {
-      console.log("[business] syncTeamFromSheet: Missing Name or Role column");
-      return;
-    }
-
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      const name = String(row[nameIdx] || "").trim();
-      const role = String(row[roleIdx] || "").trim();
-      if (!name || !role) continue;
-
-      const teamEmail = emailIdx >= 0 ? String(row[emailIdx] || "").trim() || null : null;
-      const teamFocus = focusIdx >= 0 ? String(row[focusIdx] || "").trim() || null : null;
-      const teamResp = respIdx >= 0 ? String(row[respIdx] || "").split(",").map((s: string) => s.trim()).filter(Boolean) : [];
-      await db.insert(teamRolesTable).values({
-        name, role,
-        email: teamEmail,
-        currentFocus: teamFocus,
-        responsibilities: teamResp,
-        position: i - 1,
-      }).onConflictDoUpdate({
-        target: teamRolesTable.name,
-        set: { role, email: teamEmail, currentFocus: teamFocus, responsibilities: teamResp, position: i - 1, updatedAt: new Date() },
-      });
-    }
-    console.log(`[business] syncTeamFromSheet: team synced from sheet`);
-  } catch (err) {
-    console.warn("[business] syncTeamFromSheet failed:", (err as Error).message);
-  }
-}
-
 export async function push411ToSheet(): Promise<void> {
   if (!BUSINESS_MASTER_SHEET_ID) return;
   try {
@@ -392,15 +279,6 @@ export async function pushTeamToSheet(): Promise<void> {
     console.warn("[business] pushTeamToSheet failed:", (err as Error).message);
   }
 }
-
-router.post("/business/sync-from-sheet", async (_req, res): Promise<void> => {
-  try {
-    await Promise.allSettled([sync411FromSheet(), syncTeamFromSheet()]);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message });
-  }
-});
 
 router.post("/business/push-to-sheet", async (_req, res): Promise<void> => {
   try {

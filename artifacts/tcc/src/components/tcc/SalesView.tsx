@@ -43,8 +43,7 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
   const [loadingMore, setLoadingMore] = useState(false);
   const [noMoreResults, setNoMoreResults] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [refreshMenu, setRefreshMenu] = useState(false);
-  const [syncing, setSyncing] = useState<"" | "db" | "sheet">("");
+  const [syncing, setSyncing] = useState<"" | "db">("");
   const [syncToast, setSyncToast] = useState<string | null>(null);
 
   const hasFilters = !!(search.trim() || filterStatus !== "All" || filterStage !== "All" || filterType !== "All" || filterCategory !== "All");
@@ -121,7 +120,6 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
   }, []);
 
   const handlePushToSheets = useCallback(async () => {
-    setRefreshMenu(false);
     setSyncing("db");
     setSyncToast("Pushing contacts to Google Sheets…");
     try {
@@ -134,30 +132,6 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
       setTimeout(() => setSyncToast(null), 3500);
     }
   }, []);
-
-  const handlePullFromSheets = useCallback(async () => {
-    setRefreshMenu(false);
-    const confirmed = confirm(
-      "Pull contacts FROM Google Sheets?\n\n" +
-      "⚠ This DELETES ALL existing contacts in the database and re-imports from the 'Contact Master' tab.\n" +
-      "• contact_notes will be cascade-deleted\n" +
-      "• call_log / phone_log links will be set to null\n\n" +
-      "Continue?"
-    );
-    if (!confirmed) return;
-    setSyncing("sheet");
-    setSyncToast("Pulling from Google Sheets…");
-    try {
-      const res = await post<{ ok: boolean; inserted: number; flushed: number; skipped: number; error?: string }>("/sheets/sync-contacts-from-sheet");
-      setSyncToast(`✓ Flushed ${res.flushed}, imported ${res.inserted}${res.skipped ? `, skipped ${res.skipped}` : ""}`);
-      await fetchContacts(0);
-    } catch (err) {
-      setSyncToast(`✕ Pull failed: ${(err as Error).message}`);
-    } finally {
-      setSyncing("");
-      setTimeout(() => setSyncToast(null), 5000);
-    }
-  }, [fetchContacts]);
 
   const overdue = results.filter(c => c.followUpDate && isOverdue(c.followUpDate)).length;
 
@@ -200,39 +174,14 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: C.sub }}>Calls: {calls.length}</span>
               {overdue > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.red, background: C.redBg, padding: "2px 8px", borderRadius: 6 }}>{overdue} overdue</span>}
-              <div style={{ position: "relative" }}>
-                <button
-                  onClick={() => setRefreshMenu(v => !v)}
-                  disabled={!!syncing}
-                  style={{ padding: "6px 12px", background: "#FAFAF8", color: C.tx, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: syncing ? "wait" : "pointer", fontFamily: F, opacity: syncing ? 0.6 : 1 }}
-                  title="Sync between database and Google Sheets"
-                >
-                  {syncing === "db" ? "↑ Pushing…" : syncing === "sheet" ? "↓ Pulling…" : "↻ Refresh ▾"}
-                </button>
-                {refreshMenu && !syncing && (
-                  <>
-                    <div onClick={() => setRefreshMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
-                    <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, background: "#fff", border: `1px solid ${C.brd}`, borderRadius: 10, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", zIndex: 51, minWidth: 200, overflow: "hidden" }}>
-                      <button
-                        onClick={handlePushToSheets}
-                        style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", fontSize: 13, fontFamily: F, color: C.tx, cursor: "pointer" }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "#F5F4EE")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                      >
-                        ↑ From DB <span style={{ color: C.mut, fontSize: 11 }}>(push DB → Sheets)</span>
-                      </button>
-                      <button
-                        onClick={handlePullFromSheets}
-                        style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", borderTop: `1px solid ${C.brd}`, fontSize: 13, fontFamily: F, color: C.tx, cursor: "pointer" }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "#FEF2F2")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                      >
-                        ↓ From Sheets <span style={{ color: C.red, fontSize: 11 }}>(flush + reimport)</span>
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
+              <button
+                onClick={handlePushToSheets}
+                disabled={!!syncing}
+                title="Push contacts to Google Sheets"
+                style={{ padding: "6px 12px", background: "#FAFAF8", color: C.tx, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: syncing ? "wait" : "pointer", fontFamily: F, opacity: syncing ? 0.6 : 1 }}
+              >
+                {syncing === "db" ? "↑ Pushing…" : "↑ Push to Sheets"}
+              </button>
               <button
                 onClick={() => setShowAddContact(true)}
                 style={{ padding: "6px 14px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}

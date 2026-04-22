@@ -3131,41 +3131,18 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
     }
   }
 
-  async function handlePullFromSheet() {
-    setSyncing(true);
-    try { await post("/business/sync-from-sheet", {}); await loadPlan(); } catch { setErr("Pull from Sheet failed"); }
-    finally { setSyncing(false); }
-  }
-
   async function handlePushToSheet() {
     setSyncing(true);
     try { await post("/business/push-to-sheet", {}); setToast("✓ Pushed to Google Sheet"); } catch { setErr("Push to Sheet failed"); }
     finally { setSyncing(false); }
   }
 
-  const [refreshMenuOpen, setRefreshMenuOpen] = useState(false);
   async function handleRefreshFromDb() {
-    setRefreshMenuOpen(false);
     setSyncing(true);
     try {
       await post("/sheets/sync-master", {});
       setToast("✓ Pushed DB → Sheets");
     } catch { setErr("Refresh from DB failed"); }
-    finally { setSyncing(false); }
-  }
-  async function handleRefreshFromSheets() {
-    setRefreshMenuOpen(false);
-    if (!confirm("This will FLUSH all tasks from the DB and reimport from Google Sheets. Continue?")) return;
-    setSyncing(true);
-    try {
-      const r = await post<{ ok: boolean; inserted: number; masters: number; subs: number; skipped: number; flushed: number; error?: string }>("/sheets/sync-tasks-from-sheet", {});
-      if (r.ok) {
-        setToast(`✓ Sheets → DB: flushed ${r.flushed}, imported ${r.masters} masters + ${r.subs} subs${r.skipped > 0 ? ` (${r.skipped} skipped)` : ""}`);
-        await loadPlan(true);
-      } else {
-        setErr(r.error || "Pull failed");
-      }
-    } catch { setErr("Refresh from Sheets failed"); }
     finally { setSyncing(false); }
   }
 
@@ -3199,44 +3176,17 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
             </div>
             <div style={{ display: "flex", gap: 8, position: "relative" }}>
               {tab === "goals" && (
-                <>
-                  <button onClick={handlePullFromSheet} disabled={syncing} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.brd}`, background: C.card, color: C.sub, fontSize: 12, cursor: "pointer", fontFamily: F }}>↓ Pull</button>
-                  <button onClick={handlePushToSheet} disabled={syncing} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.grn}`, background: C.grnBg, color: C.grn, fontSize: 12, cursor: "pointer", fontFamily: F }}>↑ Push</button>
-                </>
+                <button onClick={handlePushToSheet} disabled={syncing} style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.grn}`, background: C.grnBg, color: C.grn, fontSize: 12, cursor: "pointer", fontFamily: F }}>↑ Push</button>
               )}
               {(tab === "tasks" || tab === "goals") && (
-                <div style={{ position: "relative" }}>
-                  <button
-                    onClick={() => setRefreshMenuOpen(v => !v)}
-                    disabled={syncing}
-                    style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.brd}`, background: C.card, color: C.sub, fontSize: 12, cursor: syncing ? "wait" : "pointer", fontFamily: F, display: "flex", alignItems: "center", gap: 4 }}
-                  >
-                    {syncing ? "⟳ Syncing..." : "↻ Refresh ▾"}
-                  </button>
-                  {refreshMenuOpen && (
-                    <>
-                      <div onClick={() => setRefreshMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9998 }} />
-                      <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, background: "#fff", border: `1px solid ${C.brd}`, borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 9999, minWidth: 200, padding: 4 }}>
-                        <button
-                          onClick={handleRefreshFromDb}
-                          style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontFamily: F, color: C.tx, borderRadius: 6 }}
-                          onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
-                          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                        >
-                          ↑ From DB <span style={{ color: C.mut, marginLeft: 8 }}>— push to Sheets</span>
-                        </button>
-                        <button
-                          onClick={handleRefreshFromSheets}
-                          style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontFamily: F, color: C.tx, borderRadius: 6 }}
-                          onMouseEnter={e => (e.currentTarget.style.background = C.bg)}
-                          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                        >
-                          ↓ From Sheets <span style={{ color: C.mut, marginLeft: 8 }}>— pull Type/Sub-Type into DB</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <button
+                  onClick={handleRefreshFromDb}
+                  disabled={syncing}
+                  title="Push to Google Sheets"
+                  style={{ padding: "6px 12px", borderRadius: 7, border: `1px solid ${C.brd}`, background: C.card, color: C.sub, fontSize: 12, cursor: syncing ? "wait" : "pointer", fontFamily: F, display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  {syncing ? "⟳ Syncing..." : "↑ Push to Sheets"}
+                </button>
               )}
             </div>
           </div>

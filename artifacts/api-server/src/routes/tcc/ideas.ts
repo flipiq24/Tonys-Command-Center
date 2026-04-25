@@ -8,6 +8,8 @@ import { postTechIdeaToSlack, postSlackMessage, listSlackUsers, notifyAssigneeVi
 import { z } from "zod/v4";
 import { businessContextTable } from "../../lib/schema-v2";
 import { recordFeedback } from "../../agents/feedback.js";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -98,12 +100,7 @@ async function classifyIdea(text: string, recentIdeas: typeof ideasTable.$inferS
 
   const liveContext = await getBusinessContext().catch(() => "");
 
-  const msg = await createTrackedMessage("idea_classify", {
-    model: "claude-haiku-4-5",
-    max_tokens: 512,
-    messages: [{
-      role: "user",
-      content: `You are Tony Diaz's AI classifier for FlipIQ ideas. Analyze this idea and return ONLY valid JSON.
+  const userPrompt = `You are Tony Diaz's AI classifier for FlipIQ ideas. Analyze this idea and return ONLY valid JSON.
 
 BUSINESS CONTEXT:
 ${liveContext ? `LIVE BUSINESS DOCUMENTS (primary source):\n${liveContext}` : BUSINESS_PLAN}
@@ -126,13 +123,30 @@ Return EXACTLY this JSON:
 
 IMPORTANT: Use techType "Task" when the idea is a concrete action item that should be checked against the 90-day plan. Use "Strategic" when the idea is a high-level strategic direction that Ethan should review. Use "Bug", "Feature", or "Idea" only for tech-related submissions.
 
-Return ONLY the JSON object, no markdown, no explanation.`
-    }]
-  });
+Return ONLY the JSON object, no markdown, no explanation.`;
 
-  const block = msg.content[0];
-  if (block.type !== "text") throw new Error("Bad AI response");
-  const json = block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+  let raw = "";
+
+  // Flag-gated: AGENT_RUNTIME_IDEAS=true routes through runtime.
+  if (isAgentRuntimeEnabled("ideas")) {
+    const result = await runAgent("ideas", "classify", {
+      userMessage: userPrompt,
+      caller: "direct",
+      meta: { ideaText: text.slice(0, 80) },
+    });
+    raw = result.text.trim();
+  } else {
+    const msg = await createTrackedMessage("idea_classify", {
+      model: "claude-haiku-4-5",
+      max_tokens: 512,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+    const block = msg.content[0];
+    if (block.type !== "text") throw new Error("Bad AI response");
+    raw = block.text.trim();
+  }
+
+  const json = raw.replace(/^```json?\n?/, "").replace(/\n?```$/, "");
   return JSON.parse(json);
 }
 
@@ -221,19 +235,31 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
           text: `*Bug Report (auto-filed from TCC)*\n\n> ${text}\n\n*Severity:* ${classification.urgency || "Unknown"}\n*Priority Recommendation:* ${classification.urgency === "Now" ? "P1" : classification.urgency === "This Week" ? "P2" : "P3"}`,
         }).catch(() => {});
       } else {
-        const pushbackCheck = await createTrackedMessage("idea_classify", {
-          model: "claude-haiku-4-5",
-          max_tokens: 512,
-          messages: [{
-            role: "user",
-            content: `Given these business priorities:\n${combinedContext}\n\nA new idea was submitted: "${text}"\n\nDoes this conflict with or distract from current priorities? If yes, estimate what priority rank (1-100) this would be on the 90-day plan. Is this unreasonable enough to park and escalate to Ethan?\n\nRespond as JSON only: { "conflicts": true/false, "rank": number|null, "reason": "brief explanation", "unreasonable": true/false }`,
-          }],
-        });
+        const pushbackPrompt = `Given these business priorities:\n${combinedContext}\n\nA new idea was submitted: "${text}"\n\nDoes this conflict with or distract from current priorities? If yes, estimate what priority rank (1-100) this would be on the 90-day plan. Is this unreasonable enough to park and escalate to Ethan?\n\nRespond as JSON only: { "conflicts": true/false, "rank": number|null, "reason": "brief explanation", "unreasonable": true/false }`;
 
-        const pushbackText = pushbackCheck.content.find(b => b.type === "text");
-        if (pushbackText?.type === "text") {
+        let pushbackRaw = "";
+
+        // Flag-gated: AGENT_RUNTIME_IDEAS=true routes through runtime.
+        if (isAgentRuntimeEnabled("ideas")) {
+          const result = await runAgent("ideas", "pushback", {
+            userMessage: pushbackPrompt,
+            caller: "direct",
+            meta: { ideaText: text.slice(0, 80) },
+          });
+          pushbackRaw = result.text;
+        } else {
+          const pushbackCheck = await createTrackedMessage("idea_classify", {
+            model: "claude-haiku-4-5",
+            max_tokens: 512,
+            messages: [{ role: "user", content: pushbackPrompt }],
+          });
+          const pushbackText = pushbackCheck.content.find(b => b.type === "text");
+          if (pushbackText?.type === "text") pushbackRaw = pushbackText.text;
+        }
+
+        if (pushbackRaw) {
           try {
-            const raw = pushbackText.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+            const raw = pushbackRaw.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
             const parsed2 = JSON.parse(raw);
             if (parsed2.unreasonable) {
               pushback = {
@@ -498,10 +524,8 @@ router.post("/ideas/generate-task", async (req, res): Promise<void> => {
 
     const bizContext = await getBusinessContext();
 
-    const claudeResponse = await createTrackedMessage("idea_classify", {
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system: `You are the FlipIQ task creation assistant. Given an idea, generate structured task fields for the 411 Plan.
+    const userPrompt = `Idea category: ${category}\nUrgency: ${urgency}${techType ? `\nType: ${techType}` : ""}\n\nIdea: "${ideaText}"\n\nGenerate task fields.`;
+    const legacySystem = `You are the FlipIQ task creation assistant. Given an idea, generate structured task fields for the 411 Plan.
 
 Available categories and their subcategories:
 - adaptation: Operator Assessment, CS Dashboard, User Outreach, Success Playbook, Dead Weight Suspension
@@ -532,13 +556,34 @@ Return ONLY valid JSON with these exact fields:
   "workNotes": "context from the original idea"
 }
 
-Set coOwner to whoever should support the primary owner based on idea domain and team expertise. Use null if no clear second owner.`,
-      messages: [{ role: "user", content: `Idea category: ${category}\nUrgency: ${urgency}${techType ? `\nType: ${techType}` : ""}\n\nIdea: "${ideaText}"\n\nGenerate task fields.` }],
-    });
+Set coOwner to whoever should support the primary owner based on idea domain and team expertise. Use null if no clear second owner.`;
 
-    const textBlock = claudeResponse.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") { res.json({ ok: false, error: "No response" }); return; }
-    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    let raw = "";
+
+    // Flag-gated: AGENT_RUNTIME_IDEAS=true routes through runtime.
+    if (isAgentRuntimeEnabled("ideas")) {
+      // Combine system + user inputs for the runtime call. The runtime supplies
+      // its own L1+L2+L3 system layers; the legacy system body is appended to
+      // the user message to preserve the same instruction set.
+      const result = await runAgent("ideas", "generate-task", {
+        userMessage: `${legacySystem}\n\n---\n\n${userPrompt}`,
+        caller: "direct",
+        meta: { ideaCategory: category, urgency },
+      });
+      raw = result.text;
+    } else {
+      const claudeResponse = await createTrackedMessage("idea_classify", {
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: legacySystem,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const textBlock = claudeResponse.content.find(b => b.type === "text");
+      if (!textBlock || textBlock.type !== "text") { res.json({ ok: false, error: "No response" }); return; }
+      raw = textBlock.text;
+    }
+
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) { res.json({ ok: false, error: "No JSON in AI response" }); return; }
 
     const taskFields = JSON.parse(jsonMatch[0]);

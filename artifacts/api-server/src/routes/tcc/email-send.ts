@@ -6,6 +6,8 @@ import { communicationLogTable, contactsTable } from "../../lib/schema-v2";
 import { eq } from "drizzle-orm";
 import { updateContactComms } from "../../lib/contact-comms";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -148,15 +150,27 @@ ${subject ? `Subject hint: "${subject}"` : "Create a clear, compelling subject l
 ${context ? `Context/purpose: ${context}` : "Write a general outreach or follow-up email."}
 Keep the body to 3-5 sentences max.`;
 
-    const response = await createTrackedMessage("email_draft", {
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    });
+    let raw = "";
 
-    const textBlock = response.content.find(b => b.type === "text");
-    let raw = textBlock?.type === "text" ? textBlock.text.trim() : "";
+    // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
+    // default false keeps legacy inline prompt intact.
+    if (isAgentRuntimeEnabled("email")) {
+      const result = await runAgent("email", "compose-new", {
+        userMessage: userPrompt,
+        caller: "direct",
+        meta: { recipient, hasReplyToSnippet: !!replyToSnippet },
+      });
+      raw = result.text.trim();
+    } else {
+      const response = await createTrackedMessage("email_draft", {
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 512,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const textBlock = response.content.find(b => b.type === "text");
+      raw = textBlock?.type === "text" ? textBlock.text.trim() : "";
+    }
 
     // Strip markdown code fences if Claude wrapped the JSON in them
     raw = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();

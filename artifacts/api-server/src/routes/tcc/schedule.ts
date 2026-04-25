@@ -6,6 +6,8 @@ import { anthropic, createTrackedMessage } from "@workspace/integrations-anthrop
 import { postSlackMessage } from "../../lib/slack.js";
 import z from "zod";
 import { recordFeedback } from "../../agents/feedback.js";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -70,12 +72,25 @@ async function checkMeetingScope(title: string, description?: string): Promise<{
   warning?: string;
 }> {
   try {
-    const msg = await createTrackedMessage("schedule_optimize", {
-      model: "claude-haiku-4-5",
-      max_tokens: 256,
-      messages: [{
-        role: "user",
-        content: `You are Tony Diaz's scheduling gatekeeper for FlipIQ, a real estate wholesale platform.
+    let raw = "";
+
+    // Flag-gated: AGENT_RUNTIME_SCHEDULE=true routes through runtime;
+    // default false keeps legacy inline call intact.
+    if (isAgentRuntimeEnabled("schedule")) {
+      const userMessage = `Meeting: "${title}"${description ? `\nDescription: "${description}"` : ""}`;
+      const result = await runAgent("schedule", "check-scope", {
+        userMessage,
+        caller: "direct",
+        meta: { title },
+      });
+      raw = result.text;
+    } else {
+      const msg = await createTrackedMessage("schedule_optimize", {
+        model: "claude-haiku-4-5",
+        max_tokens: 256,
+        messages: [{
+          role: "user",
+          content: `You are Tony Diaz's scheduling gatekeeper for FlipIQ, a real estate wholesale platform.
 Tony's daily priority: 10 Sales Calls first, then demos/follow-ups, then everything else.
 Classify this meeting and return ONLY valid JSON.
 
@@ -90,11 +105,14 @@ Categories (in priority order):
 Return: {"inScope": true/false, "category": "Sales|CSM|COO|Other", "warning": "optional one-line warning if Other"}
 inScope = false ONLY if category is "Other" AND it seems like a distraction from revenue.
 Return ONLY the JSON, no markdown.`
-      }]
-    });
-    const block = msg.content[0];
-    if (block.type !== "text") return { inScope: true, category: "Other" };
-    const parsed = JSON.parse(block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, ""));
+        }]
+      });
+      const block = msg.content[0];
+      if (block.type !== "text") return { inScope: true, category: "Other" };
+      raw = block.text;
+    }
+
+    const parsed = JSON.parse(raw.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, ""));
     return { inScope: parsed.inScope ?? true, category: parsed.category ?? "Other", warning: parsed.warning };
   } catch {
     return { inScope: true, category: "Other" }; // fail open

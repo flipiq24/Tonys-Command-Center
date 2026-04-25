@@ -6,6 +6,8 @@ import { anthropic, createTrackedMessage } from "@workspace/integrations-anthrop
 import { syncTasksTab } from "./sheets-sync";
 import { postSlackMessage } from "../../lib/slack";
 import { recordFeedback } from "../../agents/feedback.js";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -801,13 +803,24 @@ TONY'S EXPLANATION: "${explanation}"
 Write a concise 2-3 sentence reflection (under 80 words) that is relevant to the direction Tony moved the task. If moved DOWN (less important), acknowledge what is more urgent and why deprioritizing makes sense. If moved UP (more important), confirm the reasoning or note a tradeoff. Be direct — no fluff. Start with "Got it —" or similar.`;
 
       try {
-        const msg = await createTrackedMessage("plan_organize", {
-          model: "claude-haiku-4-5",
-          max_tokens: 200,
-          messages: [{ role: "user", content: prompt }],
-        });
-        const block = msg.content[0];
-        if (block.type === "text") aiReflection = block.text.trim();
+        // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
+        if (isAgentRuntimeEnabled("tasks")) {
+          const userMessage = `TASK: "${movedItemTitle || "Unknown"}"\nDIRECTION: ${directionLine}\n${displacedLabel}\n${displacedList || "(none listed)"}\n\nTONY'S EXPLANATION: "${explanation}"`;
+          const result = await runAgent("tasks", "reorder-reflect", {
+            userMessage,
+            caller: "direct",
+            meta: { movedItemId, direction },
+          });
+          aiReflection = result.text.trim();
+        } else {
+          const msg = await createTrackedMessage("plan_organize", {
+            model: "claude-haiku-4-5",
+            max_tokens: 200,
+            messages: [{ role: "user", content: prompt }],
+          });
+          const block = msg.content[0];
+          if (block.type === "text") aiReflection = block.text.trim();
+        }
       } catch (e) {
         console.warn("[plan/reorder] Claude reflection failed:", e);
       }
@@ -921,19 +934,30 @@ Ranking criteria within each tier:
 Return ONLY a JSON object with key "priorityOrder" — array of ALL task IDs in optimal flattened tree order (Master → its SUBs → its NOTES → next Master → ...). No markdown, no explanation:
 {"priorityOrder": ["masterA-id","masterA-sub1-id","masterA-sub2-id","masterA-note1-id","masterB-id","masterB-sub1-id",...]}`;
 
-    const msg = await createTrackedMessage("plan_organize", {
-      model: "claude-sonnet-4-5",
-      max_tokens: 4000,
-      messages: [{ role: "user", content: prompt }],
-    });
+    let raw = "";
 
-    const block = msg.content[0];
-    if (block.type !== "text") {
-      res.status(500).json({ error: "Claude returned unexpected response" });
-      return;
+    // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
+    if (isAgentRuntimeEnabled("tasks")) {
+      const result = await runAgent("tasks", "ai-organize", {
+        userMessage: prompt,
+        caller: "direct",
+        meta: { activeCount: activeTasks.length },
+      });
+      raw = result.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+    } else {
+      const msg = await createTrackedMessage("plan_organize", {
+        model: "claude-sonnet-4-5",
+        max_tokens: 4000,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const block = msg.content[0];
+      if (block.type !== "text") {
+        res.status(500).json({ error: "Claude returned unexpected response" });
+        return;
+      }
+      raw = block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
     }
 
-    const raw = block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
     const parsed = JSON.parse(raw) as { priorityOrder: string[] };
 
     const validIds = new Set(activeTasks.map(t => t.id));
@@ -1103,15 +1127,28 @@ At which index (0 = top) should the new task be inserted? Consider:
 
 Return ONLY a JSON object: {"insertAt": <number>}`;
 
-    const msg = await createTrackedMessage("plan_organize", {
-      model: "claude-haiku-4-5",
-      max_tokens: 100,
-      messages: [{ role: "user", content: prompt }],
-    });
+    let raw = "";
 
-    const block = msg.content[0];
-    if (block.type !== "text") return Math.floor(activeTasks.length / 2);
-    const parsed = JSON.parse(block.text.trim()) as { insertAt: number };
+    // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
+    if (isAgentRuntimeEnabled("tasks")) {
+      const result = await runAgent("tasks", "score-new-task", {
+        userMessage: prompt,
+        caller: "direct",
+        meta: { taskTitle: title, category, priority },
+      });
+      raw = result.text.trim();
+    } else {
+      const msg = await createTrackedMessage("plan_organize", {
+        model: "claude-haiku-4-5",
+        max_tokens: 100,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const block = msg.content[0];
+      if (block.type !== "text") return Math.floor(activeTasks.length / 2);
+      raw = block.text.trim();
+    }
+
+    const parsed = JSON.parse(raw) as { insertAt: number };
     return Math.min(Math.max(0, parsed.insertAt), activeTasks.length);
   } catch (e) {
     console.warn("[plan] brainScoreNewTask failed:", e);

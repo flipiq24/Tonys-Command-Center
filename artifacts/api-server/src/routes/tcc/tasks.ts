@@ -9,6 +9,8 @@ import { anthropic, createTrackedMessage } from "@workspace/integrations-anthrop
 import { z } from "zod/v4";
 import { createGoogleTask, completeGoogleTask, listGoogleTasks } from "../../lib/gtasks.js";
 import { recordFeedback } from "../../agents/feedback.js";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -208,12 +210,25 @@ async function checkTaskPriority(
 
   const taskList = allTasks.map((t, i) => `${i + 1}. [${t.source}] ${t.text}`).join("\n");
 
-  const msg = await createTrackedMessage("task_classify", {
-    model: "claude-haiku-4-5",
-    max_tokens: 512,
-    messages: [{
-      role: "user",
-      content: `You are Tony Diaz's priority checker for FlipIQ. Tony's top priority is always: Sales calls first, then ops support, then everything else.
+  const userMessage = `NEW TASK: "${taskText}"\n\nEXISTING ACTIVE TASKS:\n${taskList}`;
+
+  let raw = "";
+
+  // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
+  if (isAgentRuntimeEnabled("tasks")) {
+    const result = await runAgent("tasks", "check-priority", {
+      userMessage,
+      caller: "direct",
+      meta: { taskText, existingCount: allTasks.length },
+    });
+    raw = result.text.trim();
+  } else {
+    const msg = await createTrackedMessage("task_classify", {
+      model: "claude-haiku-4-5",
+      max_tokens: 512,
+      messages: [{
+        role: "user",
+        content: `You are Tony Diaz's priority checker for FlipIQ. Tony's top priority is always: Sales calls first, then ops support, then everything else.
 
 NEW TASK: "${taskText}"
 
@@ -229,13 +244,14 @@ Return ONLY valid JSON:
 }
 
 Return ONLY the JSON object, no markdown.`
-    }]
-  });
+      }]
+    });
+    const block = msg.content[0];
+    if (block.type !== "text") return { hasHigherPriority: false, count: 0, items: [], newTaskPriority: 50 };
+    raw = block.text.trim();
+  }
 
-  const block = msg.content[0];
-  if (block.type !== "text") return { hasHigherPriority: false, count: 0, items: [], newTaskPriority: 50 };
-
-  const raw = block.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+  raw = raw.replace(/^```json?\n?/, "").replace(/\n?```$/, "");
   const parsed = JSON.parse(raw);
 
   const higherItems = (parsed.higherPriorityItems as number[] || [])

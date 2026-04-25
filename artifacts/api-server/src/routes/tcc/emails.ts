@@ -7,6 +7,8 @@ import { sendEmail } from "../../lib/gmail.js";
 import { getGmail } from "../../lib/google-auth.js";
 import { todayPacific } from "../../lib/dates.js";
 import { recordFeedback } from "../../agents/feedback.js";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -240,26 +242,50 @@ router.post("/emails/action", async (req, res): Promise<void> => {
     const { notes } = parsed.data;
     let draft = "";
     try {
-      const message = await createTrackedMessage("email_action", {
-        model: "claude-sonnet-4-6",
-        max_tokens: 8192,
-        system: `You are Tony Diaz's AI assistant. Tony runs FlipIQ, a real estate wholesale platform. 
-Draft professional, concise email replies in Tony's voice — direct, warm, action-oriented. 
-Keep replies short (3-5 sentences max). Always end with a clear next step.
-IMPORTANT: Write in plain prose only. No markdown, no asterisks, no bullet points, no headers, no bold, no formatting characters whatsoever. Just plain text paragraphs.${brainContext}`,
-        messages: [{
-          role: "user",
-          content: `Draft a reply to this email:
+      const userMessage = `Draft a reply to this email:
 From: ${sender}
 Subject: ${subject}
 ${reason ? `\nContext: ${reason}` : ""}
 ${notes ? `\nAdditional notes from Tony: ${notes}` : ""}
 
-Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Plain text only.`,
-        }],
-      });
-      const block = message.content[0];
-      if (block.type === "text") draft = block.text.replace(/\*\*/g, "").replace(/\*/g, "").replace(/^#+\s/gm, "").replace(/^-\s/gm, "").trim();
+Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Plain text only.`;
+
+      let rawText = "";
+
+      // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
+      // default false keeps legacy inline prompt + brain context.
+      if (isAgentRuntimeEnabled("email")) {
+        // The brain content is fed via the user message during transition
+        // because the email-brain memory section migration lands in a later
+        // step. This preserves byte-equivalent behavior at first flag flip.
+        const userMessageWithBrain = brainContext
+          ? `${userMessage}\n\nTONY'S EMAIL BRAIN (learned from training):\n${brainRow?.content || ""}`
+          : userMessage;
+
+        const result = await runAgent("email", "reply-draft", {
+          userMessage: userMessageWithBrain,
+          caller: "direct",
+          meta: { sender, subject, hasReason: !!reason, hasNotes: !!notes },
+        });
+        rawText = result.text;
+      } else {
+        const message = await createTrackedMessage("email_action", {
+          model: "claude-sonnet-4-6",
+          max_tokens: 8192,
+          system: `You are Tony Diaz's AI assistant. Tony runs FlipIQ, a real estate wholesale platform.
+Draft professional, concise email replies in Tony's voice — direct, warm, action-oriented.
+Keep replies short (3-5 sentences max). Always end with a clear next step.
+IMPORTANT: Write in plain prose only. No markdown, no asterisks, no bullet points, no headers, no bold, no formatting characters whatsoever. Just plain text paragraphs.${brainContext}`,
+          messages: [{
+            role: "user",
+            content: userMessage,
+          }],
+        });
+        const block = message.content[0];
+        if (block.type === "text") rawText = block.text;
+      }
+
+      draft = rawText.replace(/\*\*/g, "").replace(/\*/g, "").replace(/^#+\s/gm, "").replace(/^-\s/gm, "").trim();
     } catch (err) {
       req.log.warn({ err }, "Claude API failed for email reply");
       draft = `Hi ${sender?.split(" ")[0] || "there"},\n\nThanks for reaching out. Let's connect to discuss this further.\n\nBest,\nTony`;

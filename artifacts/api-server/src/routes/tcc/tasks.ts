@@ -8,6 +8,7 @@ import { localTasksTable } from "../../lib/schema-v2";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { z } from "zod/v4";
 import { createGoogleTask, completeGoogleTask, listGoogleTasks } from "../../lib/gtasks.js";
+import { recordFeedback } from "../../agents/feedback.js";
 
 const router: IRouter = Router();
 
@@ -316,6 +317,19 @@ router.post("/tasks/create-with-check", async (req, res): Promise<void> => {
       size: size ?? null,
     })
     .returning();
+
+  // If user proceeded after a priority warning, log it as feedback so Coach
+  // can learn what kind of warnings Tony overrides.
+  if (overrideWarning) {
+    recordFeedback({
+      agent: "tasks",
+      skill: "check-priority",
+      sourceType: "override",
+      sourceId: task.id,
+      reviewText: overrideWarning,
+      snapshotExtra: { taskText: text, dueDate, priorityCheck },
+    }).catch(err => console.error("[tasks] recordFeedback failed:", err));
+  }
 
   // Create matching Google Task (fire-and-forget, update googleTaskId when done)
   createGoogleTask(text, dueDate ?? null).then(async googleTaskId => {

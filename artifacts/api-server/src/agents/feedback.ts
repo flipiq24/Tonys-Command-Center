@@ -4,15 +4,17 @@
 //
 // Behavior:
 //   - If FEEDBACK_PIPELINE_ENABLED=false: returns silently (Phase 0 default).
-//   - If true: writes one agent_feedback row with snapshot.
-//   - Snapshot capture is delegated to per-agent functions in ./snapshots/<agent>.ts.
-//     Until those exist (Phase 1), we accept a pre-built snapshot from the caller.
-//
-// This file is the entry point — UI handlers call recordFeedback() directly.
-// Coach/Train consumes from agent_feedback via proposals.ts.
+//   - If true: writes one agent_feedback row.
+//   - Snapshot: callers can pass either:
+//       (a) a pre-built `contextSnapshot` object (rare — used when the caller
+//           already has all the world-state in hand), OR
+//       (b) `snapshotExtra` — caller hints + the agent's per-agent capturer
+//           reads DB to assemble the snapshot.
+//     If neither is provided, the capturer runs with no extras.
 
 import { db, agentFeedbackTable } from "@workspace/db";
 import { isFeedbackPipelineEnabled } from "./flags.js";
+import { captureSnapshot } from "./snapshots/index.js";
 
 export type FeedbackSourceType =
   | "thumbs"      // 👍/👎
@@ -26,15 +28,13 @@ export interface RecordFeedbackInput {
   agent: string;                       // 'email' | 'tasks' | ...
   skill: string;                       // 'reply.draft' | 'classify' | ...
   sourceType: FeedbackSourceType;
-  sourceId: string;                    // emailId / taskId / ideaId / eventId — caller's id
+  sourceId: string;                    // emailId / taskId / ideaId / eventId
   rating?: 1 | -1 | null;
   reviewText?: string | null;
-  /**
-   * World-state JSON at the moment of the feedback. Per FEEDBACK_SYSTEM.md §4.2,
-   * each agent has its own snapshot shape. Caller is responsible for assembling
-   * the right shape (we'll add captureSnapshot helpers in Phase 1).
-   */
-  contextSnapshot: Record<string, unknown>;
+  /** OPTION A: pre-built snapshot (caller already has the world-state). */
+  contextSnapshot?: Record<string, unknown>;
+  /** OPTION B: hints for the per-agent capturer to assemble a snapshot. */
+  snapshotExtra?: Record<string, unknown>;
 }
 
 export interface RecordFeedbackResult {
@@ -49,6 +49,12 @@ export async function recordFeedback(input: RecordFeedbackInput): Promise<Record
     return { recorded: false };
   }
 
+  // Resolve snapshot — pre-built wins, else capture from DB.
+  let snapshot = input.contextSnapshot;
+  if (!snapshot) {
+    snapshot = await captureSnapshot(input.agent, input.skill, input.sourceId, input.snapshotExtra);
+  }
+
   try {
     const inserted = await db.insert(agentFeedbackTable).values({
       agent: input.agent,
@@ -57,7 +63,7 @@ export async function recordFeedback(input: RecordFeedbackInput): Promise<Record
       sourceId: input.sourceId,
       rating: input.rating ?? null,
       reviewText: input.reviewText ?? null,
-      contextSnapshot: input.contextSnapshot,
+      contextSnapshot: snapshot,
     }).returning({ id: agentFeedbackTable.id });
 
     return { recorded: true, feedbackId: inserted[0]?.id };

@@ -6,6 +6,7 @@ import { anthropic, createTrackedMessage } from "@workspace/integrations-anthrop
 import { sendEmail } from "../../lib/gmail.js";
 import { getGmail } from "../../lib/google-auth.js";
 import { todayPacific } from "../../lib/dates.js";
+import { recordFeedback } from "../../agents/feedback.js";
 
 const router: IRouter = Router();
 
@@ -125,6 +126,18 @@ router.post("/emails/action", async (req, res): Promise<void> => {
       action,
       reason: reason || null,
     });
+
+    // New universal feedback capture (no-op when FEEDBACK_PIPELINE_ENABLED=false).
+    // Runs alongside the legacy email_training write during transition.
+    recordFeedback({
+      agent: "email",
+      skill: "triage.classifyBatch",
+      sourceType: "thumbs",
+      sourceId: String(emailId || sender || "unknown"),
+      rating: action === "thumbs_up" ? 1 : -1,
+      reviewText: reason || null,
+      snapshotExtra: { senderEmail: sender, subject, body: reason },
+    }).catch(err => console.error("[emails] recordFeedback failed:", err));
 
     // Count total training samples
     const countResult = await db.select().from(emailTrainingTable);

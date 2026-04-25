@@ -5,6 +5,7 @@ import { createEvent } from "../../lib/gcal.js";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { postSlackMessage } from "../../lib/slack.js";
 import z from "zod";
+import { recordFeedback } from "../../agents/feedback.js";
 
 const router: IRouter = Router();
 
@@ -113,6 +114,7 @@ const AddEventBody = z.object({
   notification: z.number().optional().default(10), // minutes
   guests: z.array(z.string()).optional().default([]),
   forceOverride: z.boolean().optional().default(false),
+  overrideReason: z.string().optional(),
   category: z.string().optional(),
   priority: z.string().optional(),
 });
@@ -124,7 +126,7 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
     return;
   }
 
-  const { title, date, allDay, startTime, endTime, location, description, notification, guests, forceOverride, category, priority } = parsed.data;
+  const { title, date, allDay, startTime, endTime, location, description, notification, guests, forceOverride, overrideReason, category, priority } = parsed.data;
   const colorId = category ? CATEGORY_COLOR_ID[category] : undefined;
 
   // ── Guilt-trip check (only for timed events during call hours) ───────────
@@ -213,6 +215,26 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
       urgency: "high",
       status: "override",
     }).catch(() => { /* non-critical */ });
+  }
+
+  // New universal feedback capture — runs whenever Tony force-overrides
+  // either the guilt-trip OR the scope-gatekeeper. The reason field (added
+  // to AddEventBody) carries Tony's explanation when the FE supplies it.
+  if (forceOverride) {
+    recordFeedback({
+      agent: "schedule",
+      skill: "check-scope",
+      sourceType: "override",
+      sourceId: gcalResult.eventId || `${date}T${startTime || ""}`,
+      reviewText: overrideReason || guiltTripMsg || scopeWarning || null,
+      snapshotExtra: {
+        title, date, startTime,
+        scope: scopeCategory,
+        scopeWarning,
+        callsMade,
+        quotaTarget: CALL_QUOTA,
+      },
+    }).catch(err => console.error("[schedule/add] recordFeedback failed:", err));
   }
 
   res.json({ ok: true, eventId: gcalResult.eventId, htmlLink: gcalResult.htmlLink });

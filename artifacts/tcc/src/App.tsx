@@ -18,11 +18,12 @@ import { PrintView } from "@/components/tcc/PrintView";
 import { DashboardView } from "@/components/tcc/DashboardView";
 import { BusinessView } from "@/components/tcc/BusinessView";
 import { AiUsageView } from "@/components/tcc/AiUsageView";
+import { AgentsSettingsView } from "@/components/tcc/AgentsSettingsView";
 import { ReclassifyModal, type ReclassifyMode } from "@/components/tcc/ReclassifyModal";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "chat" | "business" | "ai-usage";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "chat" | "business" | "ai-usage" | "agents-settings";
 type BusinessTab = "goals" | "team" | "tasks" | "plan";
 
 export default function App() {
@@ -291,7 +292,7 @@ export default function App() {
           setCk(loaded);
 
           if (journal?.formattedText || journal?.rawText) {
-            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "business"];
+            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "business", "ai-usage", "agents-settings"];
             const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
             const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "dashboard";
             setView(restoredView);
@@ -728,6 +729,15 @@ export default function App() {
       {sharedHeader}
       {sharedModals}
       <AiUsageView onBack={() => persistView("dashboard")} />
+    </div>
+  );
+
+  // ═══ AGENTS SETTINGS VIEW ═══
+  if (view === "agents-settings") return (
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
+      {sharedHeader}
+      {sharedModals}
+      <AgentsSettingsView onBack={() => persistView("dashboard")} />
     </div>
   );
 

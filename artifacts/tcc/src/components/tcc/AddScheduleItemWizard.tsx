@@ -73,6 +73,7 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [guiltTrip, setGuiltTrip] = useState<GuiltTrip | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("Mid");
   const [guestEmailHistory, setGuestEmailHistory] = useState<Record<string, EmailThread[]>>({});
@@ -148,7 +149,7 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
     }
   };
 
-  const doSave = async (forceOverride = false) => {
+  const doSave = async (forceOverride = false, reason = "") => {
     setError("");
     setSaving(true);
     try {
@@ -163,6 +164,7 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
         notification,
         guests: guests.map(g => g.email),
         forceOverride,
+        overrideReason: reason || undefined,
         category: category || undefined,
         priority: priority || undefined,
       });
@@ -523,18 +525,40 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
             </div>
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              background: C.ambBg, borderRadius: 10, padding: "10px 16px", marginBottom: 24,
+              background: C.ambBg, borderRadius: 10, padding: "10px 16px", marginBottom: 16,
             }}>
               <span style={{ fontSize: 13, color: C.amb, fontWeight: 700 }}>📞 Calls today</span>
               <span style={{ fontSize: 20, fontWeight: 800, color: C.tx }}>
                 {guiltTrip.callsMade} / {guiltTrip.quotaTarget}
               </span>
             </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={{
+                display: "block", fontSize: 12, fontWeight: 700, color: C.mut,
+                marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.4,
+              }}>
+                Why are you doing it anyway? (optional)
+              </label>
+              <textarea
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+                rows={2}
+                placeholder="e.g. Investor flying in tomorrow only — can't reschedule"
+                style={{
+                  width: "100%", padding: "8px 10px", fontSize: 13,
+                  border: `1px solid ${C.brd}`, borderRadius: 8, resize: "vertical",
+                  fontFamily: "inherit", color: C.tx, background: C.card,
+                }}
+              />
+              <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>
+                Helps the schedule agent learn what actually warrants overriding.
+              </div>
+            </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setGuiltTrip(null)} style={{ ...btn2, flex: 1, borderColor: C.grn, color: C.grn }}>
+              <button onClick={() => { setGuiltTrip(null); setOverrideReason(""); }} style={{ ...btn2, flex: 1, borderColor: C.grn, color: C.grn }}>
                 I'll reschedule
               </button>
-              <button onClick={() => { setGuiltTrip(null); doSave(true); }} disabled={saving}
+              <button onClick={() => { const r = overrideReason; setGuiltTrip(null); setOverrideReason(""); doSave(true, r); }} disabled={saving}
                 style={{ ...btn1, flex: 1, background: C.red, opacity: saving ? 0.6 : 1 }}>
                 {saving ? "Saving…" : "Do it anyway"}
               </button>

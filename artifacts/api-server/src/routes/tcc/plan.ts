@@ -5,6 +5,7 @@ import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncTasksTab } from "./sheets-sync";
 import { postSlackMessage } from "../../lib/slack";
+import { recordFeedback } from "../../agents/feedback.js";
 
 const router: IRouter = Router();
 
@@ -821,6 +822,25 @@ Write a concise 2-3 sentence reflection (under 80 words) that is relevant to the
         tonyExplanation: explanation.trim(),
         aiReflection,
       });
+
+      // New universal feedback capture — gives Coach access to Tony's reorder
+      // explanation + AI reflection. The legacy brainTrainingLogTable write
+      // above stays during transition.
+      recordFeedback({
+        agent: "tasks",
+        skill: "ai-organize",
+        sourceType: "reorder",
+        sourceId: movedItemId,
+        reviewText: explanation.trim(),
+        snapshotExtra: {
+          movedItemTitle,
+          fromPosition,
+          toPosition,
+          direction,
+          displacedItemTitles,
+          aiReflection,
+        },
+      }).catch(err => console.error("[plan/reorder] recordFeedback failed:", err));
     }
 
     res.json({ ok: true, updated: items.length, aiReflection });

@@ -7,6 +7,7 @@ import { createLinearIssue, getLinearMembers } from "../../lib/linear";
 import { postTechIdeaToSlack, postSlackMessage, listSlackUsers, notifyAssigneeViaSlack } from "../../lib/slack";
 import { z } from "zod/v4";
 import { businessContextTable } from "../../lib/schema-v2";
+import { recordFeedback } from "../../agents/feedback.js";
 
 const router: IRouter = Router();
 
@@ -278,7 +279,20 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
 });
 
 router.post("/ideas/notify-override", async (req, res): Promise<void> => {
-  const { text, justification } = req.body as { text?: string; justification?: string };
+  const { text, justification, ideaId } = req.body as { text?: string; justification?: string; ideaId?: string };
+
+  // New universal feedback capture — closes the lost-justification gap
+  // (today the justification only goes to Slack; Coach now sees it too).
+  recordFeedback({
+    agent: "ideas",
+    skill: "pushback",
+    sourceType: "override",
+    sourceId: ideaId || text || "unknown",
+    rating: -1,
+    reviewText: justification || null,
+    snapshotExtra: { ideaText: text, justification },
+  }).catch(err => console.error("[ideas/notify-override] recordFeedback failed:", err));
+
   try {
     await postSlackMessage({
       channel: "C0A3CS15MPT",

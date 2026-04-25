@@ -572,9 +572,14 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   // ── Plan Top 3 — from 411 plan P0 tasks ──────────────────────────
   type PlanTask = { id: string; title: string; category: string; subcategory?: string | null; owner?: string | null; priority?: string | null; sprintId?: string; status?: string | null; dueDate?: string | null; };
   const [planTop3, setPlanTop3] = useState<PlanTask[]>([]);
+  const [planTop3Loading, setPlanTop3Loading] = useState(true);
 
   const loadPlanTop3 = useCallback(() => {
-    get("/plan/top3").then((d: { tasks: PlanTask[] }) => setPlanTop3(d.tasks || [])).catch(() => {});
+    setPlanTop3Loading(true);
+    get("/plan/top3")
+      .then((d: { tasks: PlanTask[] }) => setPlanTop3(d.tasks || []))
+      .catch(() => setPlanTop3([]))
+      .finally(() => setPlanTop3Loading(false));
   }, []);
 
   useEffect(() => {
@@ -600,7 +605,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const calledNames = new Set(calls.map(c => c.contactName.toLowerCase()));
   const callList = contacts.slice(0, 10);
   const meetings = calendarData;
-  const emails   = emailsImportant.slice(0, 5);
+  const emails   = emailsImportant.slice(0, 3);
   const todayStr    = new Date().toISOString().slice(0, 10);
   const priorityRank = (l: LinearItem) => l.level === "high" ? 0 : l.level === "mid" ? 1 : 2;
   const isActionable = (l: LinearItem) => {
@@ -689,43 +694,50 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             {/* ── TOP 3 — from 411 Plan P0 tasks ── */}
             <SL text="★ Top 3 — Do These First" color="#B7791F" view="tasks" onNavigate={onNavigate} />
             <div style={{ marginBottom: 6 }}>
-              {Array.from({ length: 3 }).map((_, i) => {
-                const t = planTop3[i];
-                const id = t ? `plan-top3-${t.id}` : `plan-top3-blank-${i}`;
-                const done = t ? (t.status === "completed" || ck(id)) : false;
-                const CAT_COLOR: Record<string, string> = { adaptation: "#B45309", sales: "#3B6D11", tech: "#185FA5", capital: "#5B3FA0", team: "#5F5E5A" };
-                const catColor = t ? (CAT_COLOR[t.category] || "#888") : "#888";
-                return (
-                  <div key={id} className="dash-row-hover" style={{
-                    display: "flex", gap: 10, alignItems: "flex-start",
-                    padding: "8px 10px", borderBottom: "1px solid #EBEBEB",
-                    background: i === 0 ? "#FFFBF2" : "#fff", transition: "background 0.15s",
-                  }}>
-                    <CB id={id} checked={done} onToggle={t ? async () => {
-                      const willComplete = !done;
-                      // Optimistic UI update
-                      setPlanTop3(prev => prev.map(p =>
-                        p.id === t.id ? { ...p, status: willComplete ? "completed" : "active" } : p
-                      ));
-                      try {
-                        if (willComplete) await post(`/plan/task/${t.id}/complete`, {});
-                        else await post(`/plan/task/${t.id}/uncomplete`, {});
-                      } catch {
-                        // Revert on failure
+              {planTop3Loading ? (
+                <div style={{ padding: "16px 10px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #EBEBEB", background: "#FAFAF8" }}>
+                  <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid #DDD", borderTopColor: "#B7791F", animation: "dash-spin 0.7s linear infinite" }} />
+                  <div style={{ fontSize: 12, color: "#888", fontStyle: "italic" }}>Loading top 3 tasks…</div>
+                  <style>{`@keyframes dash-spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+              ) : planTop3.length === 0 ? (
+                <div style={{ padding: "14px 10px", borderBottom: "1px solid #EBEBEB", background: "#FAFAF8", textAlign: "center" }}>
+                  <div style={{ fontSize: 13, color: "#888" }}>No top tasks yet — set P0 priorities in the 411 plan</div>
+                </div>
+              ) : (
+                planTop3.slice(0, 3).map((t, i) => {
+                  const id = `plan-top3-${t.id}`;
+                  const done = t.status === "completed" || ck(id);
+                  const CAT_COLOR: Record<string, string> = { adaptation: "#B45309", sales: "#3B6D11", tech: "#185FA5", capital: "#5B3FA0", team: "#5F5E5A" };
+                  const catColor = CAT_COLOR[t.category] || "#888";
+                  return (
+                    <div key={id} className="dash-row-hover" style={{
+                      display: "flex", gap: 10, alignItems: "flex-start",
+                      padding: "8px 10px", borderBottom: "1px solid #EBEBEB",
+                      background: i === 0 ? "#FFFBF2" : "#fff", transition: "background 0.15s",
+                    }}>
+                      <CB id={id} checked={done} onToggle={async () => {
+                        const willComplete = !done;
                         setPlanTop3(prev => prev.map(p =>
-                          p.id === t.id ? { ...p, status: willComplete ? "active" : "completed" } : p
+                          p.id === t.id ? { ...p, status: willComplete ? "completed" : "active" } : p
                         ));
-                      }
-                      loadPlanTop3();
-                    } : () => toggle(id)} />
-                    <div style={{
-                      width: 20, height: 20, borderRadius: 4, flexShrink: 0,
-                      background: done ? "#ccc" : (i === 0 ? BLK : "#DDD"),
-                      color: done ? "#aaa" : (i === 0 ? "#fff" : "#888"),
-                      fontSize: 10, fontWeight: 900,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>{i + 1}</div>
-                    {t ? (
+                        try {
+                          if (willComplete) await post(`/plan/task/${t.id}/complete`, {});
+                          else await post(`/plan/task/${t.id}/uncomplete`, {});
+                        } catch {
+                          setPlanTop3(prev => prev.map(p =>
+                            p.id === t.id ? { ...p, status: willComplete ? "active" : "completed" } : p
+                          ));
+                        }
+                        loadPlanTop3();
+                      }} />
+                      <div style={{
+                        width: 20, height: 20, borderRadius: 4, flexShrink: 0,
+                        background: done ? "#ccc" : (i === 0 ? BLK : "#DDD"),
+                        color: done ? "#aaa" : (i === 0 ? "#fff" : "#888"),
+                        fontSize: 10, fontWeight: 900,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>{i + 1}</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: i === 0 ? 700 : 600, color: done ? "#bbb" : BLK, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>
                           {t.title}
@@ -737,10 +749,10 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                           <span style={{ fontSize: 9, fontWeight: 800, color: "#B91C1C", background: "#FEE2E2", borderRadius: 3, padding: "0 4px" }}>P0</span>
                         </div>
                       </div>
-                    ) : <div style={{ flex: 1, height: 1, background: "#EEE", marginTop: 10 }} />}
-                  </div>
-                );
-              })}
+                    </div>
+                  );
+                })
+              )}
             </div>
 
             {/* ── MY TASKS ── */}
@@ -762,41 +774,41 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </>
             )}
 
-            {/* ── PRIORITY EMAILS ── */}
+            {/* ── PRIORITY EMAILS ── max 3 slots, empty state when 0 ── */}
             <SL text="📧 Priority Emails" color="#E65100" time={wb.emails} view="emails" onNavigate={onNavigate} />
-            <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
-              <thead>
-                <tr><TH w={22} center>✓</TH><TH w={120}>FROM</TH><TH>SUBJECT / WHY</TH><TH w={85}>ACTION</TH></tr>
-              </thead>
-              <tbody>
-                {emails.map((em, i) => {
-                  const id = `email-${i}`;
-                  const done = ck(id);
-                  return (
-                    <tr key={id} className="dash-row-hover" style={{ background: "#fff", cursor: "pointer" }}
-                      onClick={() => onNavigate("emails")}
-                      onMouseEnter={e => onHoverEnter({ kind: "email", em }, e)}
-                      onMouseMove={onHoverMove}
-                      onMouseLeave={onHoverLeave}
-                    >
-                      <TD center><CB id={id} checked={done} onToggle={ev => { ev; toggle(id); }} /></TD>
-                      <TD bold strike={done}>{em.from}</TD>
-                      <td style={{ padding: "6px 8px", verticalAlign: "top" }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: done ? "#bbb" : BLK, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>{em.subj}</div>
-                        {em.why && <div style={{ fontSize: 11, color: C.mut, marginTop: 2, lineHeight: 1.4 }}>{em.why}</div>}
-                      </td>
-                      <TD small bold><span style={{ color: "#1565C0" }}>{em.p || "—"}</span></TD>
-                    </tr>
-                  );
-                })}
-                {Array.from({ length: Math.max(0, 3 - emails.length) }).map((_, i) => (
-                  <tr key={`eb-${i}`} style={{ background: "#fff" }}>
-                    <TD center><CB id={`eb-${i}`} checked={ck(`eb-${i}`)} onToggle={toggle} /></TD>
-                    <TD /><TD /><TD />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {emails.length === 0 ? (
+              <div style={{ border: BORDER, padding: "14px 10px", background: "#FAFAF8", textAlign: "center" }}>
+                <div style={{ fontSize: 13, color: "#888" }}>No important emails right now ✨</div>
+              </div>
+            ) : (
+              <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER }}>
+                <thead>
+                  <tr><TH w={22} center>✓</TH><TH w={120}>FROM</TH><TH>SUBJECT / WHY</TH><TH w={85}>ACTION</TH></tr>
+                </thead>
+                <tbody>
+                  {emails.map((em, i) => {
+                    const id = `email-${i}`;
+                    const done = ck(id);
+                    return (
+                      <tr key={id} className="dash-row-hover" style={{ background: "#fff", cursor: "pointer" }}
+                        onClick={() => onNavigate("emails")}
+                        onMouseEnter={e => onHoverEnter({ kind: "email", em }, e)}
+                        onMouseMove={onHoverMove}
+                        onMouseLeave={onHoverLeave}
+                      >
+                        <TD center><CB id={id} checked={done} onToggle={ev => { ev; toggle(id); }} /></TD>
+                        <TD bold strike={done}>{em.from}</TD>
+                        <td style={{ padding: "6px 8px", verticalAlign: "top" }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: done ? "#bbb" : BLK, textDecoration: done ? "line-through" : "none", lineHeight: 1.4 }}>{em.subj}</div>
+                          {em.why && <div style={{ fontSize: 11, color: C.mut, marginTop: 2, lineHeight: 1.4 }}>{em.why}</div>}
+                        </td>
+                        <TD small bold><span style={{ color: "#1565C0" }}>{em.p || "—"}</span></TD>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
 
           </div>
 

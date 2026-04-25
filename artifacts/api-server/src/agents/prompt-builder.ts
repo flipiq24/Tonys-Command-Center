@@ -1,0 +1,124 @@
+// Layered prompt composition with explicit Anthropic prompt-cache markers.
+// Three layers, each gets its own cache_control: ephemeral block:
+//   L1 global: rows where agent='_shared'
+//   L2 agent:  rows where agent=<x> AND kind IN ('soul','user')
+//   L3 skill:  the skill body (kind='skill') + declared memory_sections
+//
+// Returns blocks in Anthropic system-array form, ready to pass as
+// `system: blocks` to messages.create().
+
+import { db, agentMemoryEntriesTable, agentSkillsTable } from "@workspace/db";
+import { and, eq, inArray } from "drizzle-orm";
+
+export interface CachedSystemBlock {
+  type: "text";
+  text: string;
+  cache_control?: { type: "ephemeral" };
+}
+
+export interface SkillRecord {
+  agent: string;
+  skillName: string;
+  model: string;
+  maxTokens: number;
+  tools: string[];
+  memorySections: string[];
+  modelOverride: string | null;
+}
+
+export async function loadSkill(agent: string, skillName: string): Promise<SkillRecord | null> {
+  const rows = await db.select().from(agentSkillsTable)
+    .where(and(eq(agentSkillsTable.agent, agent), eq(agentSkillsTable.skillName, skillName)))
+    .limit(1);
+  if (rows.length === 0) return null;
+  const r = rows[0];
+  return {
+    agent: r.agent,
+    skillName: r.skillName,
+    model: r.modelOverride || r.model,
+    maxTokens: r.maxTokens,
+    tools: Array.isArray(r.tools) ? r.tools as string[] : [],
+    memorySections: Array.isArray(r.memorySections) ? r.memorySections as string[] : [],
+    modelOverride: r.modelOverride,
+  };
+}
+
+async function loadGlobalLayer(): Promise<string> {
+  const rows = await db.select().from(agentMemoryEntriesTable)
+    .where(eq(agentMemoryEntriesTable.agent, "_shared"));
+  if (rows.length === 0) return "";
+  return rows.map(r => `# ${r.kind.toUpperCase()} — ${r.sectionName}\n\n${r.content}`).join("\n\n---\n\n");
+}
+
+async function loadAgentLayer(agent: string): Promise<string> {
+  const rows = await db.select().from(agentMemoryEntriesTable)
+    .where(and(
+      eq(agentMemoryEntriesTable.agent, agent),
+      inArray(agentMemoryEntriesTable.kind, ["soul", "user", "identity", "agents", "tools"]),
+    ));
+  if (rows.length === 0) return "";
+  return rows.map(r => `# ${r.kind.toUpperCase()}\n\n${r.content}`).join("\n\n---\n\n");
+}
+
+async function loadSkillLayer(agent: string, skillName: string, memorySections: string[]): Promise<string> {
+  // Skill body
+  const skillBody = await db.select().from(agentMemoryEntriesTable)
+    .where(and(
+      eq(agentMemoryEntriesTable.agent, agent),
+      eq(agentMemoryEntriesTable.kind, "skill"),
+      eq(agentMemoryEntriesTable.sectionName, skillName),
+    )).limit(1);
+
+  const parts: string[] = [];
+  if (skillBody[0]) parts.push(`# SKILL — ${skillName}\n\n${skillBody[0].content}`);
+
+  // Declared memory sections
+  if (memorySections.length > 0) {
+    const memRows = await db.select().from(agentMemoryEntriesTable)
+      .where(and(
+        eq(agentMemoryEntriesTable.agent, agent),
+        eq(agentMemoryEntriesTable.kind, "memory"),
+        inArray(agentMemoryEntriesTable.sectionName, memorySections),
+      ));
+    for (const m of memRows) {
+      parts.push(`# MEMORY — ${m.sectionName}\n\n${m.content}`);
+    }
+  }
+  return parts.join("\n\n---\n\n");
+}
+
+export interface BuiltPrompt {
+  systemBlocks: CachedSystemBlock[];
+  model: string;
+  maxTokens: number;
+  toolNames: string[];
+}
+
+export async function buildPrompt(agent: string, skillName: string): Promise<BuiltPrompt> {
+  const skill = await loadSkill(agent, skillName);
+  if (!skill) throw new Error(`Unknown skill: ${agent}.${skillName}`);
+
+  const [global, agentLayer, skillLayer] = await Promise.all([
+    loadGlobalLayer(),
+    loadAgentLayer(agent),
+    loadSkillLayer(agent, skillName, skill.memorySections),
+  ]);
+
+  const systemBlocks: CachedSystemBlock[] = [];
+  if (global) {
+    systemBlocks.push({ type: "text", text: global, cache_control: { type: "ephemeral" } });
+  }
+  if (agentLayer) {
+    systemBlocks.push({ type: "text", text: agentLayer, cache_control: { type: "ephemeral" } });
+  }
+  if (skillLayer) {
+    systemBlocks.push({ type: "text", text: skillLayer, cache_control: { type: "ephemeral" } });
+  }
+
+  return {
+    systemBlocks,
+    model: skill.model,
+    maxTokens: skill.maxTokens,
+    toolNames: skill.tools,
+  };
+}

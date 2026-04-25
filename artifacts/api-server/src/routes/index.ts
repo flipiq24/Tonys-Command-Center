@@ -36,6 +36,8 @@ import businessRouter from "./tcc/business";
 import planRouter from "./tcc/plan";
 import cronRouter from "./tcc/cron";
 import aiUsageRouter from "./tcc/ai-usage";
+import feedbackApiRouter from "./tcc/feedback-api";
+import agentsApiRouter from "./tcc/agents-api";
 
 const router: IRouter = Router();
 
@@ -76,6 +78,8 @@ router.use(businessRouter);
 router.use(planRouter);
 router.use(cronRouter);
 router.use(aiUsageRouter);
+router.use(feedbackApiRouter);
+router.use(agentsApiRouter);
 
 // ─── Canonical aliases ────────────────────────────────────────────────────────
 router.post("/email-action", (req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) => {

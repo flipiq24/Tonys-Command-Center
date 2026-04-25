@@ -3,6 +3,8 @@ import { eq, gte, ilike, desc as descOrder, sql as sqlExpr, inArray } from "driz
 import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable } from "@workspace/db";
 import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2.js";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 import { getGmail } from "../../lib/google-auth.js";
 import { getCalendar } from "../../lib/google-auth.js";
 import { getSlackChannelHistory } from "../../lib/slack.js";
@@ -145,10 +147,21 @@ async function fetchLiveEmails(): Promise<{ important: EmailImportant[]; fyi: Em
       if (msgId) msgIdMap.set(key, msgId);
     }
 
-    const claudeResponse = await createTrackedMessage("brief_email_triage", {
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
+    // Triage via runAgent (flag) or legacy inline prompt
+    const userPrompt = `Classify these emails:\n${JSON.stringify(rawEmails, null, 2)}`;
+    let raw = "";
+    if (isAgentRuntimeEnabled("email")) {
+      const result = await runAgent("email", "triage", {
+        userMessage: userPrompt,
+        caller: "direct",
+        meta: { opType: "brief", count: rawEmails.length },
+      });
+      raw = result.text;
+    } else {
+      const claudeResponse = await createTrackedMessage("brief_email_triage", {
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
 Classify each email into exactly 3 categories: "important", "fyi", or "promotions".
 Important: from @flipiq.com team, known contacts (chris.wesser, ethan, ramy, marisol, cesar@eoslab), or keywords: urgent, contract, payment, demo, equity, funding, deal.
 FYI: medical, receipts, real-person notifications, updates that are relevant but need no reply.
@@ -160,12 +173,13 @@ Return ONLY valid JSON: { "important": [...], "fyi": [...], "promotions": [...] 
 Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
 FYI shape: { "from": string, "subj": string, "why": string }
 Promotions shape: { "from": string, "subj": string, "why": string }`,
-      messages: [{ role: "user", content: `Classify these emails:\n${JSON.stringify(rawEmails, null, 2)}` }],
-    });
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const textBlock = claudeResponse.content.find(b => b.type === "text");
+      if (textBlock?.type === "text") raw = textBlock.text;
+    }
 
-    const textBlock = claudeResponse.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") return null;
-    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
 
     const parsed = JSON.parse(jsonMatch[0]) as { important?: EmailImportant[]; fyi?: EmailFyi[]; promotions?: EmailPromotion[] };

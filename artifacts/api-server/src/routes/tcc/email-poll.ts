@@ -6,7 +6,50 @@ import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { updateContactComms } from "../../lib/contact-comms";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
+
 const router: IRouter = Router();
+
+// Shared triage system prompt — used by /emails/reclassify-new + /emails/reclassify
+// when AGENT_RUNTIME_EMAIL is OFF (legacy path). When ON, the runtime loads
+// the equivalent body from agent_memory_entries (skill='triage').
+const TRIAGE_SYSTEM_PROMPT = `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
+Classify each email into exactly 3 categories: "important", "fyi", or "promotions".
+Important: from @flipiq.com team, known contacts, or keywords: urgent, contract, payment, demo, equity, funding, deal.
+FYI: medical, receipts, real-person notifications, updates relevant but need no reply.
+Promotions: newsletters, marketing emails, automated notifications, social media.
+Return ONLY valid JSON: { "important": [...], "fyi": [...], "promotions": [...] }
+Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
+FYI shape: { "from": string, "subj": string, "why": string }
+Promotions shape: { "from": string, "subj": string, "why": string }`;
+
+// Calls Claude (or runAgent when flag is on) and returns the classification JSON object.
+// Both branches use the same model/max_tokens for byte-equivalence.
+async function classifyEmailsViaAi(userPrompt: string, opType: "poll" | "reclassify"): Promise<{ important?: any[]; fyi?: any[]; promotions?: any[] } | null> {
+  let raw = "";
+  if (isAgentRuntimeEnabled("email")) {
+    const result = await runAgent("email", "triage", {
+      userMessage: userPrompt,
+      caller: "direct",
+      meta: { opType },
+    });
+    raw = result.text;
+  } else {
+    const claudeResponse = await createTrackedMessage(opType === "poll" ? "email_poll" : "email_poll_reclassify", {
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: TRIAGE_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+    const textBlock = claudeResponse.content.find(b => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") return null;
+    raw = textBlock.text;
+  }
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+  return JSON.parse(jsonMatch[0]);
+}
 
 router.get("/emails/poll", async (req, res): Promise<void> => {
   try {
@@ -135,27 +178,10 @@ router.post("/emails/reclassify-new", async (req, res): Promise<void> => {
     const { newEmails } = req.body as { newEmails: { from: string; subject: string; snippet: string; messageId: string }[] };
     if (!newEmails?.length) { res.json({ ok: true, added: 0 }); return; }
 
-    // Classify new emails via Claude Haiku
-    const claudeResponse = await createTrackedMessage("email_poll", {
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
-Classify each email into exactly 3 categories: "important", "fyi", or "promotions".
-Important: from @flipiq.com team, known contacts, or keywords: urgent, contract, payment, demo, equity, funding, deal.
-FYI: medical, receipts, real-person notifications, updates relevant but need no reply.
-Promotions: newsletters, marketing emails, automated notifications, social media.
-Return ONLY valid JSON: { "important": [...], "fyi": [...], "promotions": [...] }
-Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
-FYI shape: { "from": string, "subj": string, "why": string }
-Promotions shape: { "from": string, "subj": string, "why": string }`,
-      messages: [{ role: "user", content: `Classify these ${newEmails.length} new emails:\n${JSON.stringify(newEmails.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })), null, 2)}` }],
-    });
-
-    const textBlock = claudeResponse.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") { res.json({ ok: false, error: "No classification" }); return; }
-    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) { res.json({ ok: false, error: "No JSON in response" }); return; }
-    const classified = JSON.parse(jsonMatch[0]) as { important?: any[]; fyi?: any[]; promotions?: any[] };
+    // Classify new emails via the shared helper (legacy or runAgent based on flag)
+    const userPrompt = `Classify these ${newEmails.length} new emails:\n${JSON.stringify(newEmails.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })), null, 2)}`;
+    const classified = await classifyEmailsViaAi(userPrompt, "poll");
+    if (!classified) { res.json({ ok: false, error: "No classification" }); return; }
 
     // Merge into existing cached brief
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
@@ -261,27 +287,10 @@ router.post("/emails/reclassify", async (req, res): Promise<void> => {
 
     if (toClassify.length === 0) { res.json({ ok: true, added: 0, mode, emailsImportant: [], emailsFyi: [], emailsPromotions: [] }); return; }
 
-    // ── Run Claude classification ────────────────────────────────────────────
-    const claudeResponse = await createTrackedMessage("email_poll", {
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
-Classify each email into exactly 3 categories: "important", "fyi", or "promotions".
-Important: from @flipiq.com team, known contacts, or keywords: urgent, contract, payment, demo, equity, funding, deal.
-FYI: medical, receipts, real-person notifications, updates relevant but need no reply.
-Promotions: newsletters, marketing emails, automated notifications, social media.
-Return ONLY valid JSON: { "important": [...], "fyi": [...], "promotions": [...] }
-Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
-FYI shape: { "from": string, "subj": string, "why": string }
-Promotions shape: { "from": string, "subj": string, "why": string }`,
-      messages: [{ role: "user", content: `Classify these ${toClassify.length} emails:\n${JSON.stringify(toClassify.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })), null, 2)}` }],
-    });
-
-    const textBlock = claudeResponse.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") { res.json({ ok: false, error: "No classification" }); return; }
-    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) { res.json({ ok: false, error: "No JSON in response" }); return; }
-    const classified = JSON.parse(jsonMatch[0]) as { important?: any[]; fyi?: any[]; promotions?: any[] };
+    // ── Run classification via shared helper (legacy or runAgent based on flag) ──
+    const userPrompt = `Classify these ${toClassify.length} emails:\n${JSON.stringify(toClassify.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })), null, 2)}`;
+    const classified = await classifyEmailsViaAi(userPrompt, "reclassify");
+    if (!classified) { res.json({ ok: false, error: "No classification" }); return; }
 
     // ── Attach gmailMessageId by from+subject lookup ─────────────────────────
     const msgIdMap = new Map(toClassify.map(e => [

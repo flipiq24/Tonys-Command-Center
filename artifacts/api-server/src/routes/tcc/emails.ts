@@ -27,12 +27,25 @@ async function regenerateBrain(): Promise<string> {
   ).join("\n");
 
   try {
-    const msg = await createTrackedMessage("email_triage", {
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `You are analyzing Tony Diaz's (FlipIQ CEO) email training data to build a "brain" — a compact set of rules about what emails are important to Tony.
+    let brainText = "";
+
+    // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
+    // default false keeps legacy inline call intact.
+    if (isAgentRuntimeEnabled("email")) {
+      const userMessage = `Training data:\n${examples}\n\nWrite the email priority brain.`;
+      const result = await runAgent("email", "brain-regenerate", {
+        userMessage,
+        caller: "direct",
+        meta: { sampleCount: training.length },
+      });
+      brainText = result.text;
+    } else {
+      const msg = await createTrackedMessage("email_triage", {
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `You are analyzing Tony Diaz's (FlipIQ CEO) email training data to build a "brain" — a compact set of rules about what emails are important to Tony.
 
 TRAINING DATA:
 ${examples}
@@ -42,7 +55,7 @@ Based on this data, write a concise "Email Priority Brain" in markdown. Format:
 ### Always Important
 - (list patterns from thumbs_up data)
 
-### Never Important  
+### Never Important
 - (list patterns from thumbs_down data)
 
 ### Key Senders
@@ -52,11 +65,13 @@ Based on this data, write a concise "Email Priority Brain" in markdown. Format:
 - (2-4 high-level principles from the data)
 
 Keep it concise and actionable. This will be injected into Claude to help classify and reply to future emails.`
-      }]
-    });
+        }]
+      });
+      const block = msg.content[0];
+      brainText = block.type === "text" ? block.text : "";
+    }
 
-    const block = msg.content[0];
-    return block.type === "text" ? block.text : "";
+    return brainText;
   } catch {
     // Fallback: generate simple rules without Claude
     const important = training.filter(t => t.action === "thumbs_up");

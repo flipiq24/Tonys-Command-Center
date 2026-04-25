@@ -5,6 +5,8 @@ import { SaveJournalBody } from "@workspace/api-zod";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates.js";
 import { appendToDoc } from "../../lib/google-docs.js";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const JOURNAL_DOC_ID = "1kQjIFa903luN-62HkUD0tPGAmeQPC7JMN6rfnbvXYRE";
 
@@ -42,13 +44,30 @@ router.post("/journal", async (req, res): Promise<void> => {
   let reflection = "";
 
   try {
-    const message = await createTrackedMessage("journal_format", {
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      messages: [
-        {
-          role: "user",
-          content: `Format this journal entry from Tony Diaz into his exact journal structure. Today is ${todayDate}.
+    let aiText = "";
+
+    // Flag-gated: AGENT_RUNTIME_JOURNAL=true routes through runtime;
+    // default false keeps legacy inline prompt intact.
+    if (isAgentRuntimeEnabled("journal")) {
+      const userMessage = `Today is ${todayDate}.
+
+Raw entry:
+${rawText}`;
+
+      const result = await runAgent("journal", "format-entry", {
+        userMessage,
+        caller: "direct",
+        meta: { date: today },
+      });
+      aiText = result.text;
+    } else {
+      const message = await createTrackedMessage("journal_format", {
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        messages: [
+          {
+            role: "user",
+            content: `Format this journal entry from Tony Diaz into his exact journal structure. Today is ${todayDate}.
 
 Raw entry:
 ${rawText}
@@ -72,20 +91,22 @@ Output EXACTLY this format and nothing else (start immediately with ### Daily Jo
 
 **Original Entry (cleaned up):**
 [Tony's raw voice-to-text, cleaned for readability — fix grammar, remove filler words, but keep his voice and meaning]`,
-        },
-      ],
-    });
+          },
+        ],
+      });
+      const block = message.content[0];
+      if (block.type === "text") aiText = block.text;
+    }
 
-    const block = message.content[0];
-    if (block.type === "text") {
-      formattedText = block.text;
-      
+    if (aiText) {
+      formattedText = aiText;
+
       const moodMatch = formattedText.match(/\*\*Mood:\*\*\s*\n([^\n]+)/);
       if (moodMatch) mood = moodMatch[1].trim();
-      
+
       const keyEventsMatch = formattedText.match(/\*\*Key Events:\*\*\s*\n([\s\S]+?)(?=\n\*\*)/);
       if (keyEventsMatch) keyEvents = keyEventsMatch[1].trim();
-      
+
       const reflectionMatch = formattedText.match(/\*\*Reflection:\*\*\s*\n([\s\S]+?)(?=\n---)/);
       if (reflectionMatch) reflection = reflectionMatch[1].trim();
     }

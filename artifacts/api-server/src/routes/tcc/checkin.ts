@@ -6,6 +6,8 @@ import { SaveCheckinBody } from "@workspace/api-zod";
 import { todayPacific } from "../../lib/dates.js";
 import { upsertSheetRow } from "../../lib/google-sheets.js";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const TONY_PERSONAL_DOC = `
 WHO I AM — CORE IDENTITY
@@ -221,10 +223,26 @@ router.post("/checkin/guilt-trip", async (req, res): Promise<void> => {
   ].filter(Boolean).join(" and ");
 
   try {
-    const response = await createTrackedMessage("checkin_accountability", {
-      model: "claude-haiku-4-5",
-      max_tokens: 8192,
-      system: `You are Tony's personal accountability system. You have access to his entire personal document — his own words, his own commitments, his own warnings to himself. Your job is to reflect his words back at him when he tries to skip what he committed to.
+    let message = "";
+
+    // Flag-gated: AGENT_RUNTIME_CHECKIN=true routes through runtime;
+    // default false keeps legacy inline prompt + hardcoded TONY_PERSONAL_DOC.
+    if (isAgentRuntimeEnabled("checkin")) {
+      const userMessage = `Tony is about to start his day. He has NOT done his ${missingList}. ${
+        missingBoth ? "He is skipping BOTH. This is serious. Go harder." : "He is skipping one habit. Be direct but focused."
+      } Generate the guilt trip using his own words.`;
+
+      const result = await runAgent("checkin", "accountability", {
+        userMessage,
+        caller: "direct",
+        meta: { missingList, missingBoth },
+      });
+      message = result.text;
+    } else {
+      const response = await createTrackedMessage("checkin_accountability", {
+        model: "claude-haiku-4-5",
+        max_tokens: 8192,
+        system: `You are Tony's personal accountability system. You have access to his entire personal document — his own words, his own commitments, his own warnings to himself. Your job is to reflect his words back at him when he tries to skip what he committed to.
 
 Here is Tony's personal document — his own words:
 
@@ -241,16 +259,18 @@ INSTRUCTIONS:
 - Keep it under 150 words. No fluff. No generic motivation. His words, his standard, his choice.
 - Do NOT use bullet points or lists. Write it as a direct, confrontational paragraph.
 - Speak directly to him as "you" — like a coach who knows him deeply.`,
-      messages: [
-        {
-          role: "user",
-          content: `Tony is about to start his day. He has NOT done his ${missingList}. Generate the guilt trip using his own words.`,
-        },
-      ],
-    });
+        messages: [
+          {
+            role: "user",
+            content: `Tony is about to start his day. He has NOT done his ${missingList}. Generate the guilt trip using his own words.`,
+          },
+        ],
+      });
 
-    const block = response.content[0];
-    const message = block.type === "text" ? block.text : "";
+      const block = response.content[0];
+      message = block.type === "text" ? block.text : "";
+    }
+
     res.json({ message });
   } catch (err) {
     req.log.error({ err }, "[checkin] Guilt trip generation failed");

@@ -1,5 +1,7 @@
 import { searchFiles } from "./google-drive";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../agents/flags.js";
+import { runAgent } from "../agents/runtime.js";
 import { db } from "@workspace/db";
 import { communicationLogTable, contactIntelligenceTable } from "./schema-v2";
 import { eq, ilike } from "drizzle-orm";
@@ -110,13 +112,22 @@ Analyze this call and respond in the following JSON format ONLY (no other text):
   let rawText = "";
 
   try {
-    const response = await createTrackedMessage("plaud_transcribe", {
-      model: "claude-haiku-4-5",
-      max_tokens: 800,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const textBlock = response.content.find(b => b.type === "text");
-    rawText = textBlock?.type === "text" ? textBlock.text : "";
+    // Flag-gated: AGENT_RUNTIME_INGEST=true routes through runtime.
+    if (isAgentRuntimeEnabled("ingest")) {
+      const result = await runAgent("ingest", "transcribe-plaud", {
+        userMessage: prompt,
+        caller: "direct",
+      });
+      rawText = result.text;
+    } else {
+      const response = await createTrackedMessage("plaud_transcribe", {
+        model: "claude-haiku-4-5",
+        max_tokens: 800,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const textBlock = response.content.find(b => b.type === "text");
+      rawText = textBlock?.type === "text" ? textBlock.text : "";
+    }
 
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {

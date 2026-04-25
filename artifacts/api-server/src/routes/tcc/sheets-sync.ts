@@ -7,8 +7,37 @@ import { businessContextTable, contactIntelligenceTable, communicationLogTable, 
 import { eq, desc, asc } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { todayPacific } from "../../lib/dates";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
+
+// Helper: summarize a Google Doc for the AI context window. Used for both
+// 90-day plan and business plan ingestion (deduplicates the prior :185/:286
+// near-duplicate sites). Skill switches based on `kind`.
+async function summarizeDocForContext(docText: string, kind: "90_day_plan" | "business_plan", trim = 3000): Promise<string> {
+  const userPrompt = kind === "90_day_plan"
+    ? `Summarize this 90-day business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, trim)}`
+    : `Summarize this business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, trim)}`;
+  const skillName = kind === "90_day_plan" ? "summarize-90day" : "summarize-business-plan";
+
+  if (isAgentRuntimeEnabled("ingest")) {
+    const result = await runAgent("ingest", skillName, {
+      userMessage: userPrompt,
+      caller: "direct",
+      meta: { docKind: kind, docLength: docText.length },
+    });
+    return result.text || docText.substring(0, 500);
+  }
+
+  const msg = await createTrackedMessage("sheets_sync", {
+    model: "claude-haiku-4-5",
+    max_tokens: 256,
+    messages: [{ role: "user", content: userPrompt }],
+  });
+  const block = msg.content[0];
+  return block.type === "text" ? block.text : docText.substring(0, 500);
+}
 
 const CHECKIN_SHEET_ID = process.env.CHECKIN_SHEET_ID || "1rMLE_RhdRDsC2dqRs8eIiF6bySCAkMvy1k4JlHKkRMw";
 const BUSINESS_MASTER_SHEET_ID = process.env.BUSINESS_MASTER_SHEET_ID || "1WGuJwCoWbwyFamXXP79yxnPmYhdFPgOGhOR8_V-EQyw";
@@ -182,16 +211,7 @@ export async function syncContextIngest(): Promise<void> {
     }
     let summary = docText.substring(0, 500);
     try {
-      const msg = await createTrackedMessage("sheets_sync", {
-        model: "claude-haiku-4-5",
-        max_tokens: 256,
-        messages: [{
-          role: "user",
-          content: `Summarize this 90-day business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, 3000)}`,
-        }],
-      });
-      const block = msg.content[0];
-      if (block.type === "text") summary = block.text;
+      summary = await summarizeDocForContext(docText, "90_day_plan");
     } catch { /* use substring fallback */ }
 
     await db.insert(businessContextTable).values({
@@ -280,19 +300,10 @@ router.post("/sheets/ingest-90-day-plan", async (req, res): Promise<void> => {
       return;
     }
 
-    // Use Claude to summarize the document
+    // Use the shared helper (legacy or runtime path based on flag)
     let summary = docText.substring(0, 500);
     try {
-      const msg = await createTrackedMessage("sheets_sync", {
-        model: "claude-haiku-4-5",
-        max_tokens: 256,
-        messages: [{
-          role: "user",
-          content: `Summarize this 90-day business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, 3000)}`,
-        }],
-      });
-      const block = msg.content[0];
-      if (block.type === "text") summary = block.text;
+      summary = await summarizeDocForContext(docText, "90_day_plan");
     } catch { /* use substring fallback */ }
 
     await db.insert(businessContextTable).values({
@@ -325,16 +336,7 @@ router.post("/sheets/ingest-business-plan", async (_req, res): Promise<void> => 
     }
     let summary = docText.substring(0, 500);
     try {
-      const msg = await createTrackedMessage("sheets_sync", {
-        model: "claude-haiku-4-5",
-        max_tokens: 256,
-        messages: [{
-          role: "user",
-          content: `Summarize this business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, 3000)}`,
-        }],
-      });
-      const block = msg.content[0];
-      if (block.type === "text") summary = block.text;
+      summary = await summarizeDocForContext(docText, "business_plan");
     } catch { /* use substring fallback */ }
 
     await db.insert(businessContextTable).values({

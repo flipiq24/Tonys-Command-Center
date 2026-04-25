@@ -2,6 +2,8 @@ import { Router } from "express";
 import { agentMailRequest } from "../../lib/agentmail";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { db, callLogTable, taskCompletionsTable } from "@workspace/db";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 import { sql } from "drizzle-orm";
 
 const router = Router();
@@ -111,28 +113,32 @@ Return a JSON object with this exact shape:
 Include all 10 call rows; mark checked=false if checkbox is blank/unchecked.
 For confidence: high = can clearly read text, medium = partially legible, low = very hard to read.`;
 
-    const visionResponse = await createTrackedMessage("sheet_scan", {
-      model: "claude-opus-4-5",
-      max_tokens: 1024,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: mediaType,
-                data: attData.content,
-              },
-            },
-            { type: "text", text: visionPrompt },
-          ],
-        },
-      ],
-    });
+    const visionContent = [
+      {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: mediaType, data: attData.content },
+      },
+      { type: "text" as const, text: visionPrompt },
+    ];
 
-    const raw = visionResponse.content[0]?.type === "text" ? visionResponse.content[0].text : "";
+    let raw = "";
+
+    // Flag-gated: AGENT_RUNTIME_INGEST=true routes through runtime.
+    if (isAgentRuntimeEnabled("ingest")) {
+      const result = await runAgent("ingest", "scan-paper-planner", {
+        userMessage: visionContent as any,
+        caller: "direct",
+        meta: { mediaType },
+      });
+      raw = result.text;
+    } else {
+      const visionResponse = await createTrackedMessage("sheet_scan", {
+        model: "claude-opus-4-5",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: visionContent }],
+      });
+      raw = visionResponse.content[0]?.type === "text" ? visionResponse.content[0].text : "";
+    }
     let parsed: {
       calls?: { row: number; checked: boolean; name?: string | null; outcome?: string | null }[];
       top3?: { row: number; checked: boolean; note?: string | null }[];

@@ -1,5 +1,7 @@
 import { searchFiles } from "./google-drive";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../agents/flags.js";
+import { runAgent } from "../agents/runtime.js";
 
 const RECORDINGS_FOLDER_ID = process.env.MEETING_RECORDINGS_FOLDER_ID || "1g1itXWZj82oudTpMSp96HCoKk79_ZkdX";
 
@@ -37,12 +39,7 @@ export async function analyzeDemoRecording(eventName: string, eventDate: string)
       console.log(`[demo-feedback] Could not export transcript, using metadata-only analysis`);
     }
 
-    const feedback = await createTrackedMessage("demo_feedback", {
-      model: "claude-haiku-4-5",
-      max_tokens: 500,
-      messages: [{
-        role: "user",
-        content: `A FlipIQ demo was conducted: "${eventName}" on ${eventDate}. Recording found: "${recording.name}".
+    const userPrompt = `A FlipIQ demo was conducted: "${eventName}" on ${eventDate}. Recording found: "${recording.name}".
 ${transcriptContent ? `\nTRANSCRIPT:\n${transcriptContent.substring(0, 8000)}` : "(No transcript available — metadata-only analysis.)"}
 
 Generate concise coaching feedback for Tony covering:
@@ -52,12 +49,27 @@ Generate concise coaching feedback for Tony covering:
 4. Objections raised${transcriptContent ? " — extract from transcript" : ""}
 5. Follow-up timing recommendation
 
-Keep it actionable and under 300 words.`,
-      }],
-    });
+Keep it actionable and under 300 words.`;
 
-    const textBlock = feedback.content.find(b => b.type === "text");
-    const analysisText = textBlock?.type === "text" ? textBlock.text : null;
+    let analysisText: string | null = null;
+
+    // Flag-gated: AGENT_RUNTIME_INGEST=true routes through runtime.
+    if (isAgentRuntimeEnabled("ingest")) {
+      const result = await runAgent("ingest", "analyze-demo-feedback", {
+        userMessage: userPrompt,
+        caller: "direct",
+        meta: { eventName, eventDate, hasTranscript: !!transcriptContent },
+      });
+      analysisText = result.text || null;
+    } else {
+      const feedback = await createTrackedMessage("demo_feedback", {
+        model: "claude-haiku-4-5",
+        max_tokens: 500,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const textBlock = feedback.content.find(b => b.type === "text");
+      analysisText = textBlock?.type === "text" ? textBlock.text : null;
+    }
 
     if (analysisText) {
       try {

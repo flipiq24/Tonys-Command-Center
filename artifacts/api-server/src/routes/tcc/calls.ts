@@ -7,6 +7,8 @@ import { z } from "zod";
 import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2";
 import { createReminder } from "../../lib/gcal";
 import { updateContactComms } from "../../lib/contact-comms";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -58,20 +60,36 @@ router.post("/calls", async (req, res): Promise<void> => {
 
   if (type === "attempt" && instructions) {
     try {
-      const msg = await createTrackedMessage("call_follow_up", {
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        messages: [
-          {
-            role: "user",
-            content: `Tony Diaz (FlipIQ CEO) tried to call ${contactName} but got no answer.
+      let draftText: string | undefined;
+
+      // Flag-gated: AGENT_RUNTIME_CALLS=true routes through the new agent
+      // runtime; default false keeps the legacy inline prompt intact.
+      if (isAgentRuntimeEnabled("calls")) {
+        const userMessage = `Tony Diaz (FlipIQ CEO) tried to call ${contactName} but got no answer.
+Tony's instructions: "${instructions}"
+Draft a brief, professional follow-up email (3-4 sentences max). Plain text only, no subject line.`;
+
+        const result = await runAgent("calls", "follow-up-draft", {
+          userMessage,
+          caller: "direct",
+          meta: { contactName, callType: type, callId: call.id },
+        });
+        draftText = result.text.trim() || undefined;
+      } else {
+        const msg = await createTrackedMessage("call_follow_up", {
+          model: "claude-haiku-4-5",
+          max_tokens: 1024,
+          messages: [
+            {
+              role: "user",
+              content: `Tony Diaz (FlipIQ CEO) tried to call ${contactName} but got no answer.
 Tony's instructions: "${instructions}"
 Draft a brief, professional follow-up email (3-4 sentences max). Plain text only, no subject line.`,
-          },
-        ],
-      });
-
-      const draftText = msg.content.find(b => b.type === "text")?.text?.trim();
+            },
+          ],
+        });
+        draftText = msg.content.find(b => b.type === "text")?.text?.trim();
+      }
 
       if (draftText) {
         const [updated] = await db.update(callLogTable)

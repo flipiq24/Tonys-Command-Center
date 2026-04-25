@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 import { db, contactsTable } from "@workspace/db";
 import { contactIntelligenceTable, communicationLogTable, contactBriefsTable } from "../../lib/schema-v2";
 import { eq, desc } from "drizzle-orm";
@@ -55,12 +57,7 @@ router.post("/contacts/brief", async (req, res): Promise<void> => {
       }
     }
 
-    const response = await createTrackedMessage("contact_brief", {
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 768,
-      messages: [{
-        role: "user",
-        content: `You are Tony Diaz's sales assistant. Generate a pre-call brief for Tony. Be direct and actionable. Tony has ADHD so keep it scannable.
+    const userPrompt = `You are Tony Diaz's sales assistant. Generate a pre-call brief for Tony. Be direct and actionable. Tony has ADHD so keep it scannable.
 
 Include these sections:
 1. QUICK SUMMARY (2-3 sentences: who they are, relationship status, what to talk about)
@@ -68,12 +65,27 @@ Include these sections:
 3. AI PERSONALITY ASSESSMENT (one line coaching tip based on their communication patterns)
 4. KEY ACTION (one clear thing Tony should ask for or accomplish on this call)
 
-${context}`,
-      }],
-    });
+${context}`;
 
-    const textBlock = response.content.find(b => b.type === "text");
-    const briefText = textBlock?.type === "text" ? textBlock.text : "Unable to generate brief.";
+    let briefText = "Unable to generate brief.";
+
+    // Flag-gated: AGENT_RUNTIME_CONTACTS=true routes through runtime.
+    if (isAgentRuntimeEnabled("contacts")) {
+      const result = await runAgent("contacts", "pre-call-brief", {
+        userMessage: userPrompt,
+        caller: "direct",
+        meta: { contactId },
+      });
+      briefText = result.text || briefText;
+    } else {
+      const response = await createTrackedMessage("contact_brief", {
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 768,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const textBlock = response.content.find(b => b.type === "text");
+      briefText = textBlock?.type === "text" ? textBlock.text : briefText;
+    }
 
     await db.insert(contactBriefsTable).values({
       contactId,

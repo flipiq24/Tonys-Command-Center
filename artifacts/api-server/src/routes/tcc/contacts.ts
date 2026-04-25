@@ -4,6 +4,8 @@ import { communicationLogTable } from "../../lib/schema-v2";
 import { eq, ilike, or, and, sql, desc } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncContactsTab } from "./sheets-sync";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
@@ -236,28 +238,39 @@ router.post("/contacts/scan-card", async (req, res): Promise<void> => {
   const mt = (mimeType && allowedTypes.includes(mimeType) ? mimeType : "image/jpeg") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
 
   try {
-    const response = await createTrackedMessage("contact_card_ocr", {
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 512,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mt, data: imageBase64 },
-          },
-          {
-            type: "text",
-            text: `Extract contact information from this business card image. Return ONLY a JSON object with these fields (omit any field not found):
+    let raw = "{}";
+
+    // Image content blocks (vision input) — same shape used in both branches
+    const visionContent = [
+      {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: mt, data: imageBase64 },
+      },
+      {
+        type: "text" as const,
+        text: `Extract contact information from this business card image. Return ONLY a JSON object with these fields (omit any field not found):
 {"name":"","company":"","title":"","phone":"","email":"","website":"","linkedin":"","notes":""}
 Rules: phone in format (xxx) xxx-xxxx if possible, notes = any extra info not in other fields. No markdown, no explanation.`,
-          },
-        ],
-      }],
-    });
+      },
+    ];
 
-    const textBlock = response.content.find(b => b.type === "text");
-    const raw = textBlock?.type === "text" ? textBlock.text.trim() : "{}";
+    // Flag-gated: AGENT_RUNTIME_CONTACTS=true routes through runtime.
+    if (isAgentRuntimeEnabled("contacts")) {
+      const result = await runAgent("contacts", "card-ocr", {
+        userMessage: visionContent as any,
+        caller: "direct",
+        meta: { mimeType: mt },
+      });
+      raw = result.text.trim() || "{}";
+    } else {
+      const response = await createTrackedMessage("contact_card_ocr", {
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 512,
+        messages: [{ role: "user", content: visionContent }],
+      });
+      const textBlock = response.content.find(b => b.type === "text");
+      raw = textBlock?.type === "text" ? textBlock.text.trim() : "{}";
+    }
 
     let parsed: Record<string, string> = {};
     try {

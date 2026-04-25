@@ -129,9 +129,12 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
   const [proposals, setProposals] = useState<ProposalRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [training, setTraining] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [error, setError] = useState<string>("");
 
   const refresh = useCallback(async () => {
+    setRefreshing(true);
     try {
       const [s, f, p] = await Promise.all([
         get<TrainingState>(`/api/agents/${agent}/training-state`),
@@ -141,22 +144,19 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
       setState(s);
       setFeedback(f.feedback);
       setProposals(p.proposals);
+      setLastRefreshed(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshing(false);
     }
   }, [agent]);
 
+  // Refresh on load + on agent switch. No polling.
   useEffect(() => {
     refresh();
     setSelected(new Set());
   }, [agent, refresh]);
-
-  // Poll while a run is active
-  useEffect(() => {
-    if (!state?.is_running) return;
-    const interval = setInterval(refresh, 2000);
-    return () => clearInterval(interval);
-  }, [state?.is_running, refresh]);
 
   const toggle = (id: string) => {
     const s = new Set(selected);
@@ -197,12 +197,38 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
 
   return (
     <div>
+      {/* Refresh row */}
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+        <span style={{ fontSize: 12, color: C.mut }}>
+          {lastRefreshed ? `Last refreshed ${lastRefreshed.toLocaleTimeString()}` : ""}
+        </span>
+        <button
+          onClick={refresh}
+          disabled={refreshing}
+          style={{
+            ...btnGhost,
+            marginLeft: "auto",
+            opacity: refreshing ? 0.6 : 1,
+            cursor: refreshing ? "default" : "pointer",
+          }}
+          title="Refetch training state, feedback queue, and pending proposals"
+        >
+          {refreshing ? "Refreshing…" : "↻ Refresh"}
+        </button>
+      </div>
+
       {/* Status row */}
       <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
         <Card label="Unconsumed feedback" value={String(state.unconsumed_count)} color={state.unconsumed_count > 0 ? C.amb : C.mut} />
         <Card label="Pending proposals" value={String(state.pending_proposals_count)} color={state.pending_proposals_count > 0 ? C.blu : C.mut} />
         <Card label="Training run" value={state.is_running ? "RUNNING" : "idle"} color={state.is_running ? C.grn : C.mut} />
       </div>
+
+      {state.is_running && (
+        <div style={{ background: C.grnBg, color: C.grn, padding: 10, borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+          Coach is analyzing this batch. Click <b>↻ Refresh</b> after a moment to see the result.
+        </div>
+      )}
 
       {error && (
         <div style={{ background: C.redBg, color: C.red, padding: 10, borderRadius: 8, marginBottom: 12, fontSize: 13 }}>

@@ -13,16 +13,16 @@ import { ConnectedCallModal } from "@/components/tcc/ConnectedCallModal";
 import { EmailsView } from "@/components/tcc/EmailsView";
 import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
-import { SalesMorning } from "@/components/tcc/SalesMorning";
 import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
 import { PrintView } from "@/components/tcc/PrintView";
 import { DashboardView } from "@/components/tcc/DashboardView";
 import { BusinessView } from "@/components/tcc/BusinessView";
 import { AiUsageView } from "@/components/tcc/AiUsageView";
+import { ReclassifyModal, type ReclassifyMode } from "@/components/tcc/ReclassifyModal";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
-type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "sales-morning" | "chat" | "business" | "ai-usage";
+type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "chat" | "business" | "ai-usage";
 type BusinessTab = "goals" | "team" | "tasks" | "plan";
 
 export default function App() {
@@ -137,22 +137,32 @@ export default function App() {
     const interval = setInterval(pollEmails, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
-  const handleReclassify = async () => {
+  const [showReclassifyModal, setShowReclassifyModal] = useState(false);
+  const openReclassifyModal = () => setShowReclassifyModal(true);
+  const handleReclassifySubmit = async ({ mode, sinceUnixSeconds }: { mode: ReclassifyMode; sinceUnixSeconds?: number }) => {
     setReclassifying(true);
     try {
-      if (pendingNewEmails.length > 0) {
-        // Classify only new unclassified emails
-        const res = await post<{ ok: boolean; emailsImportant?: any[]; emailsFyi?: any[]; emailsPromotions?: any[] }>("/emails/reclassify-new", { newEmails: pendingNewEmails });
-        if (res?.ok && brief) {
-          setBrief({ ...brief, emailsImportant: res.emailsImportant ?? brief.emailsImportant, emailsFyi: res.emailsFyi ?? brief.emailsFyi, emailsPromotions: res.emailsPromotions ?? brief.emailsPromotions ?? [] });
-        }
-      } else {
-        // No pending new emails — do full reclassification
-        await refreshBrief(["emails"]);
+      const body: { mode: ReclassifyMode; sinceUnixSeconds?: number; newEmails?: typeof pendingNewEmails } = { mode };
+      if (mode === "new") body.newEmails = pendingNewEmails;
+      if (mode === "custom") body.sinceUnixSeconds = sinceUnixSeconds;
+      const res = await post<{ ok: boolean; emailsImportant?: any[]; emailsFyi?: any[]; emailsPromotions?: any[] }>("/emails/reclassify", body);
+      if (res?.ok && brief) {
+        setBrief({
+          ...brief,
+          emailsImportant: res.emailsImportant ?? brief.emailsImportant,
+          emailsFyi: res.emailsFyi ?? brief.emailsFyi,
+          emailsPromotions: res.emailsPromotions ?? brief.emailsPromotions ?? [],
+        });
       }
-    } catch { await refreshBrief(["emails"]); }
-    setNewEmailCount(0);
-    setPendingNewEmails([]);
+      // Clear pending state after any successful classify run (the new ones are now in the brief)
+      setNewEmailCount(0);
+      setPendingNewEmails([]);
+      setShowReclassifyModal(false);
+    } catch {
+      // On failure: fall back to full brief refresh so the UI stays consistent
+      await refreshBrief(["emails"]);
+      setShowReclassifyModal(false);
+    }
     setReclassifying(false);
   };
   const dismissNewEmails = () => { setNewEmailCount(0); setPendingNewEmails([]); };
@@ -281,7 +291,7 @@ export default function App() {
           setCk(loaded);
 
           if (journal?.formattedText || journal?.rawText) {
-            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "sales-morning", "business"];
+            const VALID_VIEWS: View[] = ["dashboard", "emails", "schedule", "sales", "business"];
             const savedView = (instructionsData as Record<string, string>)?.["active_view"] as View | undefined;
             const restoredView = savedView && VALID_VIEWS.includes(savedView) ? savedView : "dashboard";
             setView(restoredView);
@@ -477,7 +487,7 @@ export default function App() {
         📬 {newEmailCount} new email{newEmailCount > 1 ? "s" : ""} arrived
       </span>
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={handleReclassify} disabled={reclassifying} style={{
+        <button onClick={openReclassifyModal} disabled={reclassifying} style={{
           background: "#2563EB", color: "#fff", border: "none", borderRadius: 6,
           padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: reclassifying ? 0.6 : 1,
         }}>{reclassifying ? "Classifying..." : "Classify & Update"}</button>
@@ -491,6 +501,13 @@ export default function App() {
 
   const sharedModals = (
     <>
+      <ReclassifyModal
+        open={showReclassifyModal}
+        newEmailCount={newEmailCount}
+        onClose={() => { if (!reclassifying) setShowReclassifyModal(false); }}
+        onSubmit={handleReclassifySubmit}
+        busy={reclassifying}
+      />
       {/* Scope / Morning Protection Banner */}
       {scopeWarn && (
         <div style={{
@@ -665,7 +682,7 @@ export default function App() {
         onTipSaved={handleTipSaved}
         onRefresh={async () => { try { await get("/emails/poll"); } catch { /* ignore */ } await refreshBrief(["emails"]); }}
         unclassifiedEmails={pendingNewEmails}
-        onReclassify={handleReclassify}
+        onReclassify={async () => { openReclassifyModal(); }}
         reclassifying={reclassifying}
       />
     </div>
@@ -688,26 +705,6 @@ export default function App() {
         onBackToSchedule={() => persistView("schedule")}
         onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
         onConnectedCall={c => setConnectedCall(c)}
-      />
-    </div>
-  );
-
-  // ═══ SALES MORNING VIEW ═══
-  if (view === "sales-morning") return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
-      {sharedHeader}
-      {calSide && <CalendarSidebar items={brief?.calendarData || []} onClose={() => setCalSide(false)} onSchedule={() => { persistView("schedule"); setCalSide(false); }} />}
-      {sharedModals}
-      <AttemptModal contact={attempt} onClose={() => setAttempt(null)} onLog={call => setCalls(prev => [...prev, call])} onCompose={opts => setEmailCompose({ to: opts.to, contactId: opts.contactId, contactName: opts.contactName, body: opts.body, subject: opts.subject })} />
-      <SalesMorning
-        calls={calls}
-        onAttempt={c => setAttempt(c)}
-        onConnectedCall={c => setConnectedCall(c)}
-        onCompose={c => setEmailCompose({ to: c.email || "", contactId: String(c.id), contactName: c.name })}
-        onOpenChat={openChatWithContext}
-        onSwitchToTasks={() => { setBusinessTab("tasks"); persistView("business"); }}
-        onBackToSchedule={() => persistView("schedule")}
-        onSwitchToFullSales={() => persistView("sales")}
       />
     </div>
   );

@@ -27,6 +27,18 @@ function isOverdue(date?: string | null): boolean {
   return new Date(date) < new Date(new Date().toDateString());
 }
 
+interface BriefModalData {
+  contactId: string;
+  contactName: string;
+  briefText: string;
+  aiScore?: string | number | null;
+  stage?: string;
+  status?: string;
+  linkedinUrl?: string | null;
+  personalityNotes?: string | null;
+  openTasks?: string[];
+}
+
 export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt, onConnected, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -45,6 +57,8 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [syncing, setSyncing] = useState<"" | "db">("");
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [briefModal, setBriefModal] = useState<BriefModalData | null>(null);
+  const [briefLoading, setBriefLoading] = useState<string | null>(null);
 
   const hasFilters = !!(search.trim() || filterStatus !== "All" || filterStage !== "All" || filterType !== "All" || filterCategory !== "All");
 
@@ -119,6 +133,18 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
     setResults(prev => [contact, ...prev]);
   }, []);
 
+  const handleGetBrief = useCallback(async (contact: Contact) => {
+    setBriefLoading(String(contact.id));
+    try {
+      const brief = await post<BriefModalData>("/contacts/brief", { contactId: contact.id });
+      setBriefModal(brief);
+    } catch {
+      alert("Failed to generate brief");
+    } finally {
+      setBriefLoading(null);
+    }
+  }, []);
+
   const handlePushToSheets = useCallback(async () => {
     setSyncing("db");
     setSyncToast("Pushing contacts to Google Sheets…");
@@ -159,6 +185,30 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
         }}
       />
       <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
+      {briefModal && (
+        <div style={{ position: "fixed", inset: 0, background: "#00000066", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setBriefModal(null)}>
+          <div style={{ ...card, maxWidth: 560, width: "90%", maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+              <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 700 }}>{briefModal.contactName}</div>
+              {briefModal.linkedinUrl && (
+                <a href={briefModal.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.blu }}>LinkedIn ↗</a>
+              )}
+            </div>
+            <div style={{ background: C.bg, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: C.tx }}>{briefModal.briefText}</div>
+            </div>
+            {briefModal.openTasks && briefModal.openTasks.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Open Tasks</div>
+                {briefModal.openTasks.map((t, i) => <div key={i} style={{ fontSize: 12, color: C.sub }}>→ {t}</div>)}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+              <button onClick={() => setBriefModal(null)} style={{ ...btn2, fontSize: 12, padding: "6px 14px" }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       {syncToast && (
         <div style={{ position: "fixed", bottom: 20, right: 20, background: syncToast.startsWith("✕") ? C.redBg : syncToast.startsWith("✓") ? "#DCFCE7" : "#FFF7ED", color: syncToast.startsWith("✕") ? C.red : syncToast.startsWith("✓") ? "#065F46" : "#9A3412", padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600, fontFamily: F, zIndex: 9999, boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
           {syncToast}
@@ -309,6 +359,13 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                     ✉ Email
                   </button>
                 )}
+                <button
+                  onClick={() => handleGetBrief(c)}
+                  disabled={briefLoading === String(c.id)}
+                  style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu, opacity: briefLoading === String(c.id) ? 0.6 : 1 }}
+                >
+                  {briefLoading === String(c.id) ? "…" : "📋 Brief"}
+                </button>
                 <Tip tip={TIPS.attempt}>
                   <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "6px 10px", fontSize: 11 }}>📋 Note</button>
                 </Tip>

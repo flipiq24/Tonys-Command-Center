@@ -198,4 +198,141 @@ Promotions shape: { "from": string, "subj": string, "why": string }`,
   }
 });
 
+// ─── Universal reclassify with mode parameter ──────────────────────────────────
+// modes:
+//   "new"       — classify just the provided pendingNewEmails array (append to brief)
+//   "unread"    — fetch all unread emails from inbox, classify all (replace brief lists)
+//   "last_24h"  — fetch ALL emails (read + unread) from last 24h, classify all (replace brief lists)
+//   "custom"    — fetch ALL emails since the provided 'sinceUnixSeconds' timestamp (replace brief lists)
+router.post("/emails/reclassify", async (req, res): Promise<void> => {
+  try {
+    const { mode, sinceUnixSeconds, newEmails } = req.body as {
+      mode: "new" | "unread" | "last_24h" | "custom";
+      sinceUnixSeconds?: number;
+      newEmails?: { from: string; subject: string; snippet: string; messageId: string }[];
+    };
+
+    if (!mode) { res.status(400).json({ error: "mode required" }); return; }
+
+    // ── Build the email list to classify (depending on mode) ────────────────
+    let toClassify: { from: string; subject: string; snippet: string; messageId: string; date?: string }[] = [];
+
+    if (mode === "new") {
+      if (!newEmails?.length) { res.json({ ok: true, added: 0, mode }); return; }
+      toClassify = newEmails;
+    } else {
+      const gmail = await getGmail();
+      let q = "in:inbox";
+      if (mode === "unread") q += " is:unread";
+      else if (mode === "last_24h") {
+        const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+        q += ` after:${since}`;
+      } else if (mode === "custom") {
+        if (!sinceUnixSeconds) { res.status(400).json({ error: "sinceUnixSeconds required for custom mode" }); return; }
+        q += ` after:${sinceUnixSeconds}`;
+      }
+
+      const list = await gmail.users.messages.list({ userId: "me", maxResults: 50, q });
+      const messages = list.data.messages || [];
+
+      const details = await Promise.all(
+        messages.slice(0, 30).map(msg =>
+          gmail.users.messages.get({
+            userId: "me",
+            id: msg.id!,
+            format: "metadata",
+            metadataHeaders: ["From", "Subject", "Date"],
+          })
+        )
+      );
+
+      toClassify = details.map((d, i) => {
+        const hdrs = d.data.payload?.headers || [];
+        const get = (name: string) => hdrs.find(h => h.name === name)?.value || "";
+        return {
+          from: get("From"),
+          subject: get("Subject"),
+          snippet: d.data.snippet || "",
+          messageId: messages[i]?.id || "",
+          date: get("Date"),
+        };
+      });
+    }
+
+    if (toClassify.length === 0) { res.json({ ok: true, added: 0, mode, emailsImportant: [], emailsFyi: [], emailsPromotions: [] }); return; }
+
+    // ── Run Claude classification ────────────────────────────────────────────
+    const claudeResponse = await createTrackedMessage("email_poll", {
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: `You are Tony Diaz's email triage assistant for FlipIQ (real estate wholesaling).
+Classify each email into exactly 3 categories: "important", "fyi", or "promotions".
+Important: from @flipiq.com team, known contacts, or keywords: urgent, contract, payment, demo, equity, funding, deal.
+FYI: medical, receipts, real-person notifications, updates relevant but need no reply.
+Promotions: newsletters, marketing emails, automated notifications, social media.
+Return ONLY valid JSON: { "important": [...], "fyi": [...], "promotions": [...] }
+Important shape: { "from": string, "subj": string, "why": string, "time": string, "p": "high"|"med"|"low" }
+FYI shape: { "from": string, "subj": string, "why": string }
+Promotions shape: { "from": string, "subj": string, "why": string }`,
+      messages: [{ role: "user", content: `Classify these ${toClassify.length} emails:\n${JSON.stringify(toClassify.map(e => ({ from: e.from, subject: e.subject, snippet: e.snippet })), null, 2)}` }],
+    });
+
+    const textBlock = claudeResponse.content.find(b => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") { res.json({ ok: false, error: "No classification" }); return; }
+    const jsonMatch = textBlock.text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) { res.json({ ok: false, error: "No JSON in response" }); return; }
+    const classified = JSON.parse(jsonMatch[0]) as { important?: any[]; fyi?: any[]; promotions?: any[] };
+
+    // ── Attach gmailMessageId by from+subject lookup ─────────────────────────
+    const msgIdMap = new Map(toClassify.map(e => [
+      e.from.replace(/<[^>]+>/, "").trim().toLowerCase().slice(0, 30) + "|" + e.subject.toLowerCase().slice(0, 40),
+      e.messageId,
+    ]));
+    const attachId = (e: any) => {
+      const key = (e.from || "").toLowerCase().slice(0, 30) + "|" + (e.subj || "").toLowerCase().slice(0, 40);
+      return { ...e, gmailMessageId: msgIdMap.get(key) || undefined };
+    };
+
+    const newImportant = (classified.important || []).map((e: any, i: number) => attachId({ ...e, id: i + 1 }));
+    const newFyi = (classified.fyi || []).map((e: any, i: number) => ({ ...e, id: i + 100 }));
+    const newPromotions = (classified.promotions || []).map((e: any, i: number) => ({ ...e, id: i + 200 }));
+
+    // ── Merge or replace in daily brief ──────────────────────────────────────
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+    const [dbBrief] = await db.select().from(dailyBriefsTable).where(eq(dailyBriefsTable.date, today));
+
+    let resultImportant = newImportant;
+    let resultFyi = newFyi;
+    let resultPromotions = newPromotions;
+
+    if (mode === "new") {
+      // Append to existing
+      const existingImportant = (dbBrief?.emailsImportant as any[]) ?? [];
+      const existingFyi = (dbBrief?.emailsFyi as any[]) ?? [];
+      resultImportant = [...newImportant, ...existingImportant];
+      resultFyi = [...newFyi, ...existingFyi];
+      // promotions stay as just new (existing scheme)
+    }
+    // For unread/last_24h/custom: replace lists outright
+
+    if (dbBrief) {
+      await db.update(dailyBriefsTable)
+        .set({ emailsImportant: resultImportant, emailsFyi: resultFyi })
+        .where(eq(dailyBriefsTable.date, today));
+    }
+
+    res.json({
+      ok: true,
+      mode,
+      classified: toClassify.length,
+      emailsImportant: resultImportant,
+      emailsFyi: resultFyi,
+      emailsPromotions: resultPromotions,
+    });
+  } catch (err) {
+    console.warn("[EmailReclassify] failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ error: "Reclassify failed" });
+  }
+});
+
 export default router;

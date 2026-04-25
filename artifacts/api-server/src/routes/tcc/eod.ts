@@ -5,6 +5,8 @@ import { planItemsTable } from "../../lib/schema-v2";
 import { linearGraphQL } from "../../lib/linear";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { sendEmail } from "../../lib/gmail";
+import { isAgentRuntimeEnabled } from "../../agents/flags.js";
+import { runAgent } from "../../agents/runtime.js";
 import { todayPacific } from "../../lib/dates.js";
 import { communicationLogTable, businessContextTable } from "../../lib/schema-v2";
 
@@ -38,12 +40,7 @@ async function buildEodReport(log: any): Promise<{ reportText: string; callsMade
 
   let reportText = "";
   try {
-    const message = await createTrackedMessage("eod_preview", {
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      messages: [{
-        role: "user",
-        content: `Generate an EOD (End of Day) report for Tony Diaz, CEO of FlipIQ.
+    const eodPreviewPrompt = `Generate an EOD (End of Day) report for Tony Diaz, CEO of FlipIQ.
 
 Today's Data:
 - Calls Made: ${callsMade}
@@ -58,15 +55,29 @@ ${taskList}
 
 Write a brief EOD report (3-4 paragraphs) in Tony's voice:
 1. Summary of the day's sales activity
-2. Key wins and opportunities identified  
+2. Key wins and opportunities identified
 3. What needs follow-up tomorrow
 4. One motivating closing thought
 
-Keep it honest, direct, and actionable.`,
-      }],
-    });
-    const block = message.content[0];
-    if (block.type === "text") reportText = block.text;
+Keep it honest, direct, and actionable.`;
+
+    // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
+    if (isAgentRuntimeEnabled("brief")) {
+      const result = await runAgent("brief", "eod-preview", {
+        userMessage: eodPreviewPrompt,
+        caller: "direct",
+        meta: { callsMade, demosBooked, tasksCompleted },
+      });
+      reportText = result.text;
+    } else {
+      const message = await createTrackedMessage("eod_preview", {
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        messages: [{ role: "user", content: eodPreviewPrompt }],
+      });
+      const block = message.content[0];
+      if (block.type === "text") reportText = block.text;
+    }
   } catch (err) {
     log?.warn?.({ err }, "Claude EOD report generation failed");
     reportText = `EOD Report — ${today}\n\nCalls Made: ${callsMade}\nDemos Booked: ${demosBooked}\nTasks Completed: ${tasksCompleted}\n\n${callList}\n\nKeep pushing forward tomorrow.`;
@@ -222,14 +233,10 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
   const taskList = planCompletions.map(t => `- ${t.title} (${t.category || "misc"})`).join("\n") || "- No tasks completed";
   const completionRate = Math.min(100, Math.round((tasksCompleted / 10) * 100));
 
-  let tonyReportText = "";
-  try {
-    const tonyMsg = await createTrackedMessage("eod_report", {
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `Generate Tony Diaz's EOD report for ${today} (FlipIQ CEO).
+  // Build the recipient-specific user prompts. The plan calls for one
+  // skill (eod-report) with a `recipient` param — both Tony's and Ethan's
+  // EODs use the same skill but different user prompts.
+  const tonyPrompt = `Generate Tony Diaz's EOD report for ${today} (FlipIQ CEO).
 
 Today's Data:
 - Calls made: ${callsMade}
@@ -243,23 +250,9 @@ Format as a brief EOD (4 paragraphs max):
 1. Quick summary
 2. Key metrics: calls, demos, tasks
 3. What needs follow-up tomorrow
-4. One closing thought in Tony's voice — direct and honest.`,
-      }],
-    });
-    const block = tonyMsg.content.find(b => b.type === "text");
-    if (block?.type === "text") tonyReportText = block.text;
-  } catch {
-    tonyReportText = `EOD Report — ${today}\n\nCalls: ${callsMade} | Demos: ${demosBooked} | Tasks: ${tasksCompleted}\n\n${callList}`;
-  }
+4. One closing thought in Tony's voice — direct and honest.`;
 
-  let ethanReportText = "";
-  try {
-    const ethanMsg = await createTrackedMessage("eod_report", {
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `Generate Ethan's EOD brief for ${today}. Ethan is Tony Diaz's AI chief of staff for FlipIQ.
+  const ethanPrompt = `Generate Ethan's EOD brief for ${today}. Ethan is Tony Diaz's AI chief of staff for FlipIQ.
 
 Tony's Activity:
 - Calls: ${callsMade}, Demos: ${demosBooked}, Emails: ${emailsSent}
@@ -285,11 +278,37 @@ Format Ethan's brief with:
 4. Overrides today
 5. Demo feedback if available
 6. Accountability score: ${completionRate}%
-7. Dynamic action items for Ethan tomorrow`,
-      }],
+7. Dynamic action items for Ethan tomorrow`;
+
+  // Helper: same skill ("eod-report") with a recipient meta hint, two prompts
+  async function generateEodFor(recipient: "tony" | "ethan", userPrompt: string): Promise<string> {
+    if (isAgentRuntimeEnabled("brief")) {
+      const result = await runAgent("brief", "eod-report", {
+        userMessage: userPrompt,
+        caller: "direct",
+        meta: { recipient, date: today },
+      });
+      return result.text;
+    }
+    const msg = await createTrackedMessage("eod_report", {
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: userPrompt }],
     });
-    const block = ethanMsg.content.find(b => b.type === "text");
-    if (block?.type === "text") ethanReportText = block.text;
+    const block = msg.content.find(b => b.type === "text");
+    return block?.type === "text" ? block.text : "";
+  }
+
+  let tonyReportText = "";
+  try {
+    tonyReportText = await generateEodFor("tony", tonyPrompt);
+  } catch {
+    tonyReportText = `EOD Report — ${today}\n\nCalls: ${callsMade} | Demos: ${demosBooked} | Tasks: ${tasksCompleted}\n\n${callList}`;
+  }
+
+  let ethanReportText = "";
+  try {
+    ethanReportText = await generateEodFor("ethan", ethanPrompt);
   } catch {
     ethanReportText = `Ethan's EOD Brief — ${today}\n\nAccountability: ${completionRate}%\nNo-due-date items: ${noDueDateItems.length}\nOut-of-sequence: ${outOfSequenceItems.length}\nOverrides: ${overridesToday.length}`;
   }

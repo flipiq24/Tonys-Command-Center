@@ -454,17 +454,13 @@ async function generateClaudeBrief(
       ? linearData.map(i => `[${i.id}] ${i.task} (${i.level} priority)`).join("\n")
       : "No open Linear issues";
 
-    const message = await createTrackedMessage("brief_claude_generate", {
-      model: "claude-haiku-4-5",
-      max_tokens: 2048,
-      system: `You generate Tony Diaz's daily brief. He is CEO of FlipIQ (AI-powered real estate wholesaling SaaS).
+    const dailySystem = `You generate Tony Diaz's daily brief. He is CEO of FlipIQ (AI-powered real estate wholesaling SaaS).
 Team: Ethan Jolly (CTO), Ramy (ops), Marisol (ops coordinator), Faisal (lead engineer), Haris (engineer), Chris Wesser (legal/capital raise).
 Key contacts: Fernando Perez (deal source), Mike Oyoque, Xander Clemens (Family Office Club — 10K investors), Kyle Draper.
 FlipIQ focuses on: AI deal analysis, comps, wholesaling pipeline, investor outreach, capital raise ($500K-$2M round).
-Today is ${todayFormatted}. Generate realistic workday data — no placeholders, no fake names outside this cast.`,
-      messages: [{
-        role: "user",
-        content: `Generate Tony's daily brief based on his REAL calendar and open tasks:
+Today is ${todayFormatted}. Generate realistic workday data — no placeholders, no fake names outside this cast.`;
+
+    const dailyUserPrompt = `Generate Tony's daily brief based on his REAL calendar and open tasks:
 
 CALENDAR TODAY:
 ${calContext}
@@ -493,13 +489,31 @@ Rules:
 - 3–5 important emails, 2–3 FYI emails, 2–4 Slack items, 6–10 tasks
 - Tasks must include "10 Sales Calls" (sales: true) plus items derived from today's calendar events and Linear issues
 - Emails and Slack should reflect what would realistically land in Tony's inbox given today's meetings and active Linear issues
-- Make content specific and actionable — never generic`,
-      }],
-    });
+- Make content specific and actionable — never generic`;
 
-    const block = message.content[0];
-    if (block.type !== "text") return null;
-    const jsonMatch = block.text.match(/\{[\s\S]+\}/);
+    let raw = "";
+
+    // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
+    if (isAgentRuntimeEnabled("brief")) {
+      const result = await runAgent("brief", "daily", {
+        userMessage: `${dailySystem}\n\n---\n\n${dailyUserPrompt}`,
+        caller: "direct",
+        meta: { date: today },
+      });
+      raw = result.text;
+    } else {
+      const message = await createTrackedMessage("brief_claude_generate", {
+        model: "claude-haiku-4-5",
+        max_tokens: 2048,
+        system: dailySystem,
+        messages: [{ role: "user", content: dailyUserPrompt }],
+      });
+      const block = message.content[0];
+      if (block.type !== "text") return null;
+      raw = block.text;
+    }
+
+    const jsonMatch = raw.match(/\{[\s\S]+\}/);
     if (!jsonMatch) return null;
     return JSON.parse(jsonMatch[0]) as GeneratedBrief;
   } catch (err) {
@@ -735,12 +749,7 @@ router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
       ? `Tony's spiritual engagement: MODERATE (Bible missed ${missedBible} of last ${last5Checkins.length} days). Acknowledge the inconsistency briefly, encourage getting back on track.`
       : `Tony's spiritual engagement: STRONG (Bible read consistently). Affirm this briefly.`;
 
-    const message = await createTrackedMessage("brief_spiritual_anchor", {
-      model: "claude-haiku-4-5",
-      max_tokens: 300,
-      messages: [{
-        role: "user",
-        content: `You are Tony Diaz's morning AI coach. Generate a SHORT (3-4 sentences max) morning spiritual anchor message.
+    const userPrompt = `You are Tony Diaz's morning AI coach. Generate a SHORT (3-4 sentences max) morning spiritual anchor message.
 
 Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Los_Angeles" })}.
 
@@ -758,12 +767,27 @@ Rules:
 - End with ONE clear action directive for today (always starts with calls if no calls yesterday)
 - Max 4 sentences. No fluff. Tony's ADHD brain needs impact, not paragraphs.
 - Output PLAIN TEXT only. No markdown, no hashtags, no asterisks, no bold, no headers. Just plain sentences.
-- Use the actual date provided above. Never use placeholders like [Date] or [Month].`,
-      }],
-    });
+- Use the actual date provided above. Never use placeholders like [Date] or [Month].`;
 
-    const block = message.content[0];
-    const anchor = block.type === "text" ? block.text : "Commit to your vision today. Start with your 10 calls.";
+    let anchor = "Commit to your vision today. Start with your 10 calls.";
+
+    // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
+    if (isAgentRuntimeEnabled("brief")) {
+      const result = await runAgent("brief", "spiritual-anchor", {
+        userMessage: userPrompt,
+        caller: "direct",
+        meta: { engagementLevel },
+      });
+      anchor = result.text || anchor;
+    } else {
+      const message = await createTrackedMessage("brief_spiritual_anchor", {
+        model: "claude-haiku-4-5",
+        max_tokens: 300,
+        messages: [{ role: "user", content: userPrompt }],
+      });
+      const block = message.content[0];
+      anchor = block.type === "text" ? block.text : anchor;
+    }
 
     res.json({ anchor, perfSummary });
   } catch (err) {

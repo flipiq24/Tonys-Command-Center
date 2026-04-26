@@ -52,21 +52,23 @@ async function loadGlobalLayer(): Promise<string> {
 
 async function loadAgentLayer(agent: string): Promise<string> {
   // L2 loads behavior content: SOUL (voice), USER (context/preferences),
-  // IDENTITY (model/version metadata), TOOLS (tool-use guidelines).
+  // IDENTITY (model/version metadata).
   //
   // Intentionally excluded:
   //   - 'agents' (AGENTS.md): documented as "slim INDEX. NOT loaded into prompts
   //     at runtime" by every AGENTS.md file itself. Skill routing happens via the
-  //     `agent_skills` registry, not via the markdown index. Schemas that SOUL.md
-  //     references as "match the schema in AGENTS.md" are duplicated in each skill
-  //     body file (loaded as L3), so the model still sees them.
-  //
-  // 'tools' kept here for now (Phase 7 C3 will surgically split it: extract
-  // guidelines into a memory section, drop the schema duplication separately).
+  //     `agent_skills` registry, not via the markdown index.
+  //   - 'tools' (TOOLS.md): tool specs (name + description + input_schema) are
+  //     passed via Anthropic's `params.tools` parameter — the model receives them
+  //     as STRUCTURED data, not text. Including TOOLS.md in the system prompt
+  //     duplicates that information in prose. Tool-use guidelines (the small
+  //     "## Tool-use guidelines" section in each TOOLS.md) are common-sense
+  //     behaviors the model already follows; if any agent needs a specific
+  //     critical guideline, append it to that skill's body file (loaded as L3).
   const rows = await db.select().from(agentMemoryEntriesTable)
     .where(and(
       eq(agentMemoryEntriesTable.agent, agent),
-      inArray(agentMemoryEntriesTable.kind, ["soul", "user", "identity", "tools"]),
+      inArray(agentMemoryEntriesTable.kind, ["soul", "user", "identity"]),
     ));
   if (rows.length === 0) return "";
   return rows.map(r => `# ${r.kind.toUpperCase()}\n\n${r.content}`).join("\n\n---\n\n");

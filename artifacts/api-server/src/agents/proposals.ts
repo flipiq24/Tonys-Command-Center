@@ -80,13 +80,19 @@ export async function applyApprovedProposal(proposalId: string, decidedBy: strin
     if (!proposal) throw new Error(`Proposal ${proposalId} not found`);
     if (proposal.status !== "pending") throw new Error(`Proposal ${proposalId} is ${proposal.status}, not pending`);
 
-    const diffs = proposal.diffs as MemoryDiff[];
+    // Coach's submit_proposal stores diffs with snake_case keys to match the
+    // tool's Anthropic schema. Normalize here so we tolerate either casing.
+    const diffs = proposal.diffs as Array<{ kind: string; section_name?: string; sectionName?: string; before?: string; after: string }>;
     for (const d of diffs) {
+      const sectionName = d.section_name ?? d.sectionName;
+      if (!sectionName) {
+        throw new Error(`Diff missing section_name: ${JSON.stringify(d).slice(0, 200)}`);
+      }
       await tx.insert(agentMemoryEntriesTable)
         .values({
           agent: proposal.agent,
           kind: d.kind,
-          sectionName: d.sectionName,
+          sectionName,
           content: d.after,
           updatedBy: "coach",
         })

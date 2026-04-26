@@ -4,8 +4,8 @@
 
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { db, agentTrainingRunsTable, agentMemoryProposalsTable, agentFeedbackTable, agentSkillsTable, agentMemoryEntriesTable } from "@workspace/db";
-import { and, eq, desc, isNull, sql, inArray } from "drizzle-orm";
+import { db, agentTrainingRunsTable, agentMemoryProposalsTable, agentFeedbackTable, agentSkillsTable, agentMemoryEntriesTable, agentRunsTable } from "@workspace/db";
+import { and, eq, desc, isNull, sql, inArray, asc } from "drizzle-orm";
 import { getTrainingState, applyApprovedProposal, rejectProposal } from "../../agents/proposals.js";
 import { analyzeFeedback } from "../../agents/coach.js";
 import { snapshotFlags } from "../../agents/flags.js";
@@ -188,6 +188,112 @@ router.get("/api/agents/:agent/memory/:section", async (req, res): Promise<void>
 
   if (!row) { res.status(404).json({ error: "not found" }); return; }
   res.json(row);
+});
+
+// ── Edit a memory entry (write-gated to kind='memory' per D5) ────────────────
+const MemoryWriteBody = z.object({
+  content: z.string(),
+  updated_by: z.string().optional(),
+});
+
+router.put("/api/agents/:agent/memory/:section", async (req, res): Promise<void> => {
+  const agent = req.params.agent;
+  const section = req.params.section;
+  if (!agent || !section) { res.status(400).json({ error: "agent + section required" }); return; }
+
+  const parsed = MemoryWriteBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const kind = (req.query.kind as string) || "memory";
+
+  // D5: outside of approved Coach proposals, only kind='memory' is writable
+  // through this endpoint. Identity-tier kinds stay developer-locked
+  // (changes flow through git + the seed script).
+  if (kind !== "memory") {
+    res.status(403).json({
+      error: `kind='${kind}' is git-locked — only kind='memory' can be edited via this endpoint`,
+    });
+    return;
+  }
+
+  const updatedBy = parsed.data.updated_by || "tony";
+
+  const [existing] = await db.select().from(agentMemoryEntriesTable)
+    .where(and(
+      eq(agentMemoryEntriesTable.agent, agent),
+      eq(agentMemoryEntriesTable.kind, kind),
+      eq(agentMemoryEntriesTable.sectionName, section),
+    )).limit(1);
+
+  if (existing) {
+    await db.update(agentMemoryEntriesTable).set({
+      content: parsed.data.content,
+      version: sql`${agentMemoryEntriesTable.version} + 1`,
+      updatedAt: new Date(),
+      updatedBy,
+    }).where(eq(agentMemoryEntriesTable.id, existing.id));
+  } else {
+    await db.insert(agentMemoryEntriesTable).values({
+      agent,
+      kind,
+      sectionName: section,
+      content: parsed.data.content,
+      updatedBy,
+    });
+  }
+
+  res.json({ ok: true });
+});
+
+// ── Run history per agent (Phase 6 dashboard table) ─────────────────────────
+router.get("/api/agents/:agent/runs", async (req, res): Promise<void> => {
+  const agent = req.params.agent;
+  if (!agent) { res.status(400).json({ error: "agent required" }); return; }
+
+  const limit = Math.min(parseInt((req.query.limit as string) || "50", 10) || 50, 500);
+  const skill = req.query.skill as string | undefined;
+
+  const where = skill
+    ? and(eq(agentRunsTable.agent, agent), eq(agentRunsTable.skill, skill))!
+    : eq(agentRunsTable.agent, agent);
+
+  const rows = await db.select().from(agentRunsTable)
+    .where(where)
+    .orderBy(desc(agentRunsTable.createdAt))
+    .limit(limit);
+
+  res.json({ runs: rows });
+});
+
+// ── Skill registry per agent (read-only Phase 6; model_override edit later) ──
+router.get("/api/agents/:agent/skills", async (req, res): Promise<void> => {
+  const agent = req.params.agent;
+  if (!agent) { res.status(400).json({ error: "agent required" }); return; }
+
+  const rows = await db.select().from(agentSkillsTable)
+    .where(eq(agentSkillsTable.agent, agent))
+    .orderBy(asc(agentSkillsTable.skillName));
+
+  res.json({ skills: rows });
+});
+
+const SkillOverrideBody = z.object({
+  model_override: z.string().nullable(),
+});
+
+router.put("/api/agents/:agent/skills/:skill/model-override", async (req, res): Promise<void> => {
+  const agent = req.params.agent;
+  const skillName = req.params.skill;
+  if (!agent || !skillName) { res.status(400).json({ error: "agent + skill required" }); return; }
+
+  const parsed = SkillOverrideBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  await db.update(agentSkillsTable)
+    .set({ modelOverride: parsed.data.model_override, updatedAt: new Date() })
+    .where(and(eq(agentSkillsTable.agent, agent), eq(agentSkillsTable.skillName, skillName)));
+
+  res.json({ ok: true });
 });
 
 export default router;

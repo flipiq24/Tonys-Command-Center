@@ -1,13 +1,44 @@
-// /settings/agents — minimal Train UI (Phase 1).
-// Sidebar lists agents. Selected agent shows: training-state badge,
-// unconsumed feedback list (multi-select), Train button, pending proposals
-// (with diff viewer), approve/reject.
-//
-// Dashboard polish (memory editor, run history, etc.) lands in Phase 6.
+// /settings/agents — Train UI + memory editor + run history (Phase 1 + 6).
+// Sidebar lists agents. Detail panel has tabs: Training, Memory, Skills, Runs.
 
 import { useState, useEffect, useCallback } from "react";
-import { get, post } from "@/lib/api";
+import { get, post, put } from "@/lib/api";
 import { C, F, FS } from "@/components/tcc/constants";
+
+type DetailTab = "training" | "memory" | "skills" | "runs";
+
+interface MemoryEntry {
+  kind: string;
+  section_name: string;
+  version: number;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+interface SkillEntry {
+  agent: string;
+  skillName: string;
+  model: string;
+  maxTokens: number;
+  tools: string[];
+  memorySections: string[];
+  modelOverride: string | null;
+  updatedAt: string;
+}
+
+interface RunEntry {
+  id: string;
+  agent: string;
+  skill: string;
+  caller: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  durationMs: number | null;
+  status: string;
+  errorMessage: string | null;
+  createdAt: string;
+}
 
 interface AgentEntry { name: string; runtime_enabled: boolean; }
 interface AgentsList { agents: AgentEntry[]; feedback_pipeline_enabled: boolean; }
@@ -57,7 +88,7 @@ export function AgentsSettingsView({ onBack }: { onBack: () => void }) {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   useEffect(() => {
-    get<AgentsList>("/api/agents")
+    get<AgentsList>("/agents")
       .then(d => {
         setAgents(d.agents);
         setPipelineEnabled(d.feedback_pipeline_enabled);
@@ -137,9 +168,9 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
     setRefreshing(true);
     try {
       const [s, f, p] = await Promise.all([
-        get<TrainingState>(`/api/agents/${agent}/training-state`),
-        get<{ feedback: FeedbackRow[] }>(`/api/agents/${agent}/feedback`),
-        get<{ proposals: ProposalRow[] }>(`/api/agents/${agent}/proposals?status=pending`),
+        get<TrainingState>(`/agents/${agent}/training-state`),
+        get<{ feedback: FeedbackRow[] }>(`/agents/${agent}/feedback`),
+        get<{ proposals: ProposalRow[] }>(`/agents/${agent}/proposals?status=pending`),
       ]);
       setState(s);
       setFeedback(f.feedback);
@@ -172,7 +203,7 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
     setTraining(true);
     setError("");
     try {
-      await post("/api/agents/" + agent + "/training/start", {
+      await post("/agents/" + agent + "/training/start", {
         feedback_ids: Array.from(selected),
       });
       setSelected(new Set());
@@ -186,15 +217,72 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
 
   const decide = async (proposalId: string, action: "approve" | "reject", reason?: string) => {
     try {
-      await post(`/api/proposals/${proposalId}/${action}`, action === "reject" ? { rejection_reason: reason } : {});
+      await post(`/proposals/${proposalId}/${action}`, action === "reject" ? { rejection_reason: reason } : {});
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
+  const [tab, setTab] = useState<DetailTab>("training");
+
   if (!state) return <div style={{ color: C.mut }}>Loading…</div>;
 
+  return (
+    <div>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 12, borderBottom: `1px solid ${C.brd}` }}>
+        {(["training", "memory", "skills", "runs"] as DetailTab[]).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: "8px 14px", fontSize: 13, fontWeight: 600,
+              border: "none", background: "transparent", cursor: "pointer", fontFamily: F,
+              color: tab === t ? C.blu : C.sub,
+              borderBottom: tab === t ? `2px solid ${C.blu}` : "2px solid transparent",
+              textTransform: "capitalize",
+            }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === "memory" && <MemoryTab agent={agent} />}
+      {tab === "skills" && <SkillsTab agent={agent} />}
+      {tab === "runs" && <RunsTab agent={agent} />}
+      {tab === "training" && <TrainingTabContent
+        state={state} feedback={feedback} proposals={proposals}
+        selected={selected} training={training} refreshing={refreshing}
+        lastRefreshed={lastRefreshed} error={error} pipelineEnabled={pipelineEnabled}
+        agent={agent}
+        onRefresh={refresh}
+        onToggle={toggle} onSelectAll={selectAll} onClearAll={clearAll}
+        onStartTraining={startTraining} onDecide={decide}
+      />}
+    </div>
+  );
+}
+
+interface TrainingTabProps {
+  state: TrainingState; feedback: FeedbackRow[]; proposals: ProposalRow[];
+  selected: Set<string>; training: boolean; refreshing: boolean;
+  lastRefreshed: Date | null; error: string; pipelineEnabled: boolean;
+  agent: string;
+  onRefresh: () => void;
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onClearAll: () => void;
+  onStartTraining: () => void;
+  onDecide: (id: string, action: "approve" | "reject", reason?: string) => void;
+}
+
+function TrainingTabContent(props: TrainingTabProps) {
+  const { state, feedback, proposals, selected, training, refreshing, lastRefreshed, error, pipelineEnabled, onRefresh, onToggle, onSelectAll, onClearAll, onStartTraining, onDecide } = props;
+  // agent prop intentionally unused inside this presentational wrapper —
+  // the callbacks already capture the agent in their closures.
+  void props.agent;
   return (
     <div>
       {/* Refresh row */}
@@ -203,7 +291,7 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
           {lastRefreshed ? `Last refreshed ${lastRefreshed.toLocaleTimeString()}` : ""}
         </span>
         <button
-          onClick={refresh}
+          onClick={onRefresh}
           disabled={refreshing}
           style={{
             ...btnGhost,
@@ -223,6 +311,7 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
         <Card label="Pending proposals" value={String(state.pending_proposals_count)} color={state.pending_proposals_count > 0 ? C.blu : C.mut} />
         <Card label="Training run" value={state.is_running ? "RUNNING" : "idle"} color={state.is_running ? C.grn : C.mut} />
       </div>
+
 
       {state.is_running && (
         <div style={{ background: C.grnBg, color: C.grn, padding: 10, borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
@@ -246,7 +335,7 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
       {proposals.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: C.tx, marginBottom: 10, fontFamily: FS }}>Pending proposals</h2>
-          {proposals.map(p => <ProposalCard key={p.id} proposal={p} onDecide={decide} />)}
+          {proposals.map(p => <ProposalCard key={p.id} proposal={p} onDecide={onDecide} />)}
         </div>
       )}
 
@@ -254,10 +343,10 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
       <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, color: C.tx, margin: 0, fontFamily: FS }}>Unconsumed feedback ({feedback.length})</h2>
         <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-          <button onClick={selectAll} style={btnGhost}>Select all</button>
-          <button onClick={clearAll} style={btnGhost}>Clear</button>
+          <button onClick={onSelectAll} style={btnGhost}>Select all</button>
+          <button onClick={onClearAll} style={btnGhost}>Clear</button>
           <button
-            onClick={startTraining}
+            onClick={onStartTraining}
             disabled={selected.size === 0 || state.is_running || training}
             style={{
               ...btn1,
@@ -277,11 +366,266 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
       )}
 
       {feedback.map(f => (
-        <FeedbackRowCard key={f.id} row={f} selected={selected.has(f.id)} onToggle={() => toggle(f.id)} />
+        <FeedbackRowCard key={f.id} row={f} selected={selected.has(f.id)} onToggle={() => onToggle(f.id)} />
       ))}
     </div>
   );
 }
+
+// ── Memory tab ────────────────────────────────────────────────────────────────
+function MemoryTab({ agent }: { agent: string }) {
+  const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [selectedSection, setSelectedSection] = useState<string | null>(null);
+  const [content, setContent] = useState("");
+  const [originalContent, setOriginalContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadList = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await get<{ entries: MemoryEntry[] }>(`/agents/${agent}/memory`);
+      setEntries(r.entries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [agent]);
+
+  useEffect(() => {
+    loadList();
+    setSelectedSection(null);
+    setContent("");
+    setOriginalContent("");
+  }, [agent, loadList]);
+
+  const loadSection = async (kind: string, section: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const r = await get<{ content: string }>(`/agents/${agent}/memory/${section}?kind=${encodeURIComponent(kind)}`);
+      setContent(r.content);
+      setOriginalContent(r.content);
+      setSelectedSection(`${kind}/${section}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const save = async () => {
+    if (!selectedSection) return;
+    const [, section] = selectedSection.split("/");
+    setSaving(true);
+    setError("");
+    try {
+      await put(`/agents/${agent}/memory/${section}?kind=memory`, { content, updated_by: "tony" });
+      setOriginalContent(content);
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const memoryEntries = entries.filter(e => e.kind === "memory");
+  const otherEntries = entries.filter(e => e.kind !== "memory");
+  const dirty = content !== originalContent;
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16 }}>
+      {/* Section list */}
+      <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 10, overflow: "hidden", maxHeight: "70vh", overflowY: "auto" }}>
+        <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", background: "#FAFAFA" }}>Memory (editable)</div>
+        {memoryEntries.length === 0 && <div style={{ padding: 12, fontSize: 12, color: C.mut }}>None — Coach proposals will populate this.</div>}
+        {memoryEntries.map(e => (
+          <button
+            key={`${e.kind}/${e.section_name}`}
+            onClick={() => loadSection(e.kind, e.section_name)}
+            style={{
+              display: "block", width: "100%", textAlign: "left", border: "none",
+              padding: "8px 12px", fontSize: 13, fontFamily: F, cursor: "pointer",
+              background: selectedSection === `${e.kind}/${e.section_name}` ? C.bluBg : "transparent",
+              color: selectedSection === `${e.kind}/${e.section_name}` ? C.blu : C.tx,
+              borderBottom: `1px solid ${C.brd}`,
+            }}
+          >
+            {e.section_name}
+            {e.updated_by === "coach" && (
+              <span style={{ fontSize: 9, marginLeft: 6, padding: "1px 5px", background: "#F3E5F5", color: "#7B1FA2", borderRadius: 4 }}>COACH</span>
+            )}
+          </button>
+        ))}
+        <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", background: "#FAFAFA", marginTop: 4 }}>Identity (read-only)</div>
+        {otherEntries.map(e => (
+          <button
+            key={`${e.kind}/${e.section_name}`}
+            onClick={() => loadSection(e.kind, e.section_name)}
+            style={{
+              display: "block", width: "100%", textAlign: "left", border: "none",
+              padding: "8px 12px", fontSize: 13, fontFamily: F, cursor: "pointer",
+              background: selectedSection === `${e.kind}/${e.section_name}` ? C.bluBg : "transparent",
+              color: C.sub, borderBottom: `1px solid ${C.brd}`,
+            }}
+          >
+            <span style={{ fontSize: 9, marginRight: 6, padding: "1px 5px", background: "#ECEFF1", color: C.mut, borderRadius: 4, textTransform: "uppercase" }}>{e.kind}</span>
+            {e.section_name}
+          </button>
+        ))}
+      </div>
+
+      {/* Editor */}
+      <div>
+        {error && <div style={{ background: C.redBg, color: C.red, padding: 8, borderRadius: 6, marginBottom: 8, fontSize: 12 }}>{error}</div>}
+        {!selectedSection && <div style={{ color: C.mut, padding: 24 }}>Pick a section on the left to view or edit.</div>}
+        {selectedSection && (() => {
+          const [kind] = selectedSection.split("/");
+          const readOnly = kind !== "memory";
+          return (
+            <>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: C.tx, margin: 0, fontFamily: FS }}>{selectedSection}</h3>
+                {readOnly && (
+                  <span style={{ marginLeft: 8, fontSize: 10, padding: "2px 6px", background: "#ECEFF1", color: C.mut, borderRadius: 4 }}>READ-ONLY</span>
+                )}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  {dirty && !readOnly && <span style={{ fontSize: 11, color: C.amb }}>Unsaved</span>}
+                  {!readOnly && (
+                    <button onClick={save} disabled={!dirty || saving} style={{ ...btn1, background: dirty ? C.grn : C.mut, opacity: saving ? 0.6 : 1 }}>
+                      {saving ? "Saving…" : "Save"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                readOnly={readOnly || loading}
+                style={{
+                  width: "100%", minHeight: 480, padding: 12,
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13,
+                  border: `1px solid ${C.brd}`, borderRadius: 8, resize: "vertical",
+                  background: readOnly ? "#FAFAFA" : C.card, color: C.tx,
+                }}
+              />
+            </>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
+// ── Skills tab ────────────────────────────────────────────────────────────────
+function SkillsTab({ agent }: { agent: string }) {
+  const [skills, setSkills] = useState<SkillEntry[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    get<{ skills: SkillEntry[] }>(`/agents/${agent}/skills`)
+      .then(r => setSkills(r.skills))
+      .catch(err => setError(err instanceof Error ? err.message : String(err)));
+  }, [agent]);
+
+  const updateOverride = async (skillName: string, override: string | null) => {
+    try {
+      await put(`/agents/${agent}/skills/${skillName}/model-override`, { model_override: override });
+      const r = await get<{ skills: SkillEntry[] }>(`/agents/${agent}/skills`);
+      setSkills(r.skills);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  return (
+    <div>
+      {error && <div style={{ background: C.redBg, color: C.red, padding: 8, borderRadius: 6, marginBottom: 8, fontSize: 12 }}>{error}</div>}
+      {skills.length === 0 && <div style={{ color: C.mut, padding: 24 }}>No skills registered.</div>}
+      {skills.map(s => (
+        <div key={s.skillName} style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, padding: 12, marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+            <strong style={{ fontSize: 14, color: C.tx }}>{s.skillName}</strong>
+            <span style={{ marginLeft: 10, fontSize: 11, color: C.sub }}>
+              {s.modelOverride || s.model} · {s.maxTokens} tokens · {s.tools.length} tools · {s.memorySections.length} memory sections
+            </span>
+            <input
+              type="text"
+              defaultValue={s.modelOverride || ""}
+              placeholder="model override (e.g. claude-sonnet-4-6)"
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (v !== (s.modelOverride || "")) updateOverride(s.skillName, v || null);
+              }}
+              style={{ marginLeft: "auto", width: 220, padding: "4px 8px", fontSize: 11, border: `1px solid ${C.brd}`, borderRadius: 6 }}
+            />
+          </div>
+          {s.tools.length > 0 && (
+            <div style={{ fontSize: 11, color: C.mut, marginTop: 4 }}>
+              Tools: {s.tools.join(", ")}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Runs tab ──────────────────────────────────────────────────────────────────
+function RunsTab({ agent }: { agent: string }) {
+  const [runs, setRuns] = useState<RunEntry[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    get<{ runs: RunEntry[] }>(`/agents/${agent}/runs?limit=100`)
+      .then(r => setRuns(r.runs))
+      .catch(err => setError(err instanceof Error ? err.message : String(err)));
+  }, [agent]);
+
+  if (error) return <div style={{ background: C.redBg, color: C.red, padding: 10, borderRadius: 8 }}>{error}</div>;
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, overflow: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: F }}>
+        <thead style={{ background: "#FAFAFA" }}>
+          <tr>
+            <th style={th}>Time</th>
+            <th style={th}>Skill</th>
+            <th style={th}>Caller</th>
+            <th style={th}>Status</th>
+            <th style={{ ...th, textAlign: "right" }}>In</th>
+            <th style={{ ...th, textAlign: "right" }}>Out</th>
+            <th style={{ ...th, textAlign: "right" }}>Cache</th>
+            <th style={{ ...th, textAlign: "right" }}>ms</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.length === 0 && (
+            <tr><td colSpan={8} style={{ padding: 24, textAlign: "center", color: C.mut }}>No runs yet for this agent.</td></tr>
+          )}
+          {runs.map(r => (
+            <tr key={r.id} style={{ borderTop: `1px solid ${C.brd}` }}>
+              <td style={td}>{new Date(r.createdAt).toLocaleString()}</td>
+              <td style={td}>{r.skill}</td>
+              <td style={td}>{r.caller || "—"}</td>
+              <td style={{ ...td, color: r.status === "error" ? C.red : C.grn }}>{r.status}</td>
+              <td style={{ ...td, textAlign: "right" }}>{r.inputTokens ?? 0}</td>
+              <td style={{ ...td, textAlign: "right" }}>{r.outputTokens ?? 0}</td>
+              <td style={{ ...td, textAlign: "right", color: C.blu }}>{r.cacheReadTokens ?? 0}</td>
+              <td style={{ ...td, textAlign: "right" }}>{r.durationMs ?? 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const th: React.CSSProperties = { padding: "8px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase" };
+const td: React.CSSProperties = { padding: "6px 12px", color: C.tx };
 
 function Card({ label, value, color }: { label: string; value: string; color: string }) {
   return (

@@ -12,83 +12,10 @@ import { runAgent } from "../../agents/runtime.js";
 
 const router: IRouter = Router();
 
-// ─── Regenerate the email brain from all training data ────────────────────────
-async function regenerateBrain(): Promise<string> {
-  const training = await db
-    .select()
-    .from(emailTrainingTable)
-    .orderBy(desc(emailTrainingTable.createdAt))
-    .limit(200);
-
-  if (training.length === 0) return "";
-
-  const examples = training.map(t =>
-    `- [${t.action === "thumbs_up" ? "IMPORTANT" : "NOT IMPORTANT"}] From: ${t.sender} | Subject: ${t.subject}${t.reason ? ` | Reason: ${t.reason}` : ""}`
-  ).join("\n");
-
-  try {
-    let brainText = "";
-
-    // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
-    // default false keeps legacy inline call intact.
-    if (isAgentRuntimeEnabled("email")) {
-      const userMessage = `Training data:\n${examples}\n\nWrite the email priority brain.`;
-      const result = await runAgent("email", "brain-regenerate", {
-        userMessage,
-        caller: "direct",
-        meta: { sampleCount: training.length },
-      });
-      brainText = result.text;
-    } else {
-      const msg = await createTrackedMessage("email_triage", {
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
-        messages: [{
-          role: "user",
-          content: `You are analyzing Tony Diaz's (FlipIQ CEO) email training data to build a "brain" — a compact set of rules about what emails are important to Tony.
-
-TRAINING DATA:
-${examples}
-
-Based on this data, write a concise "Email Priority Brain" in markdown. Format:
-## Tony's Email Priority Rules
-### Always Important
-- (list patterns from thumbs_up data)
-
-### Never Important
-- (list patterns from thumbs_down data)
-
-### Key Senders
-- (list important senders and why)
-
-### Tony's Decision Principles
-- (2-4 high-level principles from the data)
-
-Keep it concise and actionable. This will be injected into Claude to help classify and reply to future emails.`
-        }]
-      });
-      const block = msg.content[0];
-      brainText = block.type === "text" ? block.text : "";
-    }
-
-    return brainText;
-  } catch {
-    // Fallback: generate simple rules without Claude
-    const important = training.filter(t => t.action === "thumbs_up");
-    const notImportant = training.filter(t => t.action === "thumbs_down");
-    return `## Tony's Email Priority Rules\n\n### Always Important\n${important.map(t => `- ${t.sender}: ${t.subject}${t.reason ? ` (${t.reason})` : ""}`).join("\n") || "- None yet"}\n\n### Never Important\n${notImportant.map(t => `- ${t.sender}: ${t.subject}${t.reason ? ` (${t.reason})` : ""}`).join("\n") || "- None yet"}`;
-  }
-}
-
-async function saveBrain(brain: string): Promise<void> {
-  await db
-    .insert(systemInstructionsTable)
-    .values({ section: "email_brain", content: brain })
-    .onConflictDoUpdate({
-      target: systemInstructionsTable.section,
-      set: { content: brain, updatedAt: new Date() },
-    });
-}
+// Brain regeneration moved to Coach + Train-button flow (see Phase 6 plan).
+// Every thumbs feedback writes to agent_feedback; Tony reviews and clicks Train
+// to fire Coach which proposes an updated brain (kind='memory', section='rules').
+// The legacy auto-fire-on-20-samples path was removed in Phase 7 C12.
 
 // ─── GET brain ────────────────────────────────────────────────────────────────
 router.get("/emails/brain", async (req, res): Promise<void> => {
@@ -156,21 +83,12 @@ router.post("/emails/action", async (req, res): Promise<void> => {
       snapshotExtra: { senderEmail: sender, subject, body: reason },
     }).catch(err => console.error("[emails] recordFeedback failed:", err));
 
-    // Count total training samples
+    // Brain regeneration moved to Coach Train button (Phase 6 onwards):
+    // every thumbs feedback writes to agent_feedback (above), and Tony reviews
+    // patterns + clicks Train to fire Coach. Auto-fire-on-threshold removed.
     const countResult = await db.select().from(emailTrainingTable);
     const totalSamples = countResult.length;
-
-    if (totalSamples >= 20) {
-      // Regenerate brain async (don't block response)
-      res.json({ ok: true, message: `Training saved — brain updating (${totalSamples} samples)` });
-
-      // Fire and forget brain regeneration
-      regenerateBrain()
-        .then(brain => brain ? saveBrain(brain) : Promise.resolve())
-        .catch(err => console.error("[emails] Brain regeneration failed:", err));
-    } else {
-      res.json({ ok: true, message: `Training saved (${totalSamples}/20 samples — brain regenerates at 20+)` });
-    }
+    res.json({ ok: true, message: `Training saved (${totalSamples} samples — review via Train button on Email agent settings)` });
     return;
   }
 

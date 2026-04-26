@@ -469,7 +469,7 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
     }
     case "get_calendar_range": {
       try {
-        const { getCalendar } = await import("../../lib/gcal");
+        const { getCalendar } = await import("../../lib/google-auth");
         const cal = await getCalendar();
         const events = await cal.events.list({
           calendarId: "primary",

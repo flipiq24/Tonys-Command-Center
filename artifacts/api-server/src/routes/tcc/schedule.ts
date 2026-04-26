@@ -172,7 +172,7 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
   let scopeWarning: string | undefined;
   let scopeCategory = "Other";
   if (!allDay) {
-    const scope = await checkMeetingScope(title, description).catch(() => ({ inScope: true, category: "Other" as const }));
+    const scope = await checkMeetingScope(title, description).catch(() => ({ inScope: true, category: "Other", warning: undefined as string | undefined }));
     scopeCategory = scope.category;
     if (!scope.inScope && !forceOverride) {
       res.json({

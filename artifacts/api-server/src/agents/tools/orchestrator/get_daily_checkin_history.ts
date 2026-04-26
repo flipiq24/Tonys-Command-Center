@@ -11,12 +11,11 @@ const handler: ToolHandler = async (input) => {
   return rows.map((r, i) => {
     const parts = [`${i + 1}. [${r.date}]`];
     if (r.sleepHours != null) parts.push(`Sleep: ${r.sleepHours}h`);
-    if (r.bibleRead != null) parts.push(`Bible: ${r.bibleRead ? "✓" : "✗"}`);
-    if (r.exercised != null) parts.push(`Exercise: ${r.exercised ? "✓" : "✗"}`);
-    if (r.mood) parts.push(`Mood: ${r.mood}`);
-    if (r.priority1) parts.push(`\n   P1: ${r.priority1}`);
-    if (r.priority2) parts.push(`P2: ${r.priority2}`);
-    if (r.priority3) parts.push(`P3: ${r.priority3}`);
+    if (r.bible != null) parts.push(`Bible: ${r.bible ? "✓" : "✗"}`);
+    if (r.workout != null) parts.push(`Workout: ${r.workout ? "✓" : "✗"}`);
+    if (r.journal != null) parts.push(`Journal: ${r.journal ? "✓" : "✗"}`);
+    if (r.nutrition) parts.push(`Nutrition: ${r.nutrition}`);
+    if (r.unplug != null) parts.push(`Unplug: ${r.unplug ? "✓" : "✗"}`);
     return parts.join(" | ");
   }).join("\n");
 };

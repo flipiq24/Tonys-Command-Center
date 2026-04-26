@@ -189,7 +189,7 @@ router.post("/checkin", async (req, res): Promise<void> => {
     checkin.unplug ? "Yes" : "No",
     alertSummary,
     "", // Spiritual Anchor — filled separately via /brief/spiritual-anchor
-    checkin.notes ?? "",
+    "",  // notes — column not in schema; placeholder to keep sheet shape stable
   ]).then(rowNum => {
     // Save sheet row number to DB for reference
     db.update(checkinsTable).set({ sheetRowNumber: rowNum } as any).where(eq(checkinsTable.date, today)).catch(() => {});

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, sql } from "drizzle-orm";
-import { db, eodReportsTable, callLogTable, demosTable, ideasTable } from "@workspace/db";
+import { db, eodReportsTable, callLogTable, demosTable, ideasTable, taskCompletionsTable } from "@workspace/db";
 import { planItemsTable } from "../../lib/schema-v2";
 import { linearGraphQL } from "../../lib/linear";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";

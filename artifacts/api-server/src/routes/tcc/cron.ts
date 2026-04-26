@@ -36,7 +36,7 @@ router.post("/cron/eod", verifyCron, async (_req, res) => {
   try {
     const { sendAutoEod } = await import("./eod");
     const result = await sendAutoEod();
-    res.json({ ok: true, task: "eod", ...result });
+    res.json({ task: "eod", ...result, ok: true });
   } catch (err) {
     logger.error({ err }, "Cron EOD failed");
     res.status(500).json({ error: "eod failed" });

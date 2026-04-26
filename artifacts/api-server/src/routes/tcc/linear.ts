@@ -183,7 +183,8 @@ router.post("/linear/issues", async (req, res) => {
     };
 
     if (!teamId || !title) {
-      return res.status(400).json({ error: "teamId and title are required" });
+      res.status(400).json({ error: "teamId and title are required" });
+      return;
     }
 
     const result = await linear.createIssue({
@@ -196,7 +197,10 @@ router.post("/linear/issues", async (req, res) => {
     });
 
     const issue = await result.issue;
-    if (!issue) return res.status(500).json({ error: "Issue creation failed" });
+    if (!issue) {
+      res.status(500).json({ error: "Issue creation failed" });
+      return;
+    }
 
     res.status(201).json({ id: issue.id, identifier: issue.identifier, url: issue.url, title: issue.title });
   } catch (err: any) {
@@ -225,7 +229,10 @@ router.patch("/linear/issues/:id", async (req, res) => {
     });
 
     const issue = await result.issue;
-    if (!issue) return res.status(500).json({ error: "Issue update failed" });
+    if (!issue) {
+      res.status(500).json({ error: "Issue update failed" });
+      return;
+    }
 
     res.json({ id: issue.id, identifier: issue.identifier, url: issue.url, title: issue.title });
   } catch (err: any) {

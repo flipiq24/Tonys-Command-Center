@@ -904,7 +904,32 @@ router.get("/plan/brain/order", async (req, res): Promise<void> => {
       ? recentLogs.map(l => `- Moved "${l.movedItemTitle}" above ${(l.displacedItemTitles || []).slice(0, 3).join(", ")} because: "${l.tonyExplanation}"`).join("\n")
       : "No training history yet.";
 
-    const prompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Your job is to determine the optimal work priority order within a two-tier hierarchy: Master tasks at top, Sub-tasks and Notes under their parent Master.
+    let raw = "";
+
+    // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
+    // Runtime path sends ONLY dynamic data — instructions live in the skill body
+    // (loaded as a system block by prompt-builder). Legacy path keeps the
+    // monolithic prompt for one-flag-flip rollback safety.
+    if (isAgentRuntimeEnabled("tasks")) {
+      const runtimeMessage = `BUSINESS CONTEXT:
+${brainContext || businessPlanCtx || "Sales-first business. Break-even goal: $50K/month. P0 > revenue, P1 > speed, P2 > quality."}
+
+TRAINING HISTORY (Tony's past reorder decisions):
+${trainingHistory}
+
+ACTIVE TASKS (current order, positions 1 to ${activeTasks.length}):
+${taskList}
+
+OUTPUT: compact single-line JSON only — no markdown fences, no newlines, no indentation. Format: {"priorityOrder":["uuid1","uuid2",...]}`;
+
+      const result = await runAgent("tasks", "ai-organize", {
+        userMessage: runtimeMessage,
+        caller: "direct",
+        meta: { activeCount: activeTasks.length },
+      });
+      raw = result.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
+    } else {
+      const legacyPrompt = `You are Tony Diaz's AI sprint brain for FlipIQ. Your job is to determine the optimal work priority order within a two-tier hierarchy: Master tasks at top, Sub-tasks and Notes under their parent Master.
 
 NORTH STAR METRIC: Every Acquisition Associate closes 2 deals/month. If it doesn't move an AA toward 2 deals/month, it is noise.
 
@@ -934,21 +959,10 @@ Ranking criteria within each tier:
 Return ONLY a JSON object with key "priorityOrder" — array of ALL task IDs in optimal flattened tree order (Master → its SUBs → its NOTES → next Master → ...). No markdown, no explanation:
 {"priorityOrder": ["masterA-id","masterA-sub1-id","masterA-sub2-id","masterA-note1-id","masterB-id","masterB-sub1-id",...]}`;
 
-    let raw = "";
-
-    // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
-    if (isAgentRuntimeEnabled("tasks")) {
-      const result = await runAgent("tasks", "ai-organize", {
-        userMessage: prompt,
-        caller: "direct",
-        meta: { activeCount: activeTasks.length },
-      });
-      raw = result.text.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
-    } else {
       const msg = await createTrackedMessage("plan_organize", {
         model: "claude-sonnet-4-5",
         max_tokens: 4000,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: legacyPrompt }],
       });
       const block = msg.content[0];
       if (block.type !== "text") {

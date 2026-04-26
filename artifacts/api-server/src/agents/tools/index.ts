@@ -47,11 +47,28 @@ export type ToolHandler = (
 ) => Promise<string | unknown>;
 
 // ── Tool spec passed to Anthropic ────────────────────────────────────────────
-export interface AnthropicToolSpec {
+// Custom tool spec — function tools we implement on our side.
+export interface AnthropicCustomToolSpec {
   name: string;
   description: string;
   input_schema: { type: "object"; properties: Record<string, unknown>; required?: string[] };
 }
+
+// Anthropic-native tool spec — shape varies per native tool. For server-side
+// execution, Anthropic expects `{ type: 'web_search_20250305', name: '...' }`
+// (or similar) instead of input_schema. We pass these through opaquely.
+export type AnthropicNativeToolSpec = { type: string; name: string; [k: string]: unknown };
+
+export type AnthropicToolSpec = AnthropicCustomToolSpec | AnthropicNativeToolSpec;
+
+// Map from is_native=1 tool_name → Anthropic-native spec. Update whenever we
+// register a new native tool in agent_tools (these names are Anthropic-defined).
+const NATIVE_SPEC_MAP: Record<string, AnthropicNativeToolSpec> = {
+  web_search: { type: "web_search_20250305", name: "web_search", max_uses: 5 },
+  // browse_url has no Anthropic-native equivalent yet — Claude reads URLs
+  // returned by web_search automatically. If a real fetch is needed, replace
+  // is_native=1 with a custom handler at agents/tools/orchestrator/browse_url.ts.
+};
 
 // ── Resolver — registry-row → loaded handler ─────────────────────────────────
 //
@@ -83,19 +100,21 @@ export async function resolveTool(toolName: string): Promise<{ handler: ToolHand
 
   // Native Anthropic tools (web_search, etc.) have no JS handler — they're
   // executed server-side by Anthropic. is_native=1 short-circuits resolution.
+  // The spec we pass to Anthropic must use the native format (type+name+...),
+  // NOT the custom-tool input_schema shape — Anthropic returns 400 otherwise.
   if (row.isNative === 1) {
+    const nativeSpec = NATIVE_SPEC_MAP[row.toolName];
+    if (!nativeSpec) {
+      // Unknown native tool — log and treat as missing so the skill keeps
+      // working (model just doesn't see this tool).
+      console.warn(`[resolveTool] native tool '${row.toolName}' has no entry in NATIVE_SPEC_MAP — skipping.`);
+      return null;
+    }
     const noopHandler: ToolHandler = async () => {
       throw new Error(`Tool '${toolName}' is native (Anthropic-side); should not be resolved locally.`);
     };
     CACHE.set(toolName, noopHandler);
-    return {
-      handler: noopHandler,
-      spec: {
-        name: row.toolName,
-        description: row.description || "",
-        input_schema: row.inputSchema as AnthropicToolSpec["input_schema"],
-      },
-    };
+    return { handler: noopHandler, spec: nativeSpec };
   }
 
   // Static registry first — bundle-safe, no dynamic resolution at runtime.
@@ -119,7 +138,7 @@ export async function resolveTool(toolName: string): Promise<{ handler: ToolHand
     spec: {
       name: row.toolName,
       description: row.description || "",
-      input_schema: row.inputSchema as AnthropicToolSpec["input_schema"],
+      input_schema: row.inputSchema as AnthropicCustomToolSpec["input_schema"],
     },
   };
 }
@@ -129,10 +148,13 @@ async function loadSpec(toolName: string): Promise<AnthropicToolSpec | null> {
     .where(eq(agentToolsTable.toolName, toolName))
     .limit(1);
   if (!row) return null;
+  if (row.isNative === 1) {
+    return NATIVE_SPEC_MAP[row.toolName] || null;
+  }
   return {
     name: row.toolName,
     description: row.description || "",
-    input_schema: row.inputSchema as AnthropicToolSpec["input_schema"],
+    input_schema: row.inputSchema as AnthropicCustomToolSpec["input_schema"],
   };
 }
 

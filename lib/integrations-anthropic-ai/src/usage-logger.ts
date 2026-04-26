@@ -22,6 +22,27 @@ function calcCost(tokens: number, pricePerM: number): number {
   return (tokens / 1_000_000) * pricePerM;
 }
 
+// Anthropic prompt-caching multipliers (5-minute ephemeral cache).
+// Reference: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+const CACHE_CREATION_MULTIPLIER = 1.25; // 25% premium on cache writes (5m)
+const CACHE_READ_MULTIPLIER = 0.10;     // 90% discount on cache reads
+
+// Computes accurate input cost for an Anthropic response, accounting for the
+// prompt-cache discount. `input_tokens` from the API INCLUDES `cache_read`,
+// but EXCLUDES `cache_creation` (which is added separately).
+function computeInputCost(
+  usage: { input_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } | any,
+  inputPerM: number,
+): number {
+  const inputTokens = usage?.input_tokens ?? 0;
+  const cacheRead = usage?.cache_read_input_tokens ?? 0;
+  const cacheCreation = usage?.cache_creation_input_tokens ?? 0;
+  const uncachedInput = Math.max(0, inputTokens - cacheRead);
+  return calcCost(uncachedInput, inputPerM)
+       + calcCost(cacheRead, inputPerM * CACHE_READ_MULTIPLIER)
+       + calcCost(cacheCreation, inputPerM * CACHE_CREATION_MULTIPLIER);
+}
+
 // ─── DB Logger (fire-and-forget) ─────────────────────────────────────────────
 let _db: any = null;
 let _table: any = null;
@@ -152,7 +173,10 @@ export async function createTrackedMessage(
     const { input_tokens, output_tokens } = response.usage;
     const model = typeof params.model === "string" ? params.model : "unknown";
     const pricing = MODEL_PRICING[model] ?? { inputPerM: 0, outputPerM: 0 };
-    const inputCost = calcCost(input_tokens, pricing.inputPerM);
+    // Cache-aware: apply 0.10× discount on cache_read and 1.25× premium on
+    // cache_creation. Without this, warm-cache calls were being billed at the
+    // full input rate (inflating logged cost ~15-20% vs actual Anthropic billing).
+    const inputCost = computeInputCost(response.usage, pricing.inputPerM);
     const outputCost = calcCost(output_tokens, pricing.outputPerM);
 
     logToDb({
@@ -205,14 +229,15 @@ export async function createTrackedMessage(
 export function logStreamedUsage(
   featureName: string,
   model: string,
-  usage: { input_tokens: number; output_tokens: number },
+  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number },
   durationMs: number,
   requestSummary?: string,
   responseSummary?: string,
   meta?: Record<string, unknown>,
 ): void {
   const pricing = MODEL_PRICING[model] ?? { inputPerM: 0, outputPerM: 0 };
-  const inputCost = calcCost(usage.input_tokens, pricing.inputPerM);
+  // Cache-aware (matches createTrackedMessage logic).
+  const inputCost = computeInputCost(usage, pricing.inputPerM);
   const outputCost = calcCost(usage.output_tokens, pricing.outputPerM);
 
   logToDb({

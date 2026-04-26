@@ -113,9 +113,11 @@ Analyze this call and respond in the following JSON format ONLY (no other text):
 
   try {
     // Flag-gated: AGENT_RUNTIME_INGEST=true routes through runtime.
+    // Runtime path: send only call data; analysis spec/format in skill body.
     if (isAgentRuntimeEnabled("ingest")) {
+      const runtimeMessage = `File: "${fileName}"\nContact: "${contactName}"${transcriptContent ? `\n\nTRANSCRIPT (excerpt):\n${transcriptContent.substring(0, 10000)}` : "\n\n(No transcript text — metadata-only analysis.)"}`;
       const result = await runAgent("ingest", "transcribe-plaud", {
-        userMessage: prompt,
+        userMessage: runtimeMessage,
         caller: "direct",
       });
       rawText = result.text;

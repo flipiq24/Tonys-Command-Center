@@ -40,7 +40,28 @@ async function buildEodReport(log: any): Promise<{ reportText: string; callsMade
 
   let reportText = "";
   try {
-    const eodPreviewPrompt = `Generate an EOD (End of Day) report for Tony Diaz, CEO of FlipIQ.
+    // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
+    // Runtime path sends only dynamic data; format/voice rules live in skill body.
+    if (isAgentRuntimeEnabled("brief")) {
+      const runtimeMessage = `Today's Data:
+- Calls Made: ${callsMade}
+- Demos Booked: ${demosBooked}
+- Tasks Completed: ${tasksCompleted}
+
+Call Log:
+${callList}
+
+Tasks Completed:
+${taskList}`;
+
+      const result = await runAgent("brief", "eod-preview", {
+        userMessage: runtimeMessage,
+        caller: "direct",
+        meta: { callsMade, demosBooked, tasksCompleted },
+      });
+      reportText = result.text;
+    } else {
+      const eodPreviewPrompt = `Generate an EOD (End of Day) report for Tony Diaz, CEO of FlipIQ.
 
 Today's Data:
 - Calls Made: ${callsMade}
@@ -60,16 +81,6 @@ Write a brief EOD report (3-4 paragraphs) in Tony's voice:
 4. One motivating closing thought
 
 Keep it honest, direct, and actionable.`;
-
-    // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
-    if (isAgentRuntimeEnabled("brief")) {
-      const result = await runAgent("brief", "eod-preview", {
-        userMessage: eodPreviewPrompt,
-        caller: "direct",
-        meta: { callsMade, demosBooked, tasksCompleted },
-      });
-      reportText = result.text;
-    } else {
       const message = await createTrackedMessage("eod_preview", {
         model: "claude-sonnet-4-6",
         max_tokens: 8192,
@@ -236,7 +247,22 @@ export async function sendAutoEod(): Promise<{ ok: boolean; alreadySent?: boolea
   // Build the recipient-specific user prompts. The plan calls for one
   // skill (eod-report) with a `recipient` param — both Tony's and Ethan's
   // EODs use the same skill but different user prompts.
-  const tonyPrompt = `Generate Tony Diaz's EOD report for ${today} (FlipIQ CEO).
+  //
+  // For each recipient: legacy variant has full instructions; runtime variant
+  // has only dynamic data (skill body has the format/voice rules).
+
+  // ── Tony's EOD ──
+  const tonyDataOnly = `Recipient: Tony (date ${today}).
+
+Today's Data:
+- Calls made: ${callsMade}
+- Demos booked/completed: ${demosBooked}
+- Emails sent: ${emailsSent}
+- Tasks completed: ${tasksCompleted}
+- Tasks completed today:\n${taskList}
+- Ideas submitted: ${ideasToday.length > 0 ? ideasToday.join(", ") : "None"}`;
+
+  const tonyPromptLegacy = `Generate Tony Diaz's EOD report for ${today} (FlipIQ CEO).
 
 Today's Data:
 - Calls made: ${callsMade}
@@ -252,7 +278,8 @@ Format as a brief EOD (4 paragraphs max):
 3. What needs follow-up tomorrow
 4. One closing thought in Tony's voice — direct and honest.`;
 
-  const ethanPrompt = `Generate Ethan's EOD brief for ${today}. Ethan is Tony Diaz's AI chief of staff for FlipIQ.
+  // ── Ethan's EOD ──
+  const ethanDataOnly = `Recipient: Ethan (date ${today}).
 
 Tony's Activity:
 - Calls: ${callsMade}, Demos: ${demosBooked}, Emails: ${emailsSent}
@@ -269,7 +296,11 @@ Tony's Overrides Today:
 ${overridesToday.length > 0 ? overridesToday.map(o => `- ${o}`).join("\n") : "- No overrides today ✓"}
 
 Pitch/Demo Feedback:
-${demoFeedback.length > 0 ? demoFeedback.join("\n\n---\n\n") : "- No demos analyzed today"}
+${demoFeedback.length > 0 ? demoFeedback.join("\n\n---\n\n") : "- No demos analyzed today"}`;
+
+  const ethanPromptLegacy = `Generate Ethan's EOD brief for ${today}. Ethan is Tony Diaz's AI chief of staff for FlipIQ.
+
+${ethanDataOnly}
 
 Format Ethan's brief with:
 1. Tony's activity summary
@@ -280,11 +311,17 @@ Format Ethan's brief with:
 6. Accountability score: ${completionRate}%
 7. Dynamic action items for Ethan tomorrow`;
 
-  // Helper: same skill ("eod-report") with a recipient meta hint, two prompts
-  async function generateEodFor(recipient: "tony" | "ethan", userPrompt: string): Promise<string> {
+  // Helper: same skill ("eod-report") with a recipient meta hint.
+  // runtimePrompt = data-only (skill body has format/voice).
+  // legacyPrompt = full prompt with instructions.
+  async function generateEodFor(
+    recipient: "tony" | "ethan",
+    runtimePrompt: string,
+    legacyPrompt: string,
+  ): Promise<string> {
     if (isAgentRuntimeEnabled("brief")) {
       const result = await runAgent("brief", "eod-report", {
-        userMessage: userPrompt,
+        userMessage: runtimePrompt,
         caller: "direct",
         meta: { recipient, date: today },
       });
@@ -293,7 +330,7 @@ Format Ethan's brief with:
     const msg = await createTrackedMessage("eod_report", {
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
-      messages: [{ role: "user", content: userPrompt }],
+      messages: [{ role: "user", content: legacyPrompt }],
     });
     const block = msg.content.find(b => b.type === "text");
     return block?.type === "text" ? block.text : "";
@@ -301,14 +338,14 @@ Format Ethan's brief with:
 
   let tonyReportText = "";
   try {
-    tonyReportText = await generateEodFor("tony", tonyPrompt);
+    tonyReportText = await generateEodFor("tony", tonyDataOnly, tonyPromptLegacy);
   } catch {
     tonyReportText = `EOD Report — ${today}\n\nCalls: ${callsMade} | Demos: ${demosBooked} | Tasks: ${tasksCompleted}\n\n${callList}`;
   }
 
   let ethanReportText = "";
   try {
-    ethanReportText = await generateEodFor("ethan", ethanPrompt);
+    ethanReportText = await generateEodFor("ethan", ethanDataOnly, ethanPromptLegacy);
   } catch {
     ethanReportText = `Ethan's EOD Brief — ${today}\n\nAccountability: ${completionRate}%\nNo-due-date items: ${noDueDateItems.length}\nOut-of-sequence: ${outOfSequenceItems.length}\nOverrides: ${overridesToday.length}`;
   }

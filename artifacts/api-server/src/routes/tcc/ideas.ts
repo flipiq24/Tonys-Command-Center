@@ -128,9 +128,18 @@ Return ONLY the JSON object, no markdown, no explanation.`;
   let raw = "";
 
   // Flag-gated: AGENT_RUNTIME_IDEAS=true routes through runtime.
+  // Runtime path: send only dynamic data; classification rules in skill body.
   if (isAgentRuntimeEnabled("ideas")) {
+    const runtimeMessage = `BUSINESS CONTEXT:
+${liveContext ? `LIVE BUSINESS DOCUMENTS:\n${liveContext}` : BUSINESS_PLAN}
+
+RECENT IDEAS (for context):
+${recentList}
+
+NEW IDEA: "${text}"`;
+
     const result = await runAgent("ideas", "classify", {
-      userMessage: userPrompt,
+      userMessage: runtimeMessage,
       caller: "direct",
       meta: { ideaText: text.slice(0, 80) },
     });
@@ -240,9 +249,11 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
         let pushbackRaw = "";
 
         // Flag-gated: AGENT_RUNTIME_IDEAS=true routes through runtime.
+        // Runtime path sends only data; pushback heuristics are in the skill body.
         if (isAgentRuntimeEnabled("ideas")) {
+          const runtimeMessage = `Business priorities:\n${combinedContext}\n\nNew idea: "${text}"`;
           const result = await runAgent("ideas", "pushback", {
-            userMessage: pushbackPrompt,
+            userMessage: runtimeMessage,
             caller: "direct",
             meta: { ideaText: text.slice(0, 80) },
           });
@@ -561,12 +572,12 @@ Set coOwner to whoever should support the primary owner based on idea domain and
     let raw = "";
 
     // Flag-gated: AGENT_RUNTIME_IDEAS=true routes through runtime.
+    // Runtime path sends only data — task-creation rules (categories,
+    // subcategories, owners, format) live in the skill body (loaded as L3).
     if (isAgentRuntimeEnabled("ideas")) {
-      // Combine system + user inputs for the runtime call. The runtime supplies
-      // its own L1+L2+L3 system layers; the legacy system body is appended to
-      // the user message to preserve the same instruction set.
+      const runtimeMessage = `Business context:\n${bizContext}\n\n${userPrompt}`;
       const result = await runAgent("ideas", "generate-task", {
-        userMessage: `${legacySystem}\n\n---\n\n${userPrompt}`,
+        userMessage: runtimeMessage,
         caller: "direct",
         meta: { ideaCategory: category, urgency },
       });

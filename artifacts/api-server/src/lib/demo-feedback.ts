@@ -54,9 +54,11 @@ Keep it actionable and under 300 words.`;
     let analysisText: string | null = null;
 
     // Flag-gated: AGENT_RUNTIME_INGEST=true routes through runtime.
+    // Runtime path: send only event data; coaching framework in skill body.
     if (isAgentRuntimeEnabled("ingest")) {
+      const runtimeMessage = `Demo: "${eventName}" on ${eventDate}. Recording: "${recording.name}".${transcriptContent ? `\n\nTRANSCRIPT:\n${transcriptContent.substring(0, 8000)}` : "\n\n(No transcript available — metadata-only analysis.)"}`;
       const result = await runAgent("ingest", "analyze-demo-feedback", {
-        userMessage: userPrompt,
+        userMessage: runtimeMessage,
         caller: "direct",
         meta: { eventName, eventDate, hasTranscript: !!transcriptContent },
       });

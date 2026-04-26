@@ -257,33 +257,32 @@ router.post("/emails/action", async (req, res): Promise<void> => {
     const { notes } = parsed.data;
     let draft = "";
     try {
-      const userMessage = `Draft a reply to this email:
+      let rawText = "";
+
+      // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
+      // default false keeps legacy inline prompt + brain context.
+      if (isAgentRuntimeEnabled("email")) {
+        // Runtime path: send only dynamic data — voice/format instructions live
+        // in the skill body. Brain content stays in the user message because
+        // email-brain → memory-section migration lands in a later phase.
+        const runtimeMessage = `Reply context — From: ${sender} | Subject: ${subject}${reason ? ` | Context: ${reason}` : ""}${notes ? ` | Tony's notes: ${notes}` : ""}${brainContext
+          ? `\n\nTONY'S EMAIL BRAIN (learned from training):\n${brainRow?.content || ""}`
+          : ""}`;
+
+        const result = await runAgent("email", "reply-draft", {
+          userMessage: runtimeMessage,
+          caller: "direct",
+          meta: { sender, subject, hasReason: !!reason, hasNotes: !!notes },
+        });
+        rawText = result.text;
+      } else {
+        const userMessage = `Draft a reply to this email:
 From: ${sender}
 Subject: ${subject}
 ${reason ? `\nContext: ${reason}` : ""}
 ${notes ? `\nAdditional notes from Tony: ${notes}` : ""}
 
 Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Plain text only.`;
-
-      let rawText = "";
-
-      // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
-      // default false keeps legacy inline prompt + brain context.
-      if (isAgentRuntimeEnabled("email")) {
-        // The brain content is fed via the user message during transition
-        // because the email-brain memory section migration lands in a later
-        // step. This preserves byte-equivalent behavior at first flag flip.
-        const userMessageWithBrain = brainContext
-          ? `${userMessage}\n\nTONY'S EMAIL BRAIN (learned from training):\n${brainRow?.content || ""}`
-          : userMessage;
-
-        const result = await runAgent("email", "reply-draft", {
-          userMessage: userMessageWithBrain,
-          caller: "direct",
-          meta: { sender, subject, hasReason: !!reason, hasNotes: !!notes },
-        });
-        rawText = result.text;
-      } else {
         const message = await createTrackedMessage("email_action", {
           model: "claude-sonnet-4-6",
           max_tokens: 8192,

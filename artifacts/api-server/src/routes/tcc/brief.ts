@@ -494,9 +494,19 @@ Rules:
     let raw = "";
 
     // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
+    // Runtime path sends only dynamic data (date + calendar + linear); team
+    // roster, format spec, and rules live in the skill body.
     if (isAgentRuntimeEnabled("brief")) {
+      const runtimeMessage = `Today is ${todayFormatted}.
+
+CALENDAR TODAY:
+${calContext}
+
+OPEN LINEAR ISSUES:
+${linearContext}`;
+
       const result = await runAgent("brief", "daily", {
-        userMessage: `${dailySystem}\n\n---\n\n${dailyUserPrompt}`,
+        userMessage: runtimeMessage,
         caller: "direct",
         meta: { date: today },
       });
@@ -772,9 +782,19 @@ Rules:
     let anchor = "Commit to your vision today. Start with your 10 calls.";
 
     // Flag-gated: AGENT_RUNTIME_BRIEF=true routes through runtime.
+    // Runtime path sends only dynamic data — voice/format rules live in the
+    // skill body.
     if (isAgentRuntimeEnabled("brief")) {
+      const runtimeMessage = `Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Los_Angeles" })}.
+
+Tony's spiritual content / Daily Task doc:
+${spiritualContent.slice(0, 1200)}
+
+Yesterday's performance: ${perfSummary || "no data yet"}
+${engagementNote}`;
+
       const result = await runAgent("brief", "spiritual-anchor", {
-        userMessage: userPrompt,
+        userMessage: runtimeMessage,
         caller: "direct",
         meta: { engagementLevel },
       });

@@ -16,19 +16,22 @@ const router: IRouter = Router();
 // 90-day plan and business plan ingestion (deduplicates the prior :185/:286
 // near-duplicate sites). Skill switches based on `kind`.
 async function summarizeDocForContext(docText: string, kind: "90_day_plan" | "business_plan", trim = 3000): Promise<string> {
-  const userPrompt = kind === "90_day_plan"
-    ? `Summarize this 90-day business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, trim)}`
-    : `Summarize this business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, trim)}`;
   const skillName = kind === "90_day_plan" ? "summarize-90day" : "summarize-business-plan";
 
   if (isAgentRuntimeEnabled("ingest")) {
+    // Runtime path: send only the document content; summarization rules are in
+    // the skill body.
     const result = await runAgent("ingest", skillName, {
-      userMessage: userPrompt,
+      userMessage: docText.substring(0, trim),
       caller: "direct",
       meta: { docKind: kind, docLength: docText.length },
     });
     return result.text || docText.substring(0, 500);
   }
+
+  const userPrompt = kind === "90_day_plan"
+    ? `Summarize this 90-day business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, trim)}`
+    : `Summarize this business plan in 3-4 concise sentences for an AI context window:\n\n${docText.substring(0, trim)}`;
 
   const msg = await createTrackedMessage("sheets_sync", {
     model: "claude-haiku-4-5",

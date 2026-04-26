@@ -1148,7 +1148,29 @@ async function brainScoreNewTask(title: string, category: string, priority: stri
       ? recentLogs.map(l => `- Moved "${l.movedItemTitle}" above: "${(l.displacedItemTitles || []).slice(0, 2).join(", ")}" because: "${l.tonyExplanation}"`).join("\n")
       : "";
 
-    const prompt = `You are Tony Diaz's sprint brain for FlipIQ. A new task was just added from Linear and needs to be inserted at the right priority position.
+    let raw = "";
+
+    // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
+    // Runtime path sends only dynamic data — instructions live in skill body.
+    if (isAgentRuntimeEnabled("tasks")) {
+      const runtimeMessage = `NEW TASK: "${title}" | Category: ${category} | Priority: ${priority || "P1"}
+
+BRAIN CONTEXT: ${brainContext || "Sales-first business. P0 > revenue, P1 > speed, P2 > quality."}
+
+TRAINING PATTERNS:
+${trainingContext || "None yet."}
+
+CURRENT TASK ORDER (index: task):
+${taskList.substring(0, 2000)}`;
+
+      const result = await runAgent("tasks", "score-new-task", {
+        userMessage: runtimeMessage,
+        caller: "direct",
+        meta: { taskTitle: title, category, priority },
+      });
+      raw = result.text.trim();
+    } else {
+      const prompt = `You are Tony Diaz's sprint brain for FlipIQ. A new task was just added from Linear and needs to be inserted at the right priority position.
 
 NEW TASK: "${title}" | Category: ${category} | Priority: ${priority || "P1"}
 
@@ -1167,17 +1189,6 @@ At which index (0 = top) should the new task be inserted? Consider:
 
 Return ONLY a JSON object: {"insertAt": <number>}`;
 
-    let raw = "";
-
-    // Flag-gated: AGENT_RUNTIME_TASKS=true routes through runtime.
-    if (isAgentRuntimeEnabled("tasks")) {
-      const result = await runAgent("tasks", "score-new-task", {
-        userMessage: prompt,
-        caller: "direct",
-        meta: { taskTitle: title, category, priority },
-      });
-      raw = result.text.trim();
-    } else {
       const msg = await createTrackedMessage("plan_organize", {
         model: "claude-haiku-4-5",
         max_tokens: 100,

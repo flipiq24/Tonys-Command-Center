@@ -155,8 +155,14 @@ Keep the body to 3-5 sentences max.`;
     // Flag-gated: AGENT_RUNTIME_EMAIL=true routes through runtime;
     // default false keeps legacy inline prompt intact.
     if (isAgentRuntimeEnabled("email")) {
+      // Runtime path: send only dynamic data — voice/format instructions live
+      // in the skill body. JSON output format is in the skill body too.
+      const runtimeMessage = replyToSnippet
+        ? `REPLY context — Recipient: ${recipient}\nOriginal subject: "${subject || "No subject"}"\nOriginal snippet: "${replyToSnippet}"${context ? `\nContext: ${context}` : ""}`
+        : `NEW email — Recipient: ${recipient}${subject ? `\nSubject hint: "${subject}"` : ""}${context ? `\nContext: ${context}` : ""}`;
+
       const result = await runAgent("email", "compose-new", {
-        userMessage: userPrompt,
+        userMessage: runtimeMessage,
         caller: "direct",
         meta: { recipient, hasReplyToSnippet: !!replyToSnippet },
       });

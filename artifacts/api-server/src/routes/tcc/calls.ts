@@ -64,13 +64,12 @@ router.post("/calls", async (req, res): Promise<void> => {
 
       // Flag-gated: AGENT_RUNTIME_CALLS=true routes through the new agent
       // runtime; default false keeps the legacy inline prompt intact.
+      // Runtime path sends only dynamic data; voice/format rules in skill body.
       if (isAgentRuntimeEnabled("calls")) {
-        const userMessage = `Tony Diaz (FlipIQ CEO) tried to call ${contactName} but got no answer.
-Tony's instructions: "${instructions}"
-Draft a brief, professional follow-up email (3-4 sentences max). Plain text only, no subject line.`;
+        const runtimeMessage = `Call attempt — ${contactName} (no answer).\nTony's instructions: "${instructions}"`;
 
         const result = await runAgent("calls", "follow-up-draft", {
-          userMessage,
+          userMessage: runtimeMessage,
           caller: "direct",
           meta: { contactName, callType: type, callId: call.id },
         });

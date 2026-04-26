@@ -70,9 +70,10 @@ ${context}`;
     let briefText = "Unable to generate brief.";
 
     // Flag-gated: AGENT_RUNTIME_CONTACTS=true routes through runtime.
+    // Runtime path sends only contact data; brief format/sections in skill body.
     if (isAgentRuntimeEnabled("contacts")) {
       const result = await runAgent("contacts", "pre-call-brief", {
-        userMessage: userPrompt,
+        userMessage: context.trim() || `Contact: ${contact.name}`,
         caller: "direct",
         meta: { contactId },
       });

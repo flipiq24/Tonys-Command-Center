@@ -51,10 +51,22 @@ async function loadGlobalLayer(): Promise<string> {
 }
 
 async function loadAgentLayer(agent: string): Promise<string> {
+  // L2 loads behavior content: SOUL (voice), USER (context/preferences),
+  // IDENTITY (model/version metadata), TOOLS (tool-use guidelines).
+  //
+  // Intentionally excluded:
+  //   - 'agents' (AGENTS.md): documented as "slim INDEX. NOT loaded into prompts
+  //     at runtime" by every AGENTS.md file itself. Skill routing happens via the
+  //     `agent_skills` registry, not via the markdown index. Schemas that SOUL.md
+  //     references as "match the schema in AGENTS.md" are duplicated in each skill
+  //     body file (loaded as L3), so the model still sees them.
+  //
+  // 'tools' kept here for now (Phase 7 C3 will surgically split it: extract
+  // guidelines into a memory section, drop the schema duplication separately).
   const rows = await db.select().from(agentMemoryEntriesTable)
     .where(and(
       eq(agentMemoryEntriesTable.agent, agent),
-      inArray(agentMemoryEntriesTable.kind, ["soul", "user", "identity", "agents", "tools"]),
+      inArray(agentMemoryEntriesTable.kind, ["soul", "user", "identity", "tools"]),
     ));
   if (rows.length === 0) return "";
   return rows.map(r => `# ${r.kind.toUpperCase()}\n\n${r.content}`).join("\n\n---\n\n");

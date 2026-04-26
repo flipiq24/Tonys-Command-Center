@@ -10,6 +10,7 @@
 
 import { db, agentToolsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { HANDLER_REGISTRY } from "./registry.js";
 
 // ── The handler contract — every tool wrapper exports a function of this shape ──
 //
@@ -97,14 +98,19 @@ export async function resolveTool(toolName: string): Promise<{ handler: ToolHand
     };
   }
 
-  // Dynamic import. Handler files live under src/agents/tools/<handler_path>.
-  // Default export must be a ToolHandler.
-  const mod = await import(`./${row.handlerPath}.js`).catch((err) => {
-    throw new Error(`Tool '${toolName}' handler import failed (${row.handlerPath}): ${err instanceof Error ? err.message : err}`);
-  });
-  const handler = (mod.default || mod[toolName]) as ToolHandler | undefined;
-  if (typeof handler !== "function") {
-    throw new Error(`Tool '${toolName}' module ${row.handlerPath} has no default export of type ToolHandler`);
+  // Static registry first — bundle-safe, no dynamic resolution at runtime.
+  // Falls back to dynamic import only if a tool is registered in the DB but
+  // hasn't been added to the static registry yet (development convenience).
+  let handler = HANDLER_REGISTRY.get(row.handlerPath);
+
+  if (!handler) {
+    const mod = await import(`./${row.handlerPath}.js`).catch((err) => {
+      throw new Error(`Tool '${toolName}' handler not in static registry AND dynamic import failed (${row.handlerPath}): ${err instanceof Error ? err.message : err}. Add it to tools/registry.ts.`);
+    });
+    handler = (mod.default || mod[toolName]) as ToolHandler | undefined;
+    if (typeof handler !== "function") {
+      throw new Error(`Tool '${toolName}' module ${row.handlerPath} has no default export of type ToolHandler`);
+    }
   }
 
   CACHE.set(toolName, handler);

@@ -296,4 +296,45 @@ router.put("/api/agents/:agent/skills/:skill/model-override", async (req, res): 
   res.json({ ok: true });
 });
 
+// ── Direct skill invocation (for fixture replay scripts) ─────────────────────
+// Lets operator scripts run an agent skill via HTTP without importing the SDK.
+// Used by lib/db/scripts/replay-classification-fixture.mjs to measure accuracy
+// of the orchestrator's classify skill (R4 fixture gate). Does NOT need any
+// AGENT_RUNTIME_<X> flag — this route always uses runAgent directly.
+const InvokeBody = z.object({
+  user_message: z.string().min(1),
+  caller: z.enum(["direct", "orchestrator", "coach", "cron"]).optional(),
+});
+
+router.post("/api/agents/:agent/skills/:skill/invoke", async (req, res): Promise<void> => {
+  const agent = req.params.agent;
+  const skillName = req.params.skill;
+  if (!agent || !skillName) { res.status(400).json({ error: "agent + skill required" }); return; }
+
+  const parsed = InvokeBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  // Lazy import so this file doesn't pull the runtime when only feedback APIs
+  // are needed.
+  const { runAgent } = await import("../../agents/runtime.js");
+
+  try {
+    const result = await runAgent(agent, skillName, {
+      userMessage: parsed.data.user_message,
+      caller: parsed.data.caller || "direct",
+      meta: { invoked_via: "api/agents/skills/invoke" },
+    });
+    res.json({
+      ok: true,
+      text: result.text,
+      turns: result.turns,
+      tool_calls: result.toolCalls,
+      run_id: result.runId,
+      resolved: result.resolved,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

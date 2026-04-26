@@ -19,7 +19,7 @@ const FeedbackBody = z.object({
   context_snapshot: z.record(z.string(), z.unknown()).default({}),
 });
 
-router.post("/api/feedback", async (req, res): Promise<void> => {
+router.post("/feedback", async (req, res): Promise<void> => {
   const parsed = FeedbackBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ ok: false, error: parsed.error.message });
@@ -45,7 +45,7 @@ router.post("/api/feedback", async (req, res): Promise<void> => {
   res.json({ ok: true, recorded: true, feedback_id: result.feedbackId });
 });
 
-router.get("/api/feedback/health", (_req, res): void => {
+router.get("/feedback/health", (_req, res): void => {
   res.json({ ok: true, pipeline_enabled: isFeedbackPipelineEnabled() });
 });
 

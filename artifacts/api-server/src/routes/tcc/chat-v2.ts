@@ -29,7 +29,7 @@ const PostBody = z.object({
   content: z.string().min(1),
 });
 
-router.post("/api/v2/chat/threads/:threadId/messages", async (req, res): Promise<void> => {
+router.post("/v2/chat/threads/:threadId/messages", async (req, res): Promise<void> => {
   const threadId = req.params.threadId;
   if (!threadId) { res.status(400).json({ error: "threadId required" }); return; }
 

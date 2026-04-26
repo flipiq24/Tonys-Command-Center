@@ -13,7 +13,7 @@ import { snapshotFlags } from "../../agents/flags.js";
 const router: IRouter = Router();
 
 // ── List specialists (sidebar) ───────────────────────────────────────────────
-router.get("/api/agents", async (_req, res): Promise<void> => {
+router.get("/agents", async (_req, res): Promise<void> => {
   // Distinct agents from agent_skills + flag state
   const rows = await db.selectDistinct({ agent: agentSkillsTable.agent }).from(agentSkillsTable);
   const flags = snapshotFlags();
@@ -27,7 +27,7 @@ router.get("/api/agents", async (_req, res): Promise<void> => {
 });
 
 // ── Training state for one agent (drives Train button + badge) ───────────────
-router.get("/api/agents/:agent/training-state", async (req, res): Promise<void> => {
+router.get("/agents/:agent/training-state", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
   const state = await getTrainingState(agent);
@@ -40,7 +40,7 @@ const StartBody = z.object({
   started_by: z.string().email().optional(),
 });
 
-router.post("/api/agents/:agent/training/start", async (req, res): Promise<void> => {
+router.post("/agents/:agent/training/start", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
   const parsed = StartBody.safeParse(req.body);
@@ -96,7 +96,7 @@ router.post("/api/agents/:agent/training/start", async (req, res): Promise<void>
 });
 
 // ── List unconsumed feedback for the Train modal ─────────────────────────────
-router.get("/api/agents/:agent/feedback", async (req, res): Promise<void> => {
+router.get("/agents/:agent/feedback", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
   const showConsumed = req.query.consumed === "true";
@@ -112,7 +112,7 @@ router.get("/api/agents/:agent/feedback", async (req, res): Promise<void> => {
 });
 
 // ── List proposals ───────────────────────────────────────────────────────────
-router.get("/api/agents/:agent/proposals", async (req, res): Promise<void> => {
+router.get("/agents/:agent/proposals", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
   const status = (req.query.status as string) || "pending";
@@ -131,7 +131,7 @@ const DecisionBody = z.object({
   rejection_reason: z.string().optional(),
 });
 
-router.post("/api/proposals/:proposalId/approve", async (req, res): Promise<void> => {
+router.post("/proposals/:proposalId/approve", async (req, res): Promise<void> => {
   const id = req.params.proposalId;
   if (!id) { res.status(400).json({ error: "proposalId required" }); return; }
   const parsed = DecisionBody.safeParse(req.body);
@@ -145,7 +145,7 @@ router.post("/api/proposals/:proposalId/approve", async (req, res): Promise<void
   }
 });
 
-router.post("/api/proposals/:proposalId/reject", async (req, res): Promise<void> => {
+router.post("/proposals/:proposalId/reject", async (req, res): Promise<void> => {
   const id = req.params.proposalId;
   if (!id) { res.status(400).json({ error: "proposalId required" }); return; }
   const parsed = DecisionBody.safeParse(req.body);
@@ -156,7 +156,7 @@ router.post("/api/proposals/:proposalId/reject", async (req, res): Promise<void>
 });
 
 // ── Memory inspection (read-only Phase 0; edit lands Phase 6) ────────────────
-router.get("/api/agents/:agent/memory", async (req, res): Promise<void> => {
+router.get("/agents/:agent/memory", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
 
@@ -173,7 +173,7 @@ router.get("/api/agents/:agent/memory", async (req, res): Promise<void> => {
   res.json({ entries: rows });
 });
 
-router.get("/api/agents/:agent/memory/:section", async (req, res): Promise<void> => {
+router.get("/agents/:agent/memory/:section", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   const section = req.params.section;
   if (!agent || !section) { res.status(400).json({ error: "agent + section required" }); return; }
@@ -196,7 +196,7 @@ const MemoryWriteBody = z.object({
   updated_by: z.string().optional(),
 });
 
-router.put("/api/agents/:agent/memory/:section", async (req, res): Promise<void> => {
+router.put("/agents/:agent/memory/:section", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   const section = req.params.section;
   if (!agent || !section) { res.status(400).json({ error: "agent + section required" }); return; }
@@ -246,7 +246,7 @@ router.put("/api/agents/:agent/memory/:section", async (req, res): Promise<void>
 });
 
 // ── Run history per agent (Phase 6 dashboard table) ─────────────────────────
-router.get("/api/agents/:agent/runs", async (req, res): Promise<void> => {
+router.get("/agents/:agent/runs", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
 
@@ -266,7 +266,7 @@ router.get("/api/agents/:agent/runs", async (req, res): Promise<void> => {
 });
 
 // ── Skill registry per agent (read-only Phase 6; model_override edit later) ──
-router.get("/api/agents/:agent/skills", async (req, res): Promise<void> => {
+router.get("/agents/:agent/skills", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   if (!agent) { res.status(400).json({ error: "agent required" }); return; }
 
@@ -281,7 +281,7 @@ const SkillOverrideBody = z.object({
   model_override: z.string().nullable(),
 });
 
-router.put("/api/agents/:agent/skills/:skill/model-override", async (req, res): Promise<void> => {
+router.put("/agents/:agent/skills/:skill/model-override", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   const skillName = req.params.skill;
   if (!agent || !skillName) { res.status(400).json({ error: "agent + skill required" }); return; }
@@ -306,7 +306,7 @@ const InvokeBody = z.object({
   caller: z.enum(["direct", "orchestrator", "coach", "cron"]).optional(),
 });
 
-router.post("/api/agents/:agent/skills/:skill/invoke", async (req, res): Promise<void> => {
+router.post("/agents/:agent/skills/:skill/invoke", async (req, res): Promise<void> => {
   const agent = req.params.agent;
   const skillName = req.params.skill;
   if (!agent || !skillName) { res.status(400).json({ error: "agent + skill required" }); return; }

@@ -607,10 +607,10 @@ export function BrainView() {
     }
   };
 
-  const handleAiOrganize = async () => {
+  const handleAiOrganize = async (mode: "top50" | "all" = "top50") => {
     setOrganizing(true);
     try {
-      const data = await get<{ tasks: BrainTask[] }>("/plan/brain/order");
+      const data = await get<{ tasks: BrainTask[]; mode?: string; organizedCount?: number; totalCount?: number }>(`/plan/brain/order?mode=${mode}`);
       if (!data?.tasks?.length) return;
       const ordered = data.tasks;
       const preview: AiPreviewItem[] = ordered.map((t, i) => {
@@ -703,8 +703,9 @@ export function BrainView() {
 
         {/* Actions */}
         <button
-          onClick={handleAiOrganize}
+          onClick={() => handleAiOrganize("top50")}
           disabled={organizing || loading}
+          title="Re-rank top 50 active tasks (fast, ~60-90s)"
           style={{
             padding: "7px 16px", borderRadius: 9, border: "none",
             background: organizing ? (C.brd ?? "#e2e8f0") : "#3b82f6",
@@ -712,8 +713,25 @@ export function BrainView() {
             fontSize: 12, fontWeight: 700, cursor: organizing ? "wait" : "pointer", fontFamily: F,
           }}
         >
-          {organizing ? "Thinking…" : "🤖 AI Organize"}
+          {organizing ? "Thinking…" : "🤖 AI Organize · Top 50"}
         </button>
+        {tasks.length > 50 && (
+          <button
+            onClick={() => handleAiOrganize("all")}
+            disabled={organizing || loading}
+            title={`Re-rank ALL ${tasks.length} active tasks (slower — may take 2-4 minutes)`}
+            style={{
+              padding: "7px 12px", borderRadius: 9,
+              border: `1px solid ${C.mut ?? "#94a3b8"}`,
+              background: "transparent",
+              color: C.mut ?? "#94a3b8",
+              fontSize: 11, fontWeight: 600, cursor: organizing ? "not-allowed" : "pointer", fontFamily: F,
+              opacity: organizing ? 0.45 : 1,
+            }}
+          >
+            🤖 All {tasks.length}
+          </button>
+        )}
         <button
           onClick={() => setShowContext(s => !s)}
           style={{

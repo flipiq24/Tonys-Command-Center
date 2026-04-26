@@ -1841,10 +1841,10 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
     downloadBlob(`master-tasks${scope}-${stamp}.csv`, "text/csv;charset=utf-8", csv);
   }
 
-  async function runAiOrganize() {
+  async function runAiOrganize(mode: "top50" | "all" = "top50") {
     setOrganizing(true);
     try {
-      const data = await get<{ tasks: (PlanItem & { sprintId?: string })[] }>("/plan/brain/order");
+      const data = await get<{ tasks: (PlanItem & { sprintId?: string })[]; mode?: string; organizedCount?: number; totalCount?: number }>(`/plan/brain/order?mode=${mode}`);
       if (data.tasks && data.tasks.length > 0) {
         const newOrderWithIds = recalcSprintIds(data.tasks.map((t, i) => ({ ...t, priorityOrder: i })));
         setOrganizePreview({ newOrder: newOrderWithIds, currentOrder: tasks });
@@ -2065,8 +2065,9 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
           </span>
           <span style={{ fontSize: 10, color: C.mut, fontFamily: F }}>⠿ drag rows to reorder</span>
           <button
-            onClick={runAiOrganize}
+            onClick={() => runAiOrganize("top50")}
             disabled={organizing || loading}
+            title="Re-rank the top 50 active tasks by current priority — faster, stays well within Vercel's 300s function limit."
             style={{
               padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.blu}`,
               background: organizing ? C.bluBg : C.bluBg, color: C.blu,
@@ -2074,7 +2075,21 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
               display: "flex", alignItems: "center", gap: 5,
             }}
           >
-            {organizing ? "🧠 Thinking…" : "🧠 AI Organize"}
+            {organizing ? "🧠 Thinking…" : "🧠 AI Organize · Top 50"}
+          </button>
+          <button
+            onClick={() => runAiOrganize("all")}
+            disabled={organizing || loading || tasks.length <= 50}
+            title={tasks.length <= 50 ? "Only ${tasks.length} active tasks — Top 50 covers everything" : `Re-rank ALL ${tasks.length} active tasks (slower — may take 2-4 minutes for 200+ tasks)`}
+            style={{
+              padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.mut}`,
+              background: "transparent", color: C.mut,
+              fontSize: 11, fontWeight: 600, cursor: (organizing || loading || tasks.length <= 50) ? "not-allowed" : "pointer", fontFamily: F,
+              display: "flex", alignItems: "center", gap: 4,
+              opacity: (organizing || loading || tasks.length <= 50) ? 0.45 : 1,
+            }}
+          >
+            🧠 Organize all {tasks.length}
           </button>
           <button
             onClick={exportTasksToCsv}

@@ -862,17 +862,31 @@ Write a concise 2-3 sentence reflection (under 80 words) that is relevant to the
   }
 });
 
-// GET /plan/brain/order — ask Claude to re-rank all active tasks
+// GET /plan/brain/order — ask Claude to re-rank active tasks.
+// Query params:
+//   mode=top50 (default) — re-rank only the top 50 by current priorityOrder; the
+//     rest stay in their current positions. Stays under Vercel's 300s timeout
+//     even with Sonnet output that's heavy in tokens.
+//   mode=all — re-rank EVERY active task. May approach Vercel's 300s ceiling
+//     for very large lists (~200+ tasks). Use for full periodic re-orgs.
 router.get("/plan/brain/order", async (req, res): Promise<void> => {
   try {
-    const activeTasks = await db.select().from(planItemsTable)
+    const mode = (req.query.mode === "all") ? "all" : "top50";
+    const TOP_LIMIT = 50;
+
+    const allActive = await db.select().from(planItemsTable)
       .where(and(eq(planItemsTable.level, "task"), eq(planItemsTable.status, "active")))
       .orderBy(asc(planItemsTable.priorityOrder));
 
-    if (activeTasks.length === 0) {
-      res.json({ priorityOrder: [], tasks: [] });
+    if (allActive.length === 0) {
+      res.json({ priorityOrder: [], tasks: [], mode, organizedCount: 0, totalCount: 0 });
       return;
     }
+
+    // The "tasks fed to the model" set. In top50 mode, only re-rank the top N;
+    // the tail keeps its existing order and gets appended unchanged after merge.
+    const activeTasks = mode === "all" ? allActive : allActive.slice(0, TOP_LIMIT);
+    const tailTasks = mode === "all" ? [] : allActive.slice(TOP_LIMIT);
 
     const recentLogs = await db.select().from(brainTrainingLogTable)
       .orderBy(desc(brainTrainingLogTable.createdAt))
@@ -974,15 +988,27 @@ Return ONLY a JSON object with key "priorityOrder" — array of ALL task IDs in 
 
     const parsed = JSON.parse(raw) as { priorityOrder: string[] };
 
+    // Validate: only IDs from the set we sent to the model are accepted.
     const validIds = new Set(activeTasks.map(t => t.id));
     const ordered = parsed.priorityOrder.filter(id => validIds.has(id));
     const missing = activeTasks.filter(t => !ordered.includes(t.id)).map(t => t.id);
-    const fullOrder = [...ordered, ...missing];
+    const reranked = [...ordered, ...missing];
 
-    const tasksInNewOrder = fullOrder.map(id => activeTasks.find(t => t.id === id)!).filter(Boolean);
+    // In top50 mode, append the tail tasks (positions 51+) in their original order.
+    // In all mode, tailTasks is empty so this is a no-op.
+    const fullOrder = [...reranked, ...tailTasks.map(t => t.id)];
+
+    const allById = new Map(allActive.map(t => [t.id, t]));
+    const tasksInNewOrder = fullOrder.map(id => allById.get(id)!).filter(Boolean);
 
     triggerSheetsSync();
-    res.json({ priorityOrder: fullOrder, tasks: tasksInNewOrder });
+    res.json({
+      priorityOrder: fullOrder,
+      tasks: tasksInNewOrder,
+      mode,
+      organizedCount: activeTasks.length,
+      totalCount: allActive.length,
+    });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

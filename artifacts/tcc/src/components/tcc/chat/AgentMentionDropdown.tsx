@@ -1,141 +1,115 @@
 import { useState, useEffect, useRef } from "react";
 import { C, F } from "../constants";
-import { AGENTS } from "./agentList";
+import { MENTION_ITEMS } from "./agentList";
 import type { AgentInfo } from "./types";
 
 interface Props {
   visible: boolean;
   filter: string;
-  onSelect: (agent: AgentInfo) => void;
+  onSelect: (item: AgentInfo) => void;
   onClose: () => void;
 }
 
 export function AgentMentionDropdown({ visible, filter, onSelect, onClose }: Props) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const listRef = useRef<HTMLDivElement>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const filtered = AGENTS.filter(agent =>
-    agent.label.toLowerCase().includes(filter.toLowerCase()) ||
-    agent.id.toLowerCase().includes(filter.toLowerCase())
-  );
+  const filtered = MENTION_ITEMS.filter(item => {
+    const q = filter.toLowerCase();
+    return (
+      item.label.toLowerCase().includes(q) ||
+      item.id.toLowerCase().includes(q) ||
+      item.description.toLowerCase().includes(q)
+    );
+  });
 
-  // Reset index when filter changes
-  useEffect(() => { setActiveIndex(0); }, [filter]);
+  const specialists = filtered.filter(i => i.category === "specialist");
+  const integrations = filtered.filter(i => i.category === "integration");
 
-  // Keyboard navigation
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [filter]);
+
   useEffect(() => {
     if (!visible) return;
-
-    const handler = (e: KeyboardEvent) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setActiveIndex(prev => Math.min(prev + 1, filtered.length - 1));
+        setActiveIdx(i => Math.min(i + 1, filtered.length - 1));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setActiveIndex(prev => Math.max(prev - 1, 0));
-      } else if (e.key === "Enter" && filtered.length > 0) {
+        setActiveIdx(i => Math.max(i - 1, 0));
+      } else if (e.key === "Enter" && filtered[activeIdx]) {
         e.preventDefault();
-        onSelect(filtered[activeIndex]);
+        onSelect(filtered[activeIdx]);
       } else if (e.key === "Escape") {
         e.preventDefault();
         onClose();
       }
     };
-
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [visible, filtered, activeIndex, onSelect, onClose]);
-
-  // Scroll active item into view
-  useEffect(() => {
-    if (!listRef.current) return;
-    const activeEl = listRef.current.children[activeIndex] as HTMLElement | undefined;
-    activeEl?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex]);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [visible, filtered, activeIdx, onSelect, onClose]);
 
   if (!visible || filtered.length === 0) return null;
 
-  return (
-    <div style={{
-      position: "absolute",
-      bottom: "100%",
-      left: 0,
-      marginBottom: 4,
-      width: 280,
-      maxHeight: 300,
-      overflowY: "auto",
-      background: C.card,
-      border: `1px solid ${C.brd}`,
-      borderRadius: 12,
-      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-      fontFamily: F,
-      zIndex: 100,
-    }}>
-      <div style={{
-        padding: "8px 12px 4px",
-        fontSize: 11,
-        fontWeight: 600,
-        color: C.mut,
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-      }}>
-        Specialists
-      </div>
-
-      <div ref={listRef}>
-        {filtered.map((agent, idx) => (
-          <div
-            key={agent.id}
-            onClick={() => onSelect(agent)}
-            onMouseEnter={() => setActiveIndex(idx)}
-            style={{
-              padding: "8px 12px",
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              cursor: "pointer",
-              background: idx === activeIndex ? "#FFF7ED" : "transparent",
-              borderLeft: idx === activeIndex ? "3px solid #F97316" : "3px solid transparent",
-              transition: "background 0.1s ease",
-            }}
-          >
-            <span style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: idx === activeIndex ? "#FEF3C7" : C.bg,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 16,
-              flexShrink: 0,
-            }}>
-              {agent.icon}
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: C.tx,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>
-                {agent.label}
-              </div>
-              <div style={{
-                fontSize: 11,
-                color: C.mut,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>
-                {agent.description}
-              </div>
-            </div>
+  const renderItem = (item: AgentInfo) => {
+    const idxInFiltered = filtered.indexOf(item);
+    const isActive = idxInFiltered === activeIdx;
+    return (
+      <div
+        key={item.id}
+        onMouseDown={e => { e.preventDefault(); onSelect(item); }}
+        onMouseEnter={() => setActiveIdx(idxInFiltered)}
+        style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "9px 12px", borderRadius: 10, cursor: "pointer",
+          background: isActive ? "#F3F4F6" : "transparent",
+          transition: "background 0.08s ease",
+        }}
+      >
+        <span style={{ fontSize: 18, width: 22, textAlign: "center" }}>{item.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.tx, fontFamily: F }}>
+            {item.label}
           </div>
-        ))}
+          <div style={{ fontSize: 11, color: C.mut, fontFamily: F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {item.description}
+          </div>
+        </div>
       </div>
+    );
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: "absolute", bottom: "calc(100% + 8px)", left: 0,
+        width: 360, maxHeight: 380, overflowY: "auto",
+        background: "#FFFFFF",
+        border: `1px solid ${C.brd}`,
+        borderRadius: 14,
+        boxShadow: "0 10px 30px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04)",
+        padding: 6, zIndex: 100,
+      }}
+    >
+      {specialists.length > 0 && (
+        <>
+          <div style={{ padding: "8px 12px 4px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F }}>
+            Specialists
+          </div>
+          {specialists.map(renderItem)}
+        </>
+      )}
+      {integrations.length > 0 && (
+        <>
+          <div style={{ padding: "10px 12px 4px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: F, borderTop: specialists.length > 0 ? `1px solid ${C.brd}` : "none", marginTop: specialists.length > 0 ? 4 : 0 }}>
+            Integrations
+          </div>
+          {integrations.map(renderItem)}
+        </>
+      )}
     </div>
   );
 }

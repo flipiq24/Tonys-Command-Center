@@ -12,339 +12,336 @@ interface Props {
   onPinThread: (threadId: string, pinned: boolean) => void;
   onDeleteThread: (threadId: string) => void;
   onBack: () => void;
+  onToggleCollapse: () => void;
 }
 
-function groupByDate(threads: Thread[]): { label: string; threads: Thread[] }[] {
-  const pinned = threads.filter(t => t.pinned);
-  const unpinned = threads.filter(t => !t.pinned);
+interface DateGroup {
+  label: string;
+  threads: Thread[];
+}
 
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const yesterdayStart = todayStart - 86400000;
-
+function groupThreadsByDate(threads: Thread[]): DateGroup[] {
+  const pinned: Thread[] = [];
   const today: Thread[] = [];
   const yesterday: Thread[] = [];
   const earlier: Thread[] = [];
 
-  for (const t of unpinned) {
-    const ts = new Date(t.updatedAt).getTime();
-    if (ts >= todayStart) today.push(t);
-    else if (ts >= yesterdayStart) yesterday.push(t);
-    else earlier.push(t);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400000;
+
+  for (const t of threads) {
+    if (t.pinned) {
+      pinned.push(t);
+    } else {
+      const ts = new Date(t.updatedAt).getTime();
+      if (ts >= startOfToday) today.push(t);
+      else if (ts >= startOfYesterday) yesterday.push(t);
+      else earlier.push(t);
+    }
   }
 
-  const groups: { label: string; threads: Thread[] }[] = [];
-  if (pinned.length > 0) groups.push({ label: "Pinned", threads: pinned });
-  if (today.length > 0) groups.push({ label: "Today", threads: today });
-  if (yesterday.length > 0) groups.push({ label: "Yesterday", threads: yesterday });
-  if (earlier.length > 0) groups.push({ label: "Earlier", threads: earlier });
-  return groups;
-}
-
-function ThreadMenu({ thread, onRename, onPin, onDelete, onClose }: {
-  thread: Thread;
-  onRename: () => void;
-  onPin: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  const menuItem: React.CSSProperties = {
-    padding: "7px 12px",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    fontSize: 13,
-    color: C.tx,
-    cursor: "pointer",
-    fontFamily: F,
-    borderRadius: 6,
-  };
-
-  return (
-    <div ref={ref} style={{
-      position: "absolute",
-      right: 4,
-      top: "100%",
-      marginTop: 2,
-      width: 150,
-      background: C.card,
-      border: `1px solid ${C.brd}`,
-      borderRadius: 10,
-      boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
-      padding: 4,
-      zIndex: 50,
-    }}>
-      <div style={menuItem}
-        onClick={(e) => { e.stopPropagation(); onRename(); }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.bg; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-      >
-        <span style={{ fontSize: 14 }}>{"\u270F\uFE0F"}</span> Rename
-      </div>
-      <div style={menuItem}
-        onClick={(e) => { e.stopPropagation(); onPin(); }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.bg; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-      >
-        <span style={{ fontSize: 14 }}>{thread.pinned ? "\uD83D\uDCCC" : "\uD83D\uDCCC"}</span>
-        {thread.pinned ? "Unpin" : "Pin"}
-      </div>
-      <div style={{ ...menuItem, color: C.red }}
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.redBg; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-      >
-        <span style={{ fontSize: 14 }}>{"\uD83D\uDDD1\uFE0F"}</span> Delete
-      </div>
-    </div>
-  );
+  return [
+    pinned.length > 0 ? { label: "Pinned", threads: pinned } : null,
+    today.length > 0 ? { label: "Today", threads: today } : null,
+    yesterday.length > 0 ? { label: "Yesterday", threads: yesterday } : null,
+    earlier.length > 0 ? { label: "Earlier", threads: earlier } : null,
+  ].filter(Boolean) as DateGroup[];
 }
 
 export function ChatSidebar({
   threads, activeThreadId, collapsed,
-  onSelectThread, onNewChat, onRenameThread, onPinThread, onDeleteThread, onBack,
+  onSelectThread, onNewChat, onRenameThread, onPinThread, onDeleteThread,
+  onBack, onToggleCollapse,
 }: Props) {
-  const [menuThreadId, setMenuThreadId] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const renameRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (renaming && renameRef.current) renameRef.current.focus();
-  }, [renaming]);
+    const onClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpenFor(null);
+      }
+    };
+    if (menuOpenFor) document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [menuOpenFor]);
 
-  if (collapsed) return null;
+  const groups = groupThreadsByDate(threads);
 
-  const groups = groupByDate(threads);
-
-  const startRename = (thread: Thread) => {
-    setRenaming(thread.id);
-    setRenameValue(thread.title || "");
-    setMenuThreadId(null);
-  };
-
-  const confirmRename = (threadId: string) => {
-    if (renameValue.trim()) {
-      onRenameThread(threadId, renameValue.trim());
-    }
-    setRenaming(null);
-  };
+  if (collapsed) {
+    return (
+      <div style={{
+        width: 56, height: "100vh",
+        background: "#FFFFFF",
+        borderRight: `1px solid ${C.brd}`,
+        display: "flex", flexDirection: "column",
+        alignItems: "center", padding: "12px 0", gap: 8,
+        flexShrink: 0,
+      }}>
+        <button
+          onClick={onToggleCollapse}
+          title="Expand sidebar"
+          style={iconBtn}
+          onMouseEnter={hover}
+          onMouseLeave={unhover}
+        >»</button>
+        <button
+          onClick={onNewChat}
+          title="New chat"
+          style={iconBtn}
+          onMouseEnter={hover}
+          onMouseLeave={unhover}
+        >✎</button>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={onBack}
+          title="Back to app"
+          style={iconBtn}
+          onMouseEnter={hover}
+          onMouseLeave={unhover}
+        >←</button>
+      </div>
+    );
+  }
 
   return (
     <div style={{
-      width: 260,
-      minWidth: 260,
-      maxWidth: 260,
-      background: C.card,
+      width: 260, height: "100vh",
+      background: "#FFFFFF",
       borderRight: `1px solid ${C.brd}`,
-      display: "flex",
-      flexDirection: "column",
+      display: "flex", flexDirection: "column",
       flexShrink: 0,
-      overflow: "hidden",
-      fontFamily: F,
     }}>
-      {/* Top bar */}
+      {/* Header: Brand + collapse */}
       <div style={{
-        padding: "12px 12px 8px",
-        borderBottom: `1px solid ${C.brd}`,
-        display: "flex",
-        gap: 8,
-        alignItems: "center",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "14px 14px 8px",
       }}>
         <button
           onClick={onBack}
+          title="Back to app"
           style={{
-            padding: "6px 10px",
-            borderRadius: 8,
-            border: `1px solid ${C.brd}`,
-            background: C.card,
-            color: C.sub,
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: "pointer",
-            fontFamily: F,
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "6px 8px", borderRadius: 8,
+            border: "none", background: "transparent", cursor: "pointer",
+            fontSize: 14, fontWeight: 700, color: C.tx, fontFamily: F,
           }}
+          onMouseEnter={e => e.currentTarget.style.background = "#F3F4F6"}
+          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
         >
-          {"\u2190"} Back
+          <span style={{
+            width: 24, height: 24, borderRadius: 6,
+            background: "linear-gradient(135deg, #F97316 0%, #EA580C 100%)",
+            color: "#fff", fontSize: 13, fontWeight: 800,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+          }}>C</span>
+          <span>Command Brain</span>
         </button>
+        <button
+          onClick={onToggleCollapse}
+          title="Collapse sidebar"
+          style={iconBtn}
+          onMouseEnter={hover}
+          onMouseLeave={unhover}
+        >«</button>
+      </div>
+
+      {/* New chat button */}
+      <div style={{ padding: "4px 12px 10px" }}>
         <button
           onClick={onNewChat}
           style={{
-            flex: 1,
-            padding: "6px 10px",
-            borderRadius: 8,
-            border: "none",
-            background: "#F97316",
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: F,
+            width: "100%", display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px", borderRadius: 10,
+            border: `1px solid ${C.brd}`, background: "#FFFFFF",
+            cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.tx, fontFamily: F,
+            transition: "background 0.1s ease, border-color 0.1s ease",
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = "#F9FAFB"; e.currentTarget.style.borderColor = "#D1D5DB"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "#FFFFFF"; e.currentTarget.style.borderColor = C.brd; }}
         >
-          + New Chat
+          <span style={{ fontSize: 16 }}>✎</span>
+          <span>New chat</span>
         </button>
       </div>
 
-      {/* Thread list */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "4px 8px" }}>
-        {groups.map(group => (
-          <div key={group.label}>
-            <div style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.mut,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              padding: "12px 8px 4px",
-            }}>
-              {group.label}
-            </div>
-
-            {group.threads.map(thread => (
-              <div
-                key={thread.id}
-                onClick={() => { if (!renaming) onSelectThread(thread); }}
-                style={{
-                  position: "relative",
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  cursor: renaming === thread.id ? "default" : "pointer",
-                  marginBottom: 2,
-                  background: activeThreadId === thread.id ? "#FFF7ED" : "transparent",
-                  border: activeThreadId === thread.id ? "1px solid #FDBA7440" : "1px solid transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  transition: "background 0.1s ease",
-                }}
-                onMouseEnter={e => {
-                  if (activeThreadId !== thread.id) (e.currentTarget as HTMLElement).style.background = C.bg;
-                }}
-                onMouseLeave={e => {
-                  if (activeThreadId !== thread.id) (e.currentTarget as HTMLElement).style.background = "transparent";
-                }}
-              >
-                {/* Pin indicator */}
-                {thread.pinned && (
-                  <span style={{ fontSize: 10, color: "#F97316", flexShrink: 0 }}>{"\uD83D\uDCCC"}</span>
-                )}
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {renaming === thread.id ? (
-                    <input
-                      ref={renameRef}
-                      value={renameValue}
-                      onChange={e => setRenameValue(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === "Enter") confirmRename(thread.id);
-                        if (e.key === "Escape") setRenaming(null);
-                      }}
-                      onBlur={() => confirmRename(thread.id)}
-                      style={{
-                        width: "100%",
-                        padding: "2px 4px",
-                        border: `1px solid #F97316`,
-                        borderRadius: 4,
-                        fontSize: 12,
-                        fontFamily: F,
-                        outline: "none",
-                        background: C.card,
-                      }}
-                      onClick={e => e.stopPropagation()}
-                    />
-                  ) : (
-                    <div style={{
-                      fontSize: 13,
-                      fontWeight: activeThreadId === thread.id ? 600 : 400,
-                      color: C.tx,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      lineHeight: 1.4,
-                    }}>
-                      {thread.title || "New conversation"}
-                    </div>
-                  )}
-                  {!renaming && (
-                    <div style={{ fontSize: 11, color: C.mut, marginTop: 1 }}>
-                      {thread.contextType !== "general" ? `[${thread.contextType}] ` : ""}
-                      {new Date(thread.updatedAt).toLocaleTimeString("en-US", {
-                        hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles",
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* 3-dot menu trigger */}
-                {!renaming && (
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      setMenuThreadId(menuThreadId === thread.id ? null : thread.id);
-                    }}
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: 6,
-                      border: "none",
-                      background: "transparent",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 14,
-                      color: C.mut,
-                      flexShrink: 0,
-                      opacity: activeThreadId === thread.id || menuThreadId === thread.id ? 1 : 0,
-                      transition: "opacity 0.1s ease",
-                    }}
-                    onMouseEnter={e => { (e.target as HTMLElement).style.opacity = "1"; }}
-                    onMouseLeave={e => {
-                      if (menuThreadId !== thread.id && activeThreadId !== thread.id)
-                        (e.target as HTMLElement).style.opacity = "0";
-                    }}
-                  >
-                    {"\u22EF"}
-                  </button>
-                )}
-
-                {/* Context menu */}
-                {menuThreadId === thread.id && (
-                  <ThreadMenu
-                    thread={thread}
-                    onRename={() => startRename(thread)}
-                    onPin={() => { onPinThread(thread.id, !thread.pinned); setMenuThreadId(null); }}
-                    onDelete={() => { onDeleteThread(thread.id); setMenuThreadId(null); }}
-                    onClose={() => setMenuThreadId(null)}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
-
-        {threads.length === 0 && (
-          <div style={{
-            padding: "24px 12px",
-            textAlign: "center",
-            fontSize: 13,
-            color: C.mut,
-          }}>
+      {/* History */}
+      <div style={{
+        flex: 1, overflowY: "auto", padding: "0 8px 12px",
+      }}>
+        {groups.length === 0 && (
+          <div style={{ padding: "24px 12px", fontSize: 12, color: C.mut, textAlign: "center", fontFamily: F }}>
             No conversations yet
           </div>
         )}
+        {groups.map(group => (
+          <div key={group.label} style={{ marginTop: 12 }}>
+            <div style={{
+              padding: "4px 10px 6px", fontSize: 11, fontWeight: 600,
+              color: C.mut, fontFamily: F,
+            }}>
+              {group.label}
+            </div>
+            {group.threads.map(t => {
+              const isActive = t.id === activeThreadId;
+              const isRenaming = renamingId === t.id;
+              const menuOpen = menuOpenFor === t.id;
+              return (
+                <div key={t.id} style={{ position: "relative" }}>
+                  {isRenaming ? (
+                    <input
+                      autoFocus
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      onBlur={() => {
+                        if (renameValue.trim() && renameValue.trim() !== t.title) {
+                          onRenameThread(t.id, renameValue.trim());
+                        }
+                        setRenamingId(null);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          if (renameValue.trim() && renameValue.trim() !== t.title) {
+                            onRenameThread(t.id, renameValue.trim());
+                          }
+                          setRenamingId(null);
+                        } else if (e.key === "Escape") {
+                          setRenamingId(null);
+                        }
+                      }}
+                      style={{
+                        width: "100%", padding: "8px 10px", boxSizing: "border-box",
+                        border: `1.5px solid ${C.blu}`, borderRadius: 8,
+                        fontSize: 13, fontFamily: F, outline: "none",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      onClick={() => onSelectThread(t)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                        background: isActive ? "#F3F4F6" : "transparent",
+                        transition: "background 0.1s ease",
+                      }}
+                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "#F9FAFB"; }}
+                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                    >
+                      <span style={{
+                        flex: 1, fontSize: 13, color: C.tx, fontFamily: F,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {t.pinned && <span style={{ marginRight: 6, fontSize: 10 }}>📌</span>}
+                        {t.title || "New conversation"}
+                      </span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setMenuOpenFor(menuOpen ? null : t.id); }}
+                        style={{
+                          flexShrink: 0, width: 22, height: 22,
+                          border: "none", background: "transparent",
+                          borderRadius: 4, cursor: "pointer",
+                          fontSize: 14, color: C.mut,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          opacity: isActive || menuOpen ? 1 : 0.0,
+                          transition: "opacity 0.1s ease",
+                        }}
+                        className="thread-menu-btn"
+                        title="More"
+                      >⋯</button>
+                    </div>
+                  )}
+
+                  {menuOpen && (
+                    <div
+                      ref={menuRef}
+                      style={{
+                        position: "absolute", right: 6, top: "calc(100% - 4px)",
+                        background: "#FFFFFF", border: `1px solid ${C.brd}`,
+                        borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+                        padding: 4, minWidth: 140, zIndex: 50,
+                      }}
+                    >
+                      <button
+                        onClick={() => {
+                          setRenameValue(t.title || "");
+                          setRenamingId(t.id);
+                          setMenuOpenFor(null);
+                        }}
+                        style={menuItem}
+                        onMouseEnter={menuItemHover}
+                        onMouseLeave={menuItemUnhover}
+                      >✏️ Rename</button>
+                      <button
+                        onClick={() => {
+                          onPinThread(t.id, !t.pinned);
+                          setMenuOpenFor(null);
+                        }}
+                        style={menuItem}
+                        onMouseEnter={menuItemHover}
+                        onMouseLeave={menuItemUnhover}
+                      >{t.pinned ? "📌 Unpin" : "📌 Pin"}</button>
+                      <div style={{ height: 1, background: C.brd, margin: "4px 0" }} />
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete "${t.title || "New conversation"}"?`)) {
+                            onDeleteThread(t.id);
+                          }
+                          setMenuOpenFor(null);
+                        }}
+                        style={{ ...menuItem, color: C.red }}
+                        onMouseEnter={menuItemHover}
+                        onMouseLeave={menuItemUnhover}
+                      >🗑️ Delete</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
+
+      {/* Always-visible 3-dot button on hover via inline CSS isn't trivial; the button shows on active row only.
+          For simplicity it's hidden until hover/active — implemented via opacity inline above. */}
+      <style>{`
+        .thread-menu-btn { opacity: 0; }
+        div:hover > .thread-menu-btn { opacity: 1; }
+      `}</style>
     </div>
   );
+}
+
+const iconBtn: React.CSSProperties = {
+  width: 32, height: 32,
+  display: "flex", alignItems: "center", justifyContent: "center",
+  border: "none", background: "transparent",
+  borderRadius: 8, cursor: "pointer",
+  fontSize: 16, color: "#4B5563",
+  transition: "background 0.1s ease, color 0.1s ease",
+};
+
+function hover(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = "#F3F4F6";
+  e.currentTarget.style.color = "#1A1A1A";
+}
+function unhover(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = "transparent";
+  e.currentTarget.style.color = "#4B5563";
+}
+
+const menuItem: React.CSSProperties = {
+  display: "block", width: "100%", textAlign: "left",
+  padding: "8px 10px", borderRadius: 6,
+  border: "none", background: "transparent", cursor: "pointer",
+  fontSize: 13, fontFamily: "'Inter', sans-serif", color: "#1A1A1A",
+};
+
+function menuItemHover(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = "#F3F4F6";
+}
+function menuItemUnhover(e: React.MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = "transparent";
 }

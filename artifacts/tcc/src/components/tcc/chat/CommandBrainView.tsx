@@ -6,6 +6,7 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessages } from "./ChatMessages";
 import { ChatInput } from "./ChatInput";
+import { EmptyState } from "./EmptyState";
 import { getAgentForTool } from "./toolAgentMap";
 import type { Thread, Message, StreamEvent, ToolActivity } from "./types";
 
@@ -17,21 +18,16 @@ interface Props {
 }
 
 export function CommandBrainView({ onBack, initialContextType, initialContextId, initialContextLabel }: Props) {
-  // Thread state
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeThread, setActiveThread] = useState<Thread | null>(null);
 
-  // Message state
   const [messages, setMessages] = useState<Message[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // UI state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // --- Data loading ---
 
   useEffect(() => {
     loadThreads();
@@ -42,10 +38,8 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
     try {
       const data = await get<Thread[]>("/chat/threads");
       setThreads(data);
-      // If opening with context, go straight to new chat mode (no auto-create)
-      // If no context, just show the empty state — user can pick a thread or start new
     } catch {
-      setError("Failed to load threads");
+      // Silent — let the user see empty state instead of an error
     }
   }
 
@@ -63,15 +57,12 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
   }
 
   const startNewChat = useCallback(() => {
-    // Don't create thread in DB — just reset to empty state
     setActiveThread(null);
     setMessages([]);
     setStreamingText("");
     setToolActivities([]);
     setError(null);
   }, []);
-
-  // --- Thread CRUD ---
 
   async function renameThread(threadId: string, newTitle: string) {
     try {
@@ -85,9 +76,8 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
     try {
       const updated = await patch<Thread>(`/chat/threads/${threadId}`, { pinned });
       setThreads(prev => {
-        const updated_ = prev.map(t => t.id === threadId ? updated : t);
-        // Re-sort: pinned first, then by updatedAt
-        return updated_.sort((a, b) => {
+        const next = prev.map(t => t.id === threadId ? updated : t);
+        return next.sort((a, b) => {
           if (a.pinned && !b.pinned) return -1;
           if (!a.pinned && b.pinned) return 1;
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
@@ -101,20 +91,16 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
     try {
       await del(`/chat/threads/${threadId}`);
       setThreads(prev => prev.filter(t => t.id !== threadId));
-      if (activeThread?.id === threadId) {
-        startNewChat();
-      }
+      if (activeThread?.id === threadId) startNewChat();
     } catch { /* fail silently */ }
   }
-
-  // --- Send message (with lazy thread creation) ---
 
   async function sendMessage(text: string, mentionedAgent?: string) {
     if (!text.trim() || streaming) return;
 
     let thread = activeThread;
 
-    // Lazy thread creation: create thread on first message if none active
+    // Lazy thread creation
     if (!thread) {
       try {
         thread = await post<Thread>("/chat/threads", {
@@ -201,11 +187,9 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
                   createdAt: new Date().toISOString(),
                 }]);
               }
-              // Update thread in sidebar
               setThreads(prev => prev.map(t =>
                 t.id === thread!.id ? { ...t, updatedAt: new Date().toISOString() } : t
               ));
-              // Reload threads to pick up auto-generated title
               setTimeout(() => loadThreads(), 500);
             } else if (event.type === "error") {
               setError(event.error || "Command Brain error");
@@ -221,13 +205,10 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
     }
   }
 
-  // Quick action from empty state
   const handleQuickAction = useCallback((prompt: string) => {
     sendMessage(prompt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThread, streaming]);
-
-  // --- Render ---
 
   const headerTitle = activeThread?.title || "Command Brain";
   const isEmpty = !activeThread && messages.length === 0;
@@ -240,7 +221,6 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
       overflow: "hidden",
       background: "#F9FAFB",
     }}>
-      {/* Sidebar */}
       <ChatSidebar
         threads={threads}
         activeThreadId={activeThread?.id || null}
@@ -251,38 +231,52 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
         onPinThread={pinThread}
         onDeleteThread={deleteThread}
         onBack={onBack}
+        onToggleCollapse={() => setSidebarCollapsed(prev => !prev)}
       />
 
-      {/* Main chat area */}
       <div style={{
         flex: 1,
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
         background: "#F9FAFB",
+        minWidth: 0,
       }}>
         <ChatHeader
           title={headerTitle}
           contextType={activeThread?.contextType}
           onNewChat={startNewChat}
-          onToggleSidebar={() => setSidebarCollapsed(prev => !prev)}
-          sidebarCollapsed={sidebarCollapsed}
+          showTitle={!isEmpty}
         />
 
-        <ChatMessages
-          messages={messages}
-          streamingText={streamingText}
-          toolActivities={toolActivities}
-          error={error}
-          isEmpty={isEmpty}
-          onQuickAction={handleQuickAction}
-        />
-
-        <ChatInput
-          streaming={streaming}
-          disabled={false}
-          onSend={sendMessage}
-        />
+        {isEmpty ? (
+          <>
+            <EmptyState onQuickAction={handleQuickAction} />
+            <ChatInput
+              streaming={streaming}
+              disabled={false}
+              onSend={sendMessage}
+              autoFocus
+            />
+            <div style={{ height: 40 }} />
+          </>
+        ) : (
+          <>
+            <ChatMessages
+              messages={messages}
+              streamingText={streamingText}
+              toolActivities={toolActivities}
+              error={error}
+              isEmpty={false}
+              onQuickAction={handleQuickAction}
+            />
+            <ChatInput
+              streaming={streaming}
+              disabled={false}
+              onSend={sendMessage}
+            />
+          </>
+        )}
       </div>
     </div>
   );

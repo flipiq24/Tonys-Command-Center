@@ -38,4 +38,5 @@ export interface AgentInfo {
   label: string;
   icon: string;
   description: string;
+  category: "specialist" | "integration";
 }

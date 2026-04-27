@@ -4,99 +4,51 @@ interface Props {
   title: string;
   contextType?: string;
   onNewChat: () => void;
-  onToggleSidebar: () => void;
-  sidebarCollapsed: boolean;
+  showTitle: boolean;
 }
 
-export function ChatHeader({ title, contextType, onNewChat, onToggleSidebar, sidebarCollapsed }: Props) {
+export function ChatHeader({ title, contextType, onNewChat, showTitle }: Props) {
   return (
     <div style={{
-      padding: "0 16px",
-      height: 56,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "12px 20px",
       borderBottom: `1px solid ${C.brd}`,
-      background: C.card,
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
+      background: "#FFFFFF",
       flexShrink: 0,
-      fontFamily: F,
+      minHeight: 52, boxSizing: "border-box",
     }}>
-      {/* Sidebar toggle */}
-      <button
-        onClick={onToggleSidebar}
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          border: `1px solid ${C.brd}`,
-          background: C.card,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 18,
-          color: C.sub,
-          flexShrink: 0,
-          transition: "background 0.1s ease",
-        }}
-        onMouseEnter={e => { (e.target as HTMLElement).style.background = C.bg; }}
-        onMouseLeave={e => { (e.target as HTMLElement).style.background = C.card; }}
-        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-      >
-        {sidebarCollapsed ? "\u2630" : "\u00AB"}
-      </button>
-
-      {/* Title */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <span style={{
-          fontSize: 16,
-          fontWeight: 600,
-          color: C.tx,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}>
-          {title}
-        </span>
-        {contextType && contextType !== "general" && (
-          <span style={{
-            fontSize: 11,
-            color: C.mut,
-            background: C.bg,
-            borderRadius: 4,
-            padding: "2px 6px",
-            border: `1px solid ${C.brd}`,
-            flexShrink: 0,
-          }}>
-            {contextType}
-          </span>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
+        {showTitle && (
+          <>
+            <div style={{
+              fontSize: 14, fontWeight: 600, color: C.tx, fontFamily: F,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{title}</div>
+            {contextType && contextType !== "general" && (
+              <span style={{
+                fontSize: 10, fontWeight: 600, color: C.blu, fontFamily: F,
+                background: "#EFF6FF", padding: "2px 8px", borderRadius: 12,
+                textTransform: "uppercase", letterSpacing: "0.06em",
+              }}>{contextType}</span>
+            )}
+          </>
         )}
       </div>
 
-      {/* New chat button */}
       <button
         onClick={onNewChat}
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 8,
-          border: `1px solid ${C.brd}`,
-          background: C.card,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 16,
-          color: C.sub,
-          flexShrink: 0,
-          transition: "background 0.1s ease",
-        }}
-        onMouseEnter={e => { (e.target as HTMLElement).style.background = C.bg; }}
-        onMouseLeave={e => { (e.target as HTMLElement).style.background = C.card; }}
         title="New chat"
-      >
-        {"\u270E"}
-      </button>
+        style={{
+          width: 32, height: 32, borderRadius: 8,
+          border: "none", background: "transparent", cursor: "pointer",
+          fontSize: 16, color: C.sub,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0,
+          transition: "background 0.1s ease, color 0.1s ease",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = "#F3F4F6"; e.currentTarget.style.color = C.tx; }}
+        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = C.sub; }}
+      >✎</button>
     </div>
   );
 }

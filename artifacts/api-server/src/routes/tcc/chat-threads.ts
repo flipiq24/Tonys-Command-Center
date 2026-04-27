@@ -752,7 +752,21 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
 
   let systemPrompt = await buildSystemPrompt(thread.contextType || undefined, thread.contextId || undefined);
   if (mentionedAgent) {
-    systemPrompt += `\n\nSPECIALIST HINT: Tony tagged @${mentionedAgent}. Prioritize using that specialist's tools for this request. If you determine a different specialist is actually more appropriate, explain why in your response.`;
+    const SPECIALISTS = new Set(["orchestrator", "email", "tasks", "ideas", "contacts", "schedule", "calls", "brief", "checkin", "journal", "ingest", "coach"]);
+    const INTEGRATION_HINTS: Record<string, string> = {
+      slack: "Slack tools (send_slack_message, read_slack_channel, list_slack_channels, search_slack)",
+      linear: "Linear tools (create_linear_issue, get_linear_members)",
+      drive: "Google Drive tools (read_google_sheet, read_google_doc, search_google_drive)",
+      web: "Web tools (web_search, browse_url)",
+      database: "Database tools (query_database, get_business_context, get_communication_log)",
+    };
+    if (SPECIALISTS.has(mentionedAgent)) {
+      systemPrompt += `\n\nSPECIALIST HINT: Tony tagged @${mentionedAgent}. Prioritize using that specialist's tools for this request. If you determine a different specialist is actually more appropriate, before acting, ask Tony to confirm: "I think this is better handled by @<other>. Want me to use that instead?"`;
+    } else if (INTEGRATION_HINTS[mentionedAgent]) {
+      systemPrompt += `\n\nINTEGRATION HINT: Tony tagged @${mentionedAgent}. Prefer ${INTEGRATION_HINTS[mentionedAgent]} for this request. If a specialist would handle it better, before acting, ask Tony: "This looks like a job for the <X> specialist — want to use that instead of the raw ${mentionedAgent} tools?"`;
+    } else {
+      systemPrompt += `\n\nHINT: Tony tagged @${mentionedAgent}. Use related tools and confirm with Tony if a different approach would work better.`;
+    }
   }
   let fullResponse = "";
   const toolResults: { name: string; result: string }[] = [];

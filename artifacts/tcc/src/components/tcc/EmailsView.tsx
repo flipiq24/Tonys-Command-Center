@@ -287,16 +287,16 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                     title="Train: This email IS important"
                     onClick={() => startTraining(e, "thumbs_up")}
                     style={{
-                      background: training?.emailId === e.id && training.vote === "thumbs_up" ? C.grnBg : "none",
-                      border: training?.emailId === e.id && training.vote === "thumbs_up" ? `1.5px solid ${C.grn}` : "none",
+                      background: training?.emailId === e.id && training?.vote === "thumbs_up" ? C.grnBg : "none",
+                      border: training?.emailId === e.id && training?.vote === "thumbs_up" ? `1.5px solid ${C.grn}` : "none",
                       borderRadius: 8, cursor: "pointer", fontSize: 16, padding: "2px 6px",
                     }}>👍</button>
                   <button
                     title="Train: This email is NOT important"
                     onClick={() => startTraining(e, "thumbs_down")}
                     style={{
-                      background: training?.emailId === e.id && training.vote === "thumbs_down" ? C.redBg : "none",
-                      border: training?.emailId === e.id && training.vote === "thumbs_down" ? `1.5px solid ${C.red}` : "none",
+                      background: training?.emailId === e.id && training?.vote === "thumbs_down" ? C.redBg : "none",
+                      border: training?.emailId === e.id && training?.vote === "thumbs_down" ? `1.5px solid ${C.red}` : "none",
                       borderRadius: 8, cursor: "pointer", fontSize: 16, padding: "2px 6px",
                     }}>👎</button>
                 </div>

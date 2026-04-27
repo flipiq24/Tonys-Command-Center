@@ -137,6 +137,9 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
     post("/emails/action", { action: "snooze", emailId: email.id, snoozeUntil: val }).catch(() => {});
     setSnoozed(true);
     setShowNwPick(false);
+    // Auto-close after the success state has had time to register so Tony
+    // can move on without a stray click.
+    setTimeout(() => onClose(), 1500);
   }
 
   async function copyDraft() {
@@ -148,12 +151,6 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
     } catch {
       // fallback: select + copy
     }
-  }
-
-  async function copyAndOpenGmail() {
-    await copyDraft();
-    const url = gmailLink(threadId, email?.gmailMessageId);
-    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   if (!email) return null;

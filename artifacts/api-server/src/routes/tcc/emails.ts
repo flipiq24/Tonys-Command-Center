@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, or, gt, isNull } from "drizzle-orm";
 import { db, emailTrainingTable, emailSnoozesTable, systemInstructionsTable } from "@workspace/db";
 import { EmailActionBody } from "@workspace/api-zod";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
@@ -16,6 +16,32 @@ const router: IRouter = Router();
 // Every thumbs feedback writes to agent_feedback; Tony reviews and clicks Train
 // to fire Coach which proposes an updated brain (kind='memory', section='rules').
 // The legacy auto-fire-on-20-samples path was removed in Phase 7 C12.
+
+// Parse the snooze label sent by the frontend ("1h" / "2h" / "tom" /
+// YYYY-MM-DD) into an absolute expiry timestamp. Returns null when the
+// label can't be parsed — caller falls back to the legacy date-rollover
+// behaviour (snooze hides the email until the next Pacific day).
+function snoozeLabelToExpiry(label: string): Date | null {
+  if (!label) return null;
+  if (label === "1h") return new Date(Date.now() + 60 * 60 * 1000);
+  if (label === "2h") return new Date(Date.now() + 2 * 60 * 60 * 1000);
+  // YYYY-MM-DD: re-show on that day at 5am Pacific. Pacific is UTC-7 (PDT)
+  // most of the year; PST is UTC-8 in winter. Anchor the timestamp at the
+  // chosen day at 12:00 UTC which is 4-5am Pacific — close enough for the
+  // "show me first thing on this day" intent.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(label)) {
+    const [y, m, d] = label.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  }
+  // "tom" → tomorrow at 12:00 UTC (~5am Pacific). Equivalent to date rollover.
+  if (label === "tom" || label === "tomorrow") {
+    const t = new Date();
+    t.setUTCDate(t.getUTCDate() + 1);
+    t.setUTCHours(12, 0, 0, 0);
+    return t;
+  }
+  return null;
+}
 
 // ─── GET brain ────────────────────────────────────────────────────────────────
 router.get("/emails/brain", async (req, res): Promise<void> => {
@@ -39,12 +65,19 @@ router.get("/emails/brain", async (req, res): Promise<void> => {
 });
 
 // ─── GET snoozed ─────────────────────────────────────────────────────────────
+// Returns the active snooze map. A row is "active" when:
+//   - expires_at is in the future, OR
+//   - expires_at is null AND the row was created today (legacy date-rollover)
 router.get("/emails/snoozed", async (req, res): Promise<void> => {
   const today = todayPacific();
+  const now = new Date();
   const snoozes = await db
     .select()
     .from(emailSnoozesTable)
-    .where(eq(emailSnoozesTable.date, today));
+    .where(or(
+      gt(emailSnoozesTable.expiresAt, now),
+      and(isNull(emailSnoozesTable.expiresAt), eq(emailSnoozesTable.date, today)),
+    ));
 
   const snoozed: Record<number, string> = {};
   for (const s of snoozes) {
@@ -95,12 +128,14 @@ router.post("/emails/action", async (req, res): Promise<void> => {
   if (action === "snooze") {
     if (emailId !== null && emailId !== undefined) {
       const today = todayPacific();
+      const label = snoozeUntil || "tomorrow";
+      const expiresAt = snoozeLabelToExpiry(label);
       await db
         .insert(emailSnoozesTable)
-        .values({ date: today, emailId, snoozeUntil: snoozeUntil || "tomorrow" })
+        .values({ date: today, emailId, snoozeUntil: label, expiresAt })
         .onConflictDoUpdate({
           target: [emailSnoozesTable.date, emailSnoozesTable.emailId],
-          set: { snoozeUntil: snoozeUntil || "tomorrow" },
+          set: { snoozeUntil: label, expiresAt },
         });
     }
     res.json({ ok: true, message: `Email ${emailId} snoozed` });

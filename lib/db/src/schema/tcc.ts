@@ -133,9 +133,14 @@ export const emailSnoozesTable = pgTable("email_snoozes", {
   date: date("date").notNull(),
   emailId: integer("email_id").notNull(),
   snoozeUntil: text("snooze_until").notNull(),
+  // Absolute expiry timestamp. The GET query filters `expires_at > NOW()` so
+  // "1h" and "2h" actually un-snooze after the duration. Nullable for
+  // backwards-compat with legacy rows that only used the `date` rollover.
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("email_snoozes_date_idx").on(t.date),
+  index("email_snoozes_expires_idx").on(t.expiresAt),
   uniqueIndex("email_snoozes_date_email_id_uniq").on(t.date, t.emailId),
 ]);
 

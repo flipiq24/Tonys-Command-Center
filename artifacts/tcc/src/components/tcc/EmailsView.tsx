@@ -81,14 +81,15 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
     setTraining({ emailId: e.id, vote, reason: "", saved: false });
   };
 
-  const submitTraining = async (e: EmailItem) => {
+  const submitTraining = async (e: EmailItem, opts?: { skipReason?: boolean }) => {
     if (!training) return;
+    const reason = opts?.skipReason ? undefined : (training.reason.trim() || undefined);
     await post("/emails/action", {
       action: training.vote,
       emailId: e.id,
       sender: e.from,
       subject: e.subj,
-      reason: training.reason || undefined,
+      reason,
     }).catch(() => {});
     setTraining(prev => prev ? { ...prev, saved: true } : null);
     setTimeout(() => setTraining(null), 1800);
@@ -364,7 +365,7 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
                       Train Brain ↵
                     </button>
                     <button
-                      onClick={() => submitTraining(e)}
+                      onClick={() => submitTraining(e, { skipReason: true })}
                       style={{ padding: "7px 14px", background: C.card, color: C.sub, border: `1.5px solid ${C.brd}`, borderRadius: 8, fontSize: 12, cursor: "pointer", fontFamily: F }}>
                       Skip reason
                     </button>

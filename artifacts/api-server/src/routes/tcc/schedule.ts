@@ -213,6 +213,7 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
     summary: title,
     start: gcalStart,
     end: gcalEnd,
+    allDay,
     attendees: guests.length > 0 ? guests : undefined,
     description: descParts.join("\n\n") || undefined,
     location: location,

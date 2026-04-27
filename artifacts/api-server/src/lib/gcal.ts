@@ -1,6 +1,15 @@
 import { getCalendar } from "./google-auth";
 import { pacificDayRangeISO } from "./dates";
 
+// Add one day to a YYYY-MM-DD string (used for Google Calendar's exclusive
+// end-date convention on all-day events).
+function addOneDay(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
+}
+
 export async function listTodayEvents(): Promise<{
   id: string;
   summary: string;
@@ -44,6 +53,7 @@ export async function createEvent(params: {
   summary: string;
   start: string;
   end: string;
+  allDay?: boolean;
   attendees?: string[];
   description?: string;
   location?: string;
@@ -53,13 +63,17 @@ export async function createEvent(params: {
   try {
     const calendar = await getCalendar();
     const withMeet = params.createMeetLink || (params.attendees && params.attendees.length > 0);
+    // Google Calendar all-day events use `date` (YYYY-MM-DD) and require the
+    // end date to be EXCLUSIVE (i.e. day after the last day of the event).
+    const startBlock = params.allDay ? { date: params.start } : { dateTime: params.start };
+    const endBlock = params.allDay ? { date: addOneDay(params.end) } : { dateTime: params.end };
     const event = await calendar.events.insert({
       calendarId: "primary",
       conferenceDataVersion: withMeet ? 1 : 0,
       requestBody: {
         summary: params.summary,
-        start: { dateTime: params.start },
-        end: { dateTime: params.end },
+        start: startBlock,
+        end: endBlock,
         attendees: params.attendees?.map(email => ({ email })),
         description: params.description,
         location: params.location,

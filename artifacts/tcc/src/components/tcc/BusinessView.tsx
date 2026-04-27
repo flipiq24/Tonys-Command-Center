@@ -1168,7 +1168,6 @@ function TaskDetailModal({ task, onClose, onSaved }: {
     // Validate required fields
     if (!form.title.trim()) { setValidationErr("Task title is required"); return; }
     if (!form.category) { setValidationErr("Category is required"); return; }
-    if (!form.subcategory) { setValidationErr("Subcategory is required"); return; }
     if (!form.owner) { setValidationErr("Owner is required"); return; }
     if (!form.priority) { setValidationErr("Priority is required"); return; }
     setValidationErr("");

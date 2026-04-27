@@ -51,8 +51,7 @@ async function loadGlobalLayer(): Promise<string> {
 }
 
 async function loadAgentLayer(agent: string): Promise<string> {
-  // L2 loads behavior content: SOUL (voice), USER (context/preferences),
-  // IDENTITY (model/version metadata).
+  // L2 loads behavior content: SOUL (voice) + USER (context/preferences).
   //
   // Intentionally excluded:
   //   - 'agents' (AGENTS.md): documented as "slim INDEX. NOT loaded into prompts
@@ -65,10 +64,15 @@ async function loadAgentLayer(agent: string): Promise<string> {
   //     "## Tool-use guidelines" section in each TOOLS.md) are common-sense
   //     behaviors the model already follows; if any agent needs a specific
   //     critical guideline, append it to that skill's body file (loaded as L3).
+  //   - 'identity' (IDENTITY.md): registration metadata (model name, version,
+  //     owner, status) consumed by the agent registry at boot, plus commentary
+  //     "Notes" sections that don't shape runtime behavior. Keeping IDENTITY
+  //     rows in the DB for the Settings dashboard, but not loading them into
+  //     the per-call system prompt — saves ~390 tok/call across every agent.
   const rows = await db.select().from(agentMemoryEntriesTable)
     .where(and(
       eq(agentMemoryEntriesTable.agent, agent),
-      inArray(agentMemoryEntriesTable.kind, ["soul", "user", "identity"]),
+      inArray(agentMemoryEntriesTable.kind, ["soul", "user"]),
     ));
   if (rows.length === 0) return "";
   return rows.map(r => `# ${r.kind.toUpperCase()}\n\n${r.content}`).join("\n\n---\n\n");

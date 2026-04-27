@@ -134,7 +134,10 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
     return () => clearInterval(timer);
   }, []);
 
-  const positioned = layoutEvents(items);
+  // Split all-day events out — they don't belong on the time grid.
+  const allDayItems = items.filter(i => i.allDay);
+  const timedItems = items.filter(i => !i.allDay);
+  const positioned = layoutEvents(timedItems);
 
   const eventMinHour = positioned.length > 0
     ? Math.floor(Math.min(...positioned.map(e => e.startMin)) / 60)
@@ -229,6 +232,42 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
           onClose={() => setShowWizard(false)}
           onSaved={handleWizardSaved}
         />
+      )}
+
+      {/* All-day events strip (above the time grid) */}
+      {allDayItems.length > 0 && (
+        <div style={{
+          display: "flex", flexWrap: "wrap", gap: 6,
+          marginBottom: 10, padding: "8px 12px",
+          background: "#FFF8E1", border: `1px solid ${C.brd}`, borderRadius: 8,
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#92400E", textTransform: "uppercase", letterSpacing: 0.6, alignSelf: "center", marginRight: 4 }}>
+            All-day
+          </span>
+          {allDayItems.map((ev, i) => {
+            const calColor = ev.colorId ? CAL_COLORS[ev.colorId] : null;
+            const url = getCalendarUrl(ev);
+            return (
+              <a
+                key={`allday-${i}-${ev.n}`}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: 12, fontWeight: 600,
+                  color: calColor || C.tx,
+                  background: calColor ? `${calColor}1A` : "#FFFFFF",
+                  border: `1px solid ${calColor || C.brd}`,
+                  padding: "4px 10px", borderRadius: 14,
+                  textDecoration: "none",
+                }}
+              >
+                {ev.n}
+                {ev.loc && <span style={{ color: C.mut, fontWeight: 400, marginLeft: 4 }}>· {ev.loc}</span>}
+              </a>
+            );
+          })}
+        </div>
       )}
 
       {items.length === 0 ? (

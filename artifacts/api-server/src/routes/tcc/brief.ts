@@ -92,6 +92,7 @@ type CalItem = {
   calendarEventId?: string;
   calendarLink?: string;
   htmlLink?: string;
+  allDay?: boolean;
 };
 type EmailImportant = { id: number; from: string; subj: string; why: string; time: string; p: string; contactContext?: string; gmailMessageId?: string; };
 type EmailFyi = { id: number; from: string; subj: string; why: string };
@@ -218,23 +219,23 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
       orderBy: "startTime",
     });
 
-    // Skip all-day events — they have no time and don't belong on the time grid.
-    // Also skip cancelled instances.
-    const calEvents = (response.data.items || []).filter(e => {
-      if (e.status === "cancelled") return false;
-      if (e.start?.date && !e.start?.dateTime) return false;
-      return true;
-    });
+    // Include all-day and timed events (skip cancelled). All-day events
+    // are tagged with `allDay: true` so the FE can render them in a strip
+    // above the time grid instead of trying to position them on it.
+    const calEvents = (response.data.items || []).filter(e => e.status !== "cancelled");
     return await Promise.all(calEvents.map(async (e) => {
+      const isAllDay = !!(e.start?.date && !e.start?.dateTime);
       const startRaw = e.start?.dateTime || "";
       const endRaw = e.end?.dateTime || "";
-      const timeLabel = startRaw
-        ? new Date(startRaw).toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            timeZone: "America/Los_Angeles",
-          })
-        : "";
+      const timeLabel = isAllDay
+        ? "All day"
+        : (startRaw
+            ? new Date(startRaw).toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+                timeZone: "America/Los_Angeles",
+              })
+            : "");
       const endLabel = endRaw
         ? new Date(endRaw).toLocaleTimeString("en-US", {
             hour: "numeric",
@@ -250,6 +251,7 @@ async function fetchLiveCalendar(): Promise<CalItem[] | null> {
         n: e.summary || "(no title)",
         real: attendeeCount > 1 || hasVideo,
         attendeeCount,
+        allDay: isAllDay,
       };
       if (endLabel) item.tEnd = endLabel;
       if (e.id) {

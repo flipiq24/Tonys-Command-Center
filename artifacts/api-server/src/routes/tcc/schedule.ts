@@ -147,6 +147,17 @@ router.post("/schedule/add", async (req, res): Promise<void> => {
   const { title, date, allDay, startTime, endTime, location, description, notification, guests, forceOverride, overrideReason, category, priority } = parsed.data;
   const colorId = category ? CATEGORY_COLOR_ID[category] : undefined;
 
+  // Defense-in-depth: timed events must have start < end. Without this we
+  // hit a generic 500 from Google Calendar with no actionable message.
+  if (!allDay && startTime && endTime) {
+    const sMin = timeToMinutes(startTime);
+    const eMin = timeToMinutes(endTime);
+    if (sMin !== null && eMin !== null && eMin <= sMin) {
+      res.status(400).json({ ok: false, error: "End time must be after start time." });
+      return;
+    }
+  }
+
   // ── Guilt-trip check (only for timed events during call hours) ───────────
   let guiltTrip = false;
   let guiltTripMsg = "";

@@ -22,6 +22,7 @@ export interface CalItem {
   meetLink?: string;
   priority?: string;
   attendeeCount?: number;
+  allDay?: boolean;
 }
 export interface EmailItem { id: number; from: string; subj: string; why: string; time?: string; p?: string; gmailMessageId?: string; contactContext?: string; }
 export interface TaskItem { id: string; text: string; cat: string; sales?: boolean; priority?: number; }

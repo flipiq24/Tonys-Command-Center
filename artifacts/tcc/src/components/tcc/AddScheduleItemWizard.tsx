@@ -53,8 +53,13 @@ function defaultStart(): string {
 
 function defaultEnd(start: string): string {
   const [h, m] = start.split(":").map(Number);
-  const totalMin = h * 60 + m + 60;
-  return `${String(Math.floor(totalMin / 60) % 24).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+  const totalMin = Math.min(h * 60 + m + 60, 23 * 60 + 59); // clamp at 23:59
+  return `${String(Math.floor(totalMin / 60)).padStart(2, "0")}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+
+function timeToMin(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
 }
 
 export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
@@ -151,6 +156,15 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
 
   const doSave = async (forceOverride = false, reason = "") => {
     setError("");
+    // Client-side validation: timed events need start < end on the same day.
+    // Without this, Google Calendar rejects the request and the user sees a
+    // generic 500 with no actionable message.
+    if (!allDay) {
+      if (timeToMin(endTime) <= timeToMin(startTime)) {
+        setError("End time must be after start time.");
+        return;
+      }
+    }
     setSaving(true);
     try {
       const result = await post<{ ok: boolean; guiltTrip?: boolean; guiltTripMsg?: string; callsMade?: number; quotaTarget?: number; htmlLink?: string }>("/schedule/add", {
@@ -260,7 +274,15 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
                 <input
                   type="time"
                   value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
+                  onChange={e => {
+                    const newStart = e.target.value;
+                    setStartTime(newStart);
+                    // Auto-bump end if it would become invalid. Keeps UX
+                    // smooth: changing start to a later time slides end too.
+                    if (timeToMin(newStart) >= timeToMin(endTime)) {
+                      setEndTime(defaultEnd(newStart));
+                    }
+                  }}
                   style={{ ...inp, flex: 1, fontSize: 14 }}
                 />
                 <span style={{ color: C.mut, fontSize: 13 }}>to</span>

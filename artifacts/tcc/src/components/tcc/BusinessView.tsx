@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { get, post, patch, put, del } from "@/lib/api";
 import { C, F } from "@/components/tcc/constants";
+import { IdeasView } from "@/components/tcc/IdeasView";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,7 +32,7 @@ type PlanItem = {
 
 type SubcategoryWithTasks = PlanItem & { tasks: PlanItem[]; totalTasks: number; completedTasks: number };
 type CategoryWithSubs = PlanItem & { subcategories: SubcategoryWithTasks[]; totalTasks: number; completedTasks: number };
-type Tab = "goals" | "team" | "tasks" | "plan";
+type Tab = "goals" | "team" | "tasks" | "plan" | "ideas";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -3067,8 +3068,9 @@ function BusinessPlanTab() {
 
 // ─── Main BusinessView ────────────────────────────────────────────────────────
 
-export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defaultTab?: Tab }) {
-  const [tab, setTab] = useState<Tab>(defaultTab || "goals");
+export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () => void; defaultTab?: Tab; onTabChange?: (tab: Tab) => void }) {
+  const [tab, setTabRaw] = useState<Tab>(defaultTab || "goals");
+  const setTab = useCallback((t: Tab) => { setTabRaw(t); onTabChange?.(t); }, [onTabChange]);
   const [pendingParentFilter, setPendingParentFilter] = useState<string | null>(null);
   const [categories, setCategories] = useState<CategoryWithSubs[]>([]);
   const [byOwner, setByOwner] = useState<Record<string, Record<number, PlanItem[]>>>({});
@@ -3184,6 +3186,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
                   {tab === "goals" && `411 Goal Cascade — ${doneTasks}/${totalTasks} tasks · ${totalTasks > 0 ? Math.round(doneTasks/totalTasks*100) : 0}% complete`}
                   {tab === "team" && "Team roster — scope, accountability, gaps"}
                   {tab === "tasks" && "Master task list — drag to reorder · sprint ID format"}
+                  {tab === "ideas" && "Ideas parking lot — review, edit, convert to tasks, delete"}
                   {tab === "plan" && "Business plan + 90-day OAP narrative"}
                 </div>
               </div>
@@ -3208,6 +3211,7 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
             <button style={tabStyle(tab === "goals")} onClick={() => setTab("goals")}>🎯 411 plan</button>
             <button style={tabStyle(tab === "team")} onClick={() => setTab("team")}>👥 Team roster</button>
             <button style={tabStyle(tab === "tasks")} onClick={() => setTab("tasks")}>✅ Master task</button>
+            <button style={tabStyle(tab === "ideas")} onClick={() => setTab("ideas")}>💡 Ideas</button>
             <button style={tabStyle(tab === "plan")} onClick={() => setTab("plan")}>📄 Business plan</button>
           </div>
         </div>
@@ -3245,6 +3249,37 @@ export function BusinessView({ onBack, defaultTab }: { onBack: () => void; defau
             categories={categories}
             initialParentFilter={pendingParentFilter}
             onInitialParentFilterConsumed={() => setPendingParentFilter(null)}
+          />
+        )}
+        {tab === "ideas" && (
+          <IdeasView
+            ideas={[]}
+            onIdeasChange={() => { /* IdeasView fetches its own list */ }}
+            onCreateTask={async (ideaText, category, urgency, techType) => {
+              // Mirror App.tsx onCreateTask flow: ask the AI to fill task fields,
+              // fall back to a basic stub if it fails, then dispatch the
+              // tcc:prefill-task event that MasterTaskTab listens for.
+              let taskFields: any = null;
+              try {
+                const res = await post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", {
+                  ideaText, category, urgency, techType,
+                });
+                if (res?.ok && res.taskFields) taskFields = res.taskFields;
+              } catch { /* fallback below */ }
+              if (!taskFields) {
+                taskFields = {
+                  title: ideaText.slice(0, 120),
+                  category: (category || "tech").toLowerCase(),
+                  owner: "Tony",
+                  priority: urgency === "Now" ? "P0" : urgency === "This Week" ? "P1" : "P2",
+                  source: "TCC",
+                  workNotes: ideaText,
+                };
+              }
+              setTab("tasks");
+              setTimeout(() => window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: taskFields })), 200);
+            }}
+            onNavigate={() => { /* unused — sidebar handles nav */ }}
           />
         )}
         {tab === "plan" && <BusinessPlanTab />}

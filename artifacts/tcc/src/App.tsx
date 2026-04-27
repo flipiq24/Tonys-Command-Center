@@ -24,7 +24,7 @@ import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
 type View = "checkin" | "journal" | "dashboard" | "emails" | "schedule" | "sales" | "chat" | "business" | "ai-usage" | "agents-settings";
-type BusinessTab = "goals" | "team" | "tasks" | "plan";
+type BusinessTab = "goals" | "team" | "tasks" | "plan" | "ideas";
 
 export default function App() {
   const [view, setView] = useState<View>("dashboard");

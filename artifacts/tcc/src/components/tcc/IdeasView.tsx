@@ -98,8 +98,8 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
     try {
       const updated = await patch<any>(`/ideas/${idea.id}`, { status: "parked", urgency: "Someday" });
       onUpdated({ ...idea, ...updated, status: "parked", urgency: "Someday" });
-      // Create a task at Someday priority so it lands at the right place in the task order
-      if (onCreateTask) onCreateTask(form.text, form.category, "Someday", form.techType || undefined);
+      // Park only — do NOT auto-open the task creation modal. Users who want
+      // a task for the parked idea can click "Convert to Task" explicitly.
       onClose();
     } catch { /* ignore */ }
   };

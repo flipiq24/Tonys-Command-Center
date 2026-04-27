@@ -74,3 +74,5 @@ export const inp: React.CSSProperties = { width: "100%", padding: "10px 14px", b
 export const btn1: React.CSSProperties = { padding: "14px 28px", background: "#F97316", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: F };
 export const btn2: React.CSSProperties = { padding: "10px 18px", background: C.card, color: C.tx, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: F };
 export const lbl: React.CSSProperties = { display: "block", fontSize: 10, fontWeight: 600, color: C.mut, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 };
+
+export const BRAND = { name: "Command Brain", tagline: "Tony's AI Operating System" };

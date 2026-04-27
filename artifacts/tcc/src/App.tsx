@@ -13,7 +13,7 @@ import { ConnectedCallModal } from "@/components/tcc/ConnectedCallModal";
 import { EmailsView } from "@/components/tcc/EmailsView";
 import { ScheduleView } from "@/components/tcc/ScheduleView";
 import { SalesView } from "@/components/tcc/SalesView";
-import { ClaudeChatView } from "@/components/tcc/ClaudeChatView";
+import { CommandBrainView } from "@/components/tcc/chat/CommandBrainView";
 import { PrintView } from "@/components/tcc/PrintView";
 import { DashboardView } from "@/components/tcc/DashboardView";
 import { BusinessView } from "@/components/tcc/BusinessView";
@@ -427,7 +427,7 @@ export default function App() {
     return (
       <>
         <FontLink />
-        <ClaudeChatView
+        <CommandBrainView
           onBack={() => { setChatContext(null); setView(prevView || "emails"); }}
           initialContextType={chatContext?.contextType}
           initialContextId={chatContext?.contextId}

@@ -91,6 +91,8 @@ export const chatThreadsTable = pgTable("chat_threads", {
   title: text("title"),
   contextType: text("context_type").default("general"),
   contextId: text("context_id"),
+  pinned: boolean("pinned").default(false).notNull(),
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });

@@ -645,7 +645,13 @@ async function autoTitle(threadId: string, firstMessage: string): Promise<void> 
 }
 
 router.get("/chat/threads", async (_req, res): Promise<void> => {
-  const threads = await db.select().from(chatThreadsTable).orderBy(desc(chatThreadsTable.updatedAt)).limit(50);
+  const threads = await db.select().from(chatThreadsTable)
+    .orderBy(
+      desc(chatThreadsTable.pinned),
+      desc(chatThreadsTable.pinnedAt),
+      desc(chatThreadsTable.updatedAt),
+    )
+    .limit(50);
   res.json(threads);
 });
 
@@ -675,6 +681,31 @@ router.delete("/chat/threads/:threadId", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+const PatchThreadBody = z.object({
+  title: z.string().min(1).optional(),
+  pinned: z.boolean().optional(),
+});
+
+router.patch("/chat/threads/:threadId", async (req, res): Promise<void> => {
+  const parsed = PatchThreadBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.title !== undefined) updates.title = parsed.data.title;
+  if (parsed.data.pinned !== undefined) {
+    updates.pinned = parsed.data.pinned;
+    updates.pinnedAt = parsed.data.pinned ? new Date() : null;
+  }
+
+  const [updated] = await db.update(chatThreadsTable)
+    .set(updates)
+    .where(eq(chatThreadsTable.id, req.params.threadId))
+    .returning();
+
+  if (!updated) { res.status(404).json({ error: "Thread not found" }); return; }
+  res.json(updated);
+});
+
 router.get("/chat/threads/:threadId/messages", async (req, res): Promise<void> => {
   const messages = await db.select().from(chatMessagesTable)
     .where(eq(chatMessagesTable.threadId, req.params.threadId))
@@ -682,14 +713,17 @@ router.get("/chat/threads/:threadId/messages", async (req, res): Promise<void> =
   res.json(messages);
 });
 
-const SendMessageBody = z.object({ content: z.string().min(1) });
+const SendMessageBody = z.object({
+  content: z.string().min(1),
+  mentionedAgent: z.string().optional(),
+});
 
 router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> => {
   const parsed = SendMessageBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const { threadId } = req.params;
-  const { content } = parsed.data;
+  const { content, mentionedAgent } = parsed.data;
 
   const [thread] = await db.select().from(chatThreadsTable).where(eq(chatThreadsTable.id, threadId)).limit(1);
   if (!thread) { res.status(404).json({ error: "Thread not found" }); return; }
@@ -716,7 +750,10 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const systemPrompt = await buildSystemPrompt(thread.contextType || undefined, thread.contextId || undefined);
+  let systemPrompt = await buildSystemPrompt(thread.contextType || undefined, thread.contextId || undefined);
+  if (mentionedAgent) {
+    systemPrompt += `\n\nSPECIALIST HINT: Tony tagged @${mentionedAgent}. Prioritize using that specialist's tools for this request. If you determine a different specialist is actually more appropriate, explain why in your response.`;
+  }
   let fullResponse = "";
   const toolResults: { name: string; result: string }[] = [];
   const streamStartTime = Date.now();

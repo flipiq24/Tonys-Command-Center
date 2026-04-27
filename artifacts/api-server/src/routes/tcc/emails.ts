@@ -172,7 +172,48 @@ router.post("/emails/action", async (req, res): Promise<void> => {
       ? `\n\nTONY'S EMAIL BRAIN (learned from his training):\n${brainRow.content}`
       : "";
 
-    const { notes } = parsed.data;
+    const { notes, gmailMessageId } = parsed.data;
+
+    // Fetch the actual email body from Gmail. The previous version sent only
+    // sender + subject — the AI had no idea what the email said and either
+    // produced a generic reply or asked for the body. Now we fetch the full
+    // text/plain body (with quoted lines stripped, capped at 1500 chars).
+    let emailBody = "";
+    if (gmailMessageId) {
+      try {
+        const gmail = await getGmail();
+        const msg = await gmail.users.messages.get({ userId: "me", id: gmailMessageId, format: "full" });
+        const data = msg.data;
+        const decode = (str: string) =>
+          Buffer.from(str.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf-8");
+        const extract = (payload: typeof data.payload): string => {
+          if (!payload) return "";
+          if (payload.mimeType === "text/plain" && payload.body?.data) return decode(payload.body.data);
+          if (payload.parts) {
+            for (const part of payload.parts) {
+              if (part.mimeType === "text/plain" && part.body?.data) return decode(part.body.data);
+            }
+            for (const part of payload.parts) {
+              const sub = extract(part as typeof payload);
+              if (sub) return sub;
+            }
+          }
+          if (payload.body?.data) return decode(payload.body.data);
+          return "";
+        };
+        const raw = extract(data.payload);
+        emailBody = raw
+          .split("\n")
+          .filter(l => !l.trimStart().startsWith(">"))
+          .join("\n")
+          .trim()
+          .substring(0, 1500);
+        if (!emailBody) emailBody = data.snippet || "";
+      } catch (err) {
+        req.log.warn({ err, gmailMessageId }, "Failed to fetch email body for suggest_reply");
+      }
+    }
+
     let draft = "";
     try {
       let rawText = "";
@@ -183,31 +224,37 @@ router.post("/emails/action", async (req, res): Promise<void> => {
         // Runtime path: send only dynamic data — voice/format instructions live
         // in the skill body. Brain content stays in the user message because
         // email-brain → memory-section migration lands in a later phase.
-        const runtimeMessage = `Reply context — From: ${sender} | Subject: ${subject}${reason ? ` | Context: ${reason}` : ""}${notes ? ` | Tony's notes: ${notes}` : ""}${brainContext
-          ? `\n\nTONY'S EMAIL BRAIN (learned from training):\n${brainRow?.content || ""}`
-          : ""}`;
+        const runtimeMessage = `From: ${sender}
+Subject: ${subject}
+${emailBody ? `\nORIGINAL EMAIL:\n${emailBody}` : "\n(No email body available — draft a generic professional reply based on the subject line.)"}
+${reason ? `\nWhy this is important: ${reason}` : ""}
+${notes ? `\nTony's notes: ${notes}` : ""}${brainContext
+  ? `\n\nTONY'S EMAIL BRAIN (learned from training):\n${brainRow?.content || ""}`
+  : ""}`;
 
         const result = await runAgent("email", "reply-draft", {
           userMessage: runtimeMessage,
           caller: "direct",
-          meta: { sender, subject, hasReason: !!reason, hasNotes: !!notes },
+          meta: { sender, subject, hasBody: !!emailBody, hasReason: !!reason, hasNotes: !!notes },
         });
         rawText = result.text;
       } else {
         const userMessage = `Draft a reply to this email:
 From: ${sender}
 Subject: ${subject}
+${emailBody ? `\nORIGINAL EMAIL:\n${emailBody}` : "\n(No email body available — draft a generic professional reply based on the subject line.)"}
 ${reason ? `\nContext: ${reason}` : ""}
 ${notes ? `\nAdditional notes from Tony: ${notes}` : ""}
 
-Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Plain text only.`;
+Write a professional reply from Tony Diaz. Keep it brief and action-oriented. Plain text only. Output ONLY the reply text — no preamble, no "here's a draft", no explanation. Start directly with the salutation.`;
         const message = await createTrackedMessage("email_action", {
           model: "claude-sonnet-4-6",
           max_tokens: 8192,
           system: `You are Tony Diaz's AI assistant. Tony runs FlipIQ, a real estate wholesale platform.
 Draft professional, concise email replies in Tony's voice — direct, warm, action-oriented.
 Keep replies short (3-5 sentences max). Always end with a clear next step.
-IMPORTANT: Write in plain prose only. No markdown, no asterisks, no bullet points, no headers, no bold, no formatting characters whatsoever. Just plain text paragraphs.${brainContext}`,
+IMPORTANT: Write in plain prose only. No markdown, no asterisks, no bullet points, no headers, no bold, no formatting characters whatsoever. Just plain text paragraphs.
+CRITICAL: Output ONLY the email reply text. Never preface with "Here is your reply" or "I'd be happy to help" or any meta-commentary. Start directly with the salutation. The text you produce will be sent verbatim — anything you say that isn't the email itself will end up in the recipient's inbox.${brainContext}`,
           messages: [{
             role: "user",
             content: userMessage,
@@ -218,6 +265,12 @@ IMPORTANT: Write in plain prose only. No markdown, no asterisks, no bullet point
       }
 
       draft = rawText.replace(/\*\*/g, "").replace(/\*/g, "").replace(/^#+\s/gm, "").replace(/^-\s/gm, "").trim();
+      // Strip common AI preambles at the start (defense-in-depth — the skill
+      // body forbids these, but Sonnet still slips them in occasionally).
+      draft = draft.replace(/^(here(?:'s| is) (?:your |a |the )?(?:draft|reply|response)[^\n]*\n+)/i, "");
+      draft = draft.replace(/^(sure[,!]?\s+)?(here(?:'s| is)[^\n]*\n+)/i, "");
+      draft = draft.replace(/^(i'?d be happy to help[^\n]*\n+)/i, "");
+      draft = draft.trim();
     } catch (err) {
       req.log.warn({ err }, "Claude API failed for email reply");
       draft = `Hi ${sender?.split(" ")[0] || "there"},\n\nThanks for reaching out. Let's connect to discuss this further.\n\nBest,\nTony`;

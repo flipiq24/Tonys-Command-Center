@@ -434,35 +434,77 @@ router.post("/ideas/notify-override", async (req, res): Promise<void> => {
 });
 
 router.post("/ideas/escalate-to-ethan", async (req, res): Promise<void> => {
-  const { text, rank, reasoning } = req.body as { text?: string; rank?: number; reasoning?: string };
+  const { text, rank, reasoning, meetingStart, meetingEnd } = req.body as {
+    text?: string;
+    rank?: number;
+    reasoning?: string;
+    meetingStart?: string;
+    meetingEnd?: string;
+  };
+
+  let slackOk = false;
+  let calendarOk = false;
+  let scheduledStart: string | null = null;
+  let scheduledEnd: string | null = null;
+
+  // ── Slack notification (fire even if calendar booking fails) ───────────────
   try {
-    await postSlackMessage({
+    const r = await postSlackMessage({
       channel: "U0991BD321Y",
       text: `*Idea Parked + Meeting Requested*\n\nTony submitted an idea that was flagged as out-of-scope and auto-parked:\n> ${text || ""}\n\nPlease schedule a meeting to discuss if this should be prioritized.`,
     });
-
-    try {
-      const { createEvent } = await import("../../lib/gcal");
-      const nextSlot = new Date();
-      nextSlot.setDate(nextSlot.getDate() + 1);
-      nextSlot.setHours(14, 0, 0, 0);
-      if (nextSlot.getDay() === 0) nextSlot.setDate(nextSlot.getDate() + 1);
-      if (nextSlot.getDay() === 6) nextSlot.setDate(nextSlot.getDate() + 2);
-      const endSlot = new Date(nextSlot.getTime() + 30 * 60 * 1000);
-
-      await createEvent({
-        summary: `Review plan change with Ethan — "${(text || "").substring(0, 50)}"`,
-        start: nextSlot.toISOString(),
-        end: endSlot.toISOString(),
-        attendees: ["ethan@flipiq.com"],
-        description: `Tony submitted: "${text}"\nAI priority: #${rank || "unknown"}\nTony's reasoning: "${reasoning || "Auto-parked, no justification"}"`,
-      });
-    } catch { /* calendar creation non-critical */ }
-
-    res.json({ ok: true });
+    slackOk = r.ok;
   } catch {
-    res.json({ ok: true, slackFailed: true });
+    slackOk = false;
   }
+
+  // ── Calendar booking ──────────────────────────────────────────────────────
+  // Honor the FE-supplied slot if both ISO timestamps validate; otherwise fall
+  // back to "tomorrow at 2pm local, skipping weekends" so existing callers
+  // (any without the new fields) keep working.
+  try {
+    const { createEvent } = await import("../../lib/gcal");
+
+    let startDate: Date;
+    let endDate: Date;
+    if (meetingStart && meetingEnd) {
+      startDate = new Date(meetingStart);
+      endDate = new Date(meetingEnd);
+    } else {
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() + 1);
+      if (startDate.getDay() === 0) startDate.setDate(startDate.getDate() + 1);
+      if (startDate.getDay() === 6) startDate.setDate(startDate.getDate() + 2);
+      startDate.setHours(14, 0, 0, 0);
+      endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+    }
+
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new Error("Invalid meetingStart/meetingEnd ISO timestamps");
+    }
+
+    await createEvent({
+      summary: `Review plan change with Ethan — "${(text || "").substring(0, 50)}"`,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      attendees: ["ethan@flipiq.com"],
+      description: `Tony submitted: "${text}"\nAI priority: #${rank || "unknown"}\nTony's reasoning: "${reasoning || "Auto-parked, no justification"}"`,
+    });
+    calendarOk = true;
+    scheduledStart = startDate.toISOString();
+    scheduledEnd = endDate.toISOString();
+  } catch (err) {
+    calendarOk = false;
+    console.warn("[ideas/escalate-to-ethan] calendar booking failed:", err instanceof Error ? err.message : err);
+  }
+
+  res.json({
+    ok: slackOk || calendarOk,
+    slackOk,
+    calendarOk,
+    meetingStart: scheduledStart,
+    meetingEnd: scheduledEnd,
+  });
 });
 
 const NotifyAssigneeBody = z.object({

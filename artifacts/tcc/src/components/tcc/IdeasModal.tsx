@@ -12,6 +12,31 @@ interface TeamMember { name: string; email: string | null; slackId?: string | nu
 
 const ASSIGNABLE_URGENCIES = ["Now", "This Week", "This Month"];
 
+// Default escalate-meeting slot: tomorrow at 2pm local, skipping weekends.
+// Returns YYYY-MM-DDTHH:MM in LOCAL timezone (matches <input type="datetime-local"> format).
+function defaultEscalateMeetingAt(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+  d.setHours(14, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Convert YYYY-MM-DDTHH:MM (local) to a friendly "Wed Apr 29 at 2:00 PM" string.
+function formatMeetingAt(local: string): string {
+  try {
+    const d = new Date(local);
+    return d.toLocaleString("en-US", {
+      weekday: "short", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    });
+  } catch {
+    return local;
+  }
+}
+
 function getDefaultDueDate(urgency: string): string {
   const today = new Date();
   if (urgency === "Now") {
@@ -78,6 +103,11 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
   const [override, setOverride] = useState<{ justification: string } | null>(null);
   const [assign, setAssign] = useState<AssignState | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  // Escalate flow: meeting time (datetime-local) + whether to also open the
+  // task-creation modal after parking. Defaults: tomorrow 2pm local, create-task ON.
+  const [escalateMeetingAt, setEscalateMeetingAt] = useState<string>(() => defaultEscalateMeetingAt());
+  const [escalateCreateTask, setEscalateCreateTask] = useState<boolean>(true);
+  const [escalateConfirmation, setEscalateConfirmation] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -129,6 +159,9 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
     setLinearId(null);
     setPushback(null);
     setOverride(null);
+    setEscalateMeetingAt(defaultEscalateMeetingAt());
+    setEscalateCreateTask(true);
+    setEscalateConfirmation(null);
     setAssign(null);
     // keep teamMembers cached — no need to reset
   };
@@ -319,18 +352,61 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
               <div style={{ padding: 16, background: C.redBg, borderRadius: 10, marginBottom: 14, border: `1px solid ${C.red}` }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: C.red, marginBottom: 8 }}>🚨 Scope Check</div>
                 <div style={{ fontSize: 13, color: C.tx, marginBottom: 12 }}>{pushback.message}</div>
+
+                {/* Meeting time picker — Tony can change the slot before booking */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ ...lbl, marginBottom: 4 }}>Meeting with Ethan</label>
+                  <input
+                    type="datetime-local"
+                    value={escalateMeetingAt}
+                    onChange={e => setEscalateMeetingAt(e.target.value)}
+                    style={{ ...inp, padding: "6px 10px", fontSize: 13 }}
+                  />
+                  <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>
+                    Default tomorrow at 2pm. Calendar invite sent to ethan@flipiq.com.
+                  </div>
+                </div>
+
                 <button
                   onClick={async () => {
                     setStep("saving");
                     try {
                       const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: "Someday" });
-                      // Only notify Ethan if urgency is high (Now or This Week)
-                      if (finalUrg === "Now" || finalUrg === "This Week") {
-                        await post("/ideas/escalate-to-ethan", { text, rank: pushback.priorityRank }).catch(() => {});
-                      }
+
+                      // Build start/end ISO strings from the chosen local datetime.
+                      const startLocal = escalateMeetingAt || defaultEscalateMeetingAt();
+                      const startDate = new Date(startLocal);
+                      const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+
+                      // Always notify Ethan when this button is clicked (matches the label).
+                      type EscalateRes = { ok: boolean; meetingStart?: string; meetingEnd?: string; calendarOk?: boolean; slackOk?: boolean };
+                      const r: EscalateRes = await post<EscalateRes>("/ideas/escalate-to-ethan", {
+                        text,
+                        rank: pushback.priorityRank,
+                        meetingStart: startDate.toISOString(),
+                        meetingEnd: endDate.toISOString(),
+                      }).catch(() => ({ ok: false }));
+
+                      // Confirmation string for the saving step UX.
+                      const friendly = formatMeetingAt(startLocal);
+                      setEscalateConfirmation(
+                        r.ok && r.calendarOk !== false
+                          ? `Ethan booked for ${friendly} — calendar invite sent.`
+                          : `Idea parked. Ethan notified on Slack (calendar booking failed).`
+                      );
+
                       onSave(idea);
-                      // Auto-open task modal with ORIGINAL urgency (not Someday)
-                      if (onCreateTask) await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
+
+                      // Brief pause so Tony can read the confirmation, then either
+                      // open the task modal (if checked) or just close.
+                      await new Promise<void>(resolve => {
+                        const t = setTimeout(() => resolve(), 1800);
+                        if (!mountedRef.current) { clearTimeout(t); resolve(); }
+                      });
+
+                      if (escalateCreateTask && onCreateTask) {
+                        await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
+                      }
                       handleClose();
                     } catch { setError("Failed to park idea"); setStep("review"); }
                   }}
@@ -338,6 +414,24 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                 >
                   OK, Park It + Notify Ethan
                 </button>
+
+                {/* "Also create a task" — defaults ON. Lets Tony park the idea
+                    AND drop a placeholder task into the master list so the work
+                    isn't lost while waiting on Ethan's review. */}
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 10, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={escalateCreateTask}
+                    onChange={e => setEscalateCreateTask(e.target.checked)}
+                    style={{ marginTop: 2, accentColor: "#F97316", cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: 11, color: C.sub, lineHeight: 1.4 }}>
+                    Also open the task creation modal after parking
+                    <div style={{ fontSize: 10, color: C.mut, marginTop: 1 }}>
+                      Off = park-only (idea is saved, you stay focused on the current view).
+                    </div>
+                  </span>
+                </label>
               </div>
             )}
 
@@ -608,17 +702,28 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
         {step === "saving" && (
           <div style={{ textAlign: "center", padding: "32px 0" }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>
-              {linearId ? "✅" : "⏳"}
+              {escalateConfirmation ? "📅" : linearId ? "✅" : "⏳"}
             </div>
             <div style={{ fontFamily: FS, fontSize: 18, marginBottom: 8 }}>
-              {linearId ? `${finalUrg === "Now" ? "Posted!" : "Parked!"} Linear: ${linearId}` : finalUrg === "Now" ? "Posting and delivering..." : "Parking your idea..."}
+              {escalateConfirmation
+                ? "Idea Parked + Ethan Notified"
+                : linearId
+                ? `${finalUrg === "Now" ? "Posted!" : "Parked!"} Linear: ${linearId}`
+                : finalUrg === "Now"
+                ? "Posting and delivering..."
+                : "Parking your idea..."}
             </div>
-            {linearId && (
+            {escalateConfirmation && (
+              <div style={{ fontSize: 13, color: C.grn, padding: "0 24px", lineHeight: 1.5 }}>
+                {escalateConfirmation}
+              </div>
+            )}
+            {!escalateConfirmation && linearId && (
               <div style={{ fontSize: 13, color: C.grn }}>
                 {finalUrg === "Now" ? "Delivered now — action item live." : "Tech idea sent to Linear — back to calls!"}
               </div>
             )}
-            {!linearId && (
+            {!escalateConfirmation && !linearId && (
               <div style={{ fontSize: 13, color: C.mut }}>Saving to database...</div>
             )}
           </div>

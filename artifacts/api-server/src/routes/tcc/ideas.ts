@@ -665,11 +665,14 @@ router.post("/ideas/:id/rethink", async (req, res): Promise<void> => {
     const recentIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt)).limit(5);
     const classification = await classifyIdea(idea.text, recentIdeas);
 
-    // Update idea with new classification
+    // Update idea with new classification — persist the full reflection
+    // JSON too so the drawer's AI tab can re-show it without re-running
+    // the classifier on every reopen.
     const [updated] = await db.update(ideasTable).set({
       category: classification.category,
       urgency: classification.urgency,
       techType: classification.techType || null,
+      aiReflection: JSON.stringify(classification),
     }).where(eq(ideasTable.id, id)).returning();
 
     res.json({ ok: true, idea: updated, classification });

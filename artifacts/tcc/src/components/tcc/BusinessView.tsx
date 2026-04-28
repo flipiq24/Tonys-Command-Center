@@ -712,6 +712,11 @@ function AddTaskModal({
   // Linear ticket flow (only shown when source === "Linear")
   const [hasTicketId, setHasTicketId] = useState<"yes" | "no" | null>(null);
   const [notifyOwnerForTicket, setNotifyOwnerForTicket] = useState(true);
+  // Generic Slack notification — fires after task creation if the owner has
+  // a Slack account. Sends them the task details + asks them to mirror it
+  // into Linear so it shows up in their queue. Default ON when an assignee
+  // is set (matches the ideas-flow notify behaviour).
+  const [notifyAssigneeOnSlack, setNotifyAssigneeOnSlack] = useState(false);
 
   // Reset the Linear sub-flow whenever the user changes Source away from / to Linear
   useEffect(() => {
@@ -775,6 +780,19 @@ function AddTaskModal({
         manualPosition: manualOffset !== 0 ? finalIdx : undefined,
       };
       const result:any = await post("/plan/task", payload);
+      // Optional Slack DM to the owner — fire-and-forget so a Slack outage
+      // never blocks the task save. Only fires when Tony explicitly opted in
+      // and an owner is set on the task.
+      if (notifyAssigneeOnSlack && form.owner && form.owner.trim()) {
+        post("/plan/task/notify-assignee", {
+          taskTitle: form.title,
+          owner: form.owner,
+          priority: form.priority,
+          dueDate: form.dueDate || undefined,
+          workNotes: form.workNotes || undefined,
+          category: form.category,
+        }).catch(() => { /* non-blocking */ });
+      }
       onCreated(result);
     } catch (e: any) {
       setErr(e.message || "Failed to create task");
@@ -1000,6 +1018,28 @@ function AddTaskModal({
           )}
 
           {form.source !== "Linear" && <div style={{ marginBottom: 6 }} />}
+
+          {/* Slack notify checkbox — only meaningful when an owner is set.
+              When enabled, the backend looks up the owner's Slack ID and DMs
+              them the task details + asks them to mirror it into Linear. */}
+          {form.owner && form.owner.trim() && form.owner.toLowerCase() !== "tony" && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px", border: `1px solid ${C.brd}`, borderRadius: 8, background: "#F9FAFB", marginBottom: 12, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={notifyAssigneeOnSlack}
+                onChange={e => setNotifyAssigneeOnSlack(e.target.checked)}
+                style={{ marginTop: 2, cursor: "pointer" }}
+              />
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.tx, fontFamily: F }}>
+                  💬 Notify {form.owner} on Slack
+                </span>
+                <span style={{ display: "block", fontSize: 11, color: C.mut, marginTop: 2, fontFamily: F }}>
+                  Sends a DM with task details + asks them to create the matching Linear ticket.
+                </span>
+              </span>
+            </label>
+          )}
 
           {err && <div style={{ background: C.redBg, color: C.red, borderRadius: 7, padding: "8px 12px", fontSize: 12, marginBottom: 14, fontFamily: F }}>{err}</div>}
 
@@ -1460,11 +1500,13 @@ type OrganizePreview = {
   currentOrder: (PlanItem & { sprintId?: string })[];
 };
 
-function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitialParentFilterConsumed }: {
+function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitialParentFilterConsumed, initialPrefill, onInitialPrefillConsumed }: {
   onRefreshAll: () => void;
   categories: CategoryWithSubs[];
   initialParentFilter?: string | null;
   onInitialParentFilterConsumed?: () => void;
+  initialPrefill?: Record<string, string> | null;
+  onInitialPrefillConsumed?: () => void;
 }) {
   const [tasks, setTasks] = useState<(PlanItem & { sprintId?: string })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1492,7 +1534,8 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
   const [prefillData, setPrefillData] = useState<Record<string, string> | null>(null);
   const [placementToast, setPlacementToast] = useState<string | null>(null);
 
-  // Listen for idea-to-task prefill events
+  // Listen for idea-to-task prefill events (legacy global event path —
+  // still useful when the prefill request comes from outside BusinessView)
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -1501,6 +1544,18 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
     window.addEventListener("tcc:prefill-task", handler);
     return () => window.removeEventListener("tcc:prefill-task", handler);
   }, []);
+
+  // Prop-driven prefill — used when Convert to Task happens inside the same
+  // BusinessView (e.g. from the Ideas tab). The prop survives the tab switch
+  // and fires immediately on mount, no event-listener race.
+  useEffect(() => {
+    if (initialPrefill) {
+      setPrefillData(initialPrefill);
+      setShowAdd(true);
+      onInitialPrefillConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrefill]);
   const [editId, setEditId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragTaskRef = useRef<string | null>(null);
@@ -3072,6 +3127,9 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
   const [tab, setTabRaw] = useState<Tab>(defaultTab || "goals");
   const setTab = useCallback((t: Tab) => { setTabRaw(t); onTabChange?.(t); }, [onTabChange]);
   const [pendingParentFilter, setPendingParentFilter] = useState<string | null>(null);
+  // Survives the Ideas → Tasks tab switch so MasterTaskTab opens the
+  // AddTaskModal with the right prefill on mount, no event-listener race.
+  const [pendingTaskPrefill, setPendingTaskPrefill] = useState<Record<string, string> | null>(null);
   const [categories, setCategories] = useState<CategoryWithSubs[]>([]);
   const [byOwner, setByOwner] = useState<Record<string, Record<number, PlanItem[]>>>({});
   const [childStats, setChildStats] = useState<Record<string, { total: number; done: number }>>({});
@@ -3249,6 +3307,8 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
             categories={categories}
             initialParentFilter={pendingParentFilter}
             onInitialParentFilterConsumed={() => setPendingParentFilter(null)}
+            initialPrefill={pendingTaskPrefill}
+            onInitialPrefillConsumed={() => setPendingTaskPrefill(null)}
           />
         )}
         {tab === "ideas" && (
@@ -3256,9 +3316,11 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
             ideas={[]}
             onIdeasChange={() => { /* IdeasView fetches its own list */ }}
             onCreateTask={async (ideaText, category, urgency, techType) => {
-              // Mirror App.tsx onCreateTask flow: ask the AI to fill task fields,
-              // fall back to a basic stub if it fails, then dispatch the
-              // tcc:prefill-task event that MasterTaskTab listens for.
+              // Ask the AI to fill task fields; fall back to a basic stub
+              // if it fails. Stash the result in BusinessView state so it
+              // survives the tab switch, then jump to the Tasks tab —
+              // MasterTaskTab will see initialPrefill on mount and open
+              // the AddTaskModal with no race condition.
               let taskFields: any = null;
               try {
                 const res = await post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", {
@@ -3276,8 +3338,8 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
                   workNotes: ideaText,
                 };
               }
+              setPendingTaskPrefill(taskFields);
               setTab("tasks");
-              setTimeout(() => window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: taskFields })), 200);
             }}
             onNavigate={() => { /* unused — sidebar handles nav */ }}
           />

@@ -40,8 +40,16 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [rethinking, setRethinking] = useState(false);
-  const [aiReflection, setAiReflection] = useState<any>(null);
+  // Hydrate the AI reflection from the idea row if Coach already produced
+  // one for it. Re-clicking "AI Rethink" overwrites this with a fresh
+  // classification (and persists the new JSON via the rethink endpoint).
+  const [aiReflection, setAiReflection] = useState<any>(() => {
+    if (!idea.aiReflection) return null;
+    try { return JSON.parse(idea.aiReflection); }
+    catch { return null; }
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [parking, setParking] = useState(false);
 
   const hasChanges = form.text !== (idea.text || "") || form.category !== (idea.category || "") ||
     form.urgency !== (idea.urgency || "") || form.techType !== (idea.techType || "") ||
@@ -74,15 +82,26 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
   const handleRethink = async () => {
     setRethinking(true);
     try {
-      const res = await post<{ ok: boolean; idea: any; classification: any }>(`/ideas/${idea.id}/rethink`, {});
+      const res = await post<{ ok: boolean; idea: any; classification: any; error?: string }>(`/ideas/${idea.id}/rethink`, {});
       if (res?.ok) {
         setAiReflection(res.classification);
         if (res.idea) {
+          // Backend persists aiReflection in the rethink endpoint, so the
+          // returned idea row already carries the new JSON — propagate it
+          // to the parent so the list view also reflects the change.
           onUpdated({ ...idea, ...res.idea });
           setForm(f => ({ ...f, category: res.idea.category || f.category, urgency: res.idea.urgency || f.urgency, techType: res.idea.techType || f.techType }));
         }
+      } else {
+        setAiReflection({ error: res?.error || "AI returned an unexpected response. Please try again." });
       }
-    } catch { setAiReflection({ error: "AI unavailable — Anthropic credits may be depleted" }); }
+    } catch (err) {
+      // Surface the real error message instead of the generic fallback —
+      // failures are usually transient (rate limit, JSON parse, network)
+      // not depleted credits.
+      const msg = err instanceof Error ? err.message : String(err);
+      setAiReflection({ error: `AI rethink failed: ${msg}` });
+    }
     setRethinking(false);
   };
 
@@ -95,6 +114,8 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
   };
 
   const handlePark = async () => {
+    if (idea.status === "parked") return; // already parked — no-op
+    setParking(true);
     try {
       const updated = await patch<any>(`/ideas/${idea.id}`, { status: "parked", urgency: "Someday" });
       onUpdated({ ...idea, ...updated, status: "parked", urgency: "Someday" });
@@ -102,7 +123,11 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
       // a task for the parked idea can click "Convert to Task" explicitly.
       onClose();
     } catch { /* ignore */ }
+    setParking(false);
   };
+
+  const isParked = idea.status === "parked";
+  const isOverride = idea.status === "override";
 
   const inp: React.CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, fontSize: 13, background: "#fff", boxSizing: "border-box" };
   const lbl: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" };
@@ -116,7 +141,16 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
             <div style={{ display: "flex", gap: 6, marginBottom: 4 }}>
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: CAT_COLOR[idea.category] || "#888", color: "#fff" }}>{idea.category}</span>
               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, background: URG_COLOR[idea.urgency] || "#888", color: "#fff" }}>{idea.urgency}</span>
-              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: idea.status === "override" ? "#FEE2E2" : "#F3F4F6", color: idea.status === "override" ? "#DC2626" : "#6B7280" }}>{idea.status}</span>
+              {/* Status pill — override and parked are distinct: override = "Tony forced this through despite AI pushback", parked = "intentionally deferred to Someday". They can also stack (override first, then later parked). */}
+              {isOverride && (
+                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "#FEE2E2", color: "#DC2626" }}>override</span>
+              )}
+              {isParked && (
+                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "#F3F4F6", color: "#6B7280" }}>parked</span>
+              )}
+              {!isOverride && !isParked && (
+                <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 4, background: "#DCFCE7", color: "#166534" }}>active</span>
+              )}
             </div>
             <div style={{ fontSize: 15, fontWeight: 700, fontFamily: FS }}>{idea.text.substring(0, 60)}{idea.text.length > 60 ? "..." : ""}</div>
           </div>
@@ -189,9 +223,20 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
                   style={{ flex: 1, padding: "8px 12px", borderRadius: 7, border: `1px solid #16A34A`, background: "#DCFCE7", color: "#166534", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>
                   Convert to Task
                 </button>
-                <button onClick={handlePark}
-                  style={{ flex: 1, padding: "8px 12px", borderRadius: 7, border: `1px solid ${C.brd}`, background: "#F3F4F6", color: "#374151", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: F }}>
-                  Park Idea
+                <button
+                  onClick={handlePark}
+                  disabled={isParked || parking}
+                  title={isParked ? "Already parked" : "Park this idea (move to Someday)"}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 7,
+                    border: `1px solid ${C.brd}`, background: "#F3F4F6",
+                    color: isParked ? "#9CA3AF" : "#374151",
+                    fontSize: 12, fontWeight: 700, fontFamily: F,
+                    cursor: isParked || parking ? "not-allowed" : "pointer",
+                    opacity: isParked || parking ? 0.6 : 1,
+                  }}
+                >
+                  {parking ? "Parking..." : isParked ? "✓ Parked" : "Park Idea"}
                 </button>
               </div>
 

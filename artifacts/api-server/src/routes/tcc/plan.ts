@@ -4,7 +4,8 @@ import { planItemsTable, brainTrainingLogTable, businessContextTable, teamRolesT
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncTasksTab } from "./sheets-sync";
-import { postSlackMessage } from "../../lib/slack";
+import { postSlackMessage, listSlackUsers, notifyAssigneeViaSlack } from "../../lib/slack";
+import { getLinearMembers } from "../../lib/linear";
 import { recordFeedback } from "../../agents/feedback.js";
 import { isAgentRuntimeEnabled } from "../../agents/flags.js";
 import { runAgent } from "../../agents/runtime.js";
@@ -1334,6 +1335,80 @@ router.post("/plan/seed", async (_req, res): Promise<void> => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ─── POST /plan/task/notify-assignee — Slack DM the task owner ──────────────
+// Triggered when Tony checks "Notify assignee on Slack" in the AddTask modal.
+// Resolves the owner's Slack ID by name (Linear members → Slack-by-email →
+// Slack-by-display-name), then sends a DM with the task details and asks the
+// owner to mirror the task into Linear.
+router.post("/plan/task/notify-assignee", async (req, res): Promise<void> => {
+  const body = req.body as {
+    taskTitle?: string;
+    owner?: string;
+    priority?: string;
+    dueDate?: string;
+    workNotes?: string;
+    category?: string;
+  };
+  const { taskTitle, owner, priority, dueDate, workNotes, category } = body;
+  if (!taskTitle || !owner) {
+    res.status(400).json({ ok: false, error: "taskTitle and owner are required" });
+    return;
+  }
+
+  try {
+    const [linearRes, slackRes] = await Promise.allSettled([
+      getLinearMembers(),
+      listSlackUsers(),
+    ]);
+    const linear = linearRes.status === "fulfilled" ? linearRes.value : [];
+    const slackUsers = slackRes.status === "fulfilled" ? (slackRes.value.members ?? []) : [];
+
+    const ownerLower = owner.toLowerCase().trim();
+    const linearMatch = linear.find(
+      (m) => (m.displayName || m.name).toLowerCase() === ownerLower || m.name.toLowerCase() === ownerLower,
+    );
+    const linearEmail = linearMatch?.email?.toLowerCase();
+
+    const slackById = (id: string) => slackUsers.find((su) => su.id === id);
+    let slackUserId: string | null = null;
+    if (linearEmail) {
+      const byEmail = slackUsers.find((su) => su.profile?.email?.toLowerCase() === linearEmail);
+      if (byEmail) slackUserId = byEmail.id;
+    }
+    if (!slackUserId) {
+      const byDisplayName = slackUsers.find((su) => {
+        const dn = (su.profile?.display_name || su.real_name || "").toLowerCase();
+        return dn === ownerLower;
+      });
+      if (byDisplayName) slackUserId = byDisplayName.id;
+    }
+
+    if (!slackUserId) {
+      res.status(404).json({ ok: false, error: `Could not find a Slack account for "${owner}"` });
+      return;
+    }
+
+    // Send the DM. The message asks the owner to create the matching Linear
+    // ticket so the work shows up in their queue.
+    const su = slackById(slackUserId);
+    const ownerDisplay = su?.profile?.display_name || su?.real_name || owner;
+    const result = await notifyAssigneeViaSlack({
+      slackUserId,
+      ideaText: taskTitle,
+      category: category || "task",
+      urgency: priority || "—",
+      dueDate: dueDate || "—",
+      assigneeName: ownerDisplay,
+      note: workNotes || "Tony just assigned this task in TCC. Please mirror it into Linear so it shows up in your queue.",
+    });
+
+    res.json({ ok: result.ok, slackUserId, owner: ownerDisplay });
+  } catch (err) {
+    console.warn("[plan/task/notify-assignee] failed:", err instanceof Error ? err.message : err);
+    res.status(500).json({ ok: false, error: (err as Error).message });
   }
 });
 

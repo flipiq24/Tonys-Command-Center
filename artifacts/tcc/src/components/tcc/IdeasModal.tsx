@@ -8,7 +8,7 @@ const CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", 
 const URG = ["Now", "This Week", "This Month", "Someday"];
 const PRIORITY_COLOR: Record<string, string> = { high: C.red, medium: C.amb, low: C.grn };
 
-interface TeamMember { name: string; email: string; slackId?: string | null; source?: string; }
+interface TeamMember { name: string; email: string | null; slackId?: string | null; source?: string; }
 
 const ASSIGNABLE_URGENCIES = ["Now", "This Week", "This Month"];
 
@@ -158,9 +158,21 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
     setStep("saving");
     setError("");
     try {
-      const hasAssignee = assign && assign.mode !== "none" && assign.assigneeName.trim() && assign.assigneeEmail.trim();
-      const assigneeName = hasAssignee ? assign!.assigneeName.trim() : undefined;
-      const assigneeEmail = hasAssignee ? assign!.assigneeEmail.trim() : undefined;
+      // Validate custom email format BEFORE backend rejects it.
+      const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (assign && assign.mode === "custom" && assign.assigneeEmail.trim() && !emailRx.test(assign.assigneeEmail.trim())) {
+        setError("That email doesn't look right. Use the format name@domain.com.");
+        setStep("review");
+        return;
+      }
+
+      const trimmedName = assign?.assigneeName.trim() || "";
+      const trimmedEmail = assign?.assigneeEmail.trim() || "";
+      const hasSlackOnly = !!(assign && assign.mode !== "none" && trimmedName && !trimmedEmail && assign.assigneeSlackId);
+      const hasAssignee = !!(assign && assign.mode !== "none" && trimmedName && (trimmedEmail || hasSlackOnly));
+      const assigneeName = hasAssignee ? trimmedName : undefined;
+      // Backend zod requires email format if email is sent. Skip the field for Slack-only.
+      const assigneeEmail = hasAssignee && trimmedEmail ? trimmedEmail : undefined;
       const dueDate = hasAssignee ? assign!.dueDate || undefined : undefined;
 
       const idea = await post<Idea & { linearIssue?: { identifier: string } | null }>("/ideas", {
@@ -169,18 +181,23 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
         urgency: finalUrg,
         techType: finalTt || undefined,
         aiReflection: classification ? JSON.stringify(classification) : undefined,
-        ...(assigneeName ? { assigneeName, assigneeEmail, dueDate } : {}),
+        ...(assigneeName ? { assigneeName, ...(assigneeEmail ? { assigneeEmail } : {}), dueDate } : {}),
       });
 
-      // Auto-email assignee for Now / This Week / This Month (email is always sent, Slack only if checked)
-      if (hasAssignee && assigneeName && assigneeEmail && finalUrg !== "Someday") {
-        const notifyChannels: string[] = ["email"];
+      // Notify assignee for Now / This Week / This Month per checked channels.
+      if (hasAssignee && assigneeName && finalUrg !== "Someday") {
+        const notifyChannels: string[] = [];
+        if (assign?.notifyEmail && assigneeEmail) notifyChannels.push("email");
         if (assign?.notifySlack && assign?.assigneeSlackId) notifyChannels.push("slack");
-        post("/ideas/notify-assignee", {
-          ideaText: text, category: finalCat, urgency: finalUrg, dueDate: dueDate || "",
-          assigneeName, assigneeEmail, slackUserId: assign?.assigneeSlackId || undefined,
-          notifyChannels, note: assign!.note || undefined,
-        }).catch(() => console.warn("[Ideas] Failed to send assignee notification"));
+        if (notifyChannels.length > 0) {
+          post("/ideas/notify-assignee", {
+            ideaText: text, category: finalCat, urgency: finalUrg, dueDate: dueDate || "",
+            assigneeName,
+            assigneeEmail: assigneeEmail || `${assigneeName.toLowerCase().replace(/\s+/g, ".")}@flipiq.com`,
+            slackUserId: assign?.assigneeSlackId || undefined,
+            notifyChannels, note: assign!.note || undefined,
+          }).catch(() => console.warn("[Ideas] Failed to send assignee notification"));
+        }
       }
 
       // For "Now" urgency, also email Ethan
@@ -209,8 +226,11 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
       }
       reset();
       onClose();
-    } catch {
-      setError("Failed to save idea. Please try again.");
+    } catch (err: any) {
+      // Surface the backend error message when available so the user knows
+      // what to fix (e.g. invalid email format).
+      const msg = (err?.message && err.message !== "Failed to fetch") ? err.message : "Failed to save idea. Please try again.";
+      setError(msg.slice(0, 200));
       setStep("review");
     }
   };
@@ -453,20 +473,31 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                     onChange={e => {
                       const val = e.target.value;
                       if (!val) {
-                        setAssign(a => a ? { ...a, mode: "none", assigneeName: "", assigneeEmail: "", assigneeSlackId: null } : a);
+                        setAssign(a => a ? { ...a, mode: "none", assigneeName: "", assigneeEmail: "", assigneeSlackId: null, notifyEmail: true, notifySlack: false } : a);
                       } else if (val === "__custom__") {
-                        setAssign(a => a ? { ...a, mode: "custom", assigneeName: "", assigneeEmail: "", assigneeSlackId: null } : a);
+                        setAssign(a => a ? { ...a, mode: "custom", assigneeName: "", assigneeEmail: "", assigneeSlackId: null, notifyEmail: true, notifySlack: false } : a);
                       } else {
                         const [name, email, slackId] = val.split("|");
-                        setAssign(a => a ? { ...a, mode: "team", assigneeName: name, assigneeEmail: email, assigneeSlackId: slackId || null } : a);
+                        const hasEmail = !!email;
+                        const hasSlack = !!slackId;
+                        setAssign(a => a ? {
+                          ...a,
+                          mode: "team",
+                          assigneeName: name,
+                          assigneeEmail: email,
+                          assigneeSlackId: slackId || null,
+                          // Default the notify channels to whichever is available.
+                          notifyEmail: hasEmail,
+                          notifySlack: !hasEmail && hasSlack ? true : a.notifySlack,
+                        } : a);
                       }
                     }}
                     style={{ ...inp, padding: "6px 10px", fontSize: 13, cursor: "pointer" }}
                   >
                     <option value="">— No assignee —</option>
                     {teamMembers.map(m => (
-                      <option key={m.email} value={`${m.name}|${m.email}|${m.slackId || ""}`}>
-                        {m.name}{m.slackId ? " ✓ Slack" : ""} · {m.email}
+                      <option key={`${m.name}|${m.email || ""}`} value={`${m.name}|${m.email || ""}|${m.slackId || ""}`}>
+                        {m.name}{m.slackId ? " ✓ Slack" : ""}{m.email ? ` · ${m.email}` : " (Slack only)"}
                       </option>
                     ))}
                     <option value="__custom__">+ Enter custom name & email...</option>
@@ -527,33 +558,39 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                       <label style={{ ...lbl, marginBottom: 6 }}>Notify via</label>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button
-                          onClick={() => setAssign(a => a ? { ...a, notifyEmail: !a.notifyEmail } : a)}
+                          onClick={() => assign.assigneeEmail.trim() && setAssign(a => a ? { ...a, notifyEmail: !a.notifyEmail } : a)}
+                          disabled={!assign.assigneeEmail.trim()}
+                          title={!assign.assigneeEmail.trim() ? "No email address for this person" : ""}
                           style={{
-                            padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F,
+                            padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: assign.assigneeEmail.trim() ? "pointer" : "not-allowed", fontFamily: F,
                             border: `2px solid ${assign.notifyEmail ? C.blu : C.brd}`,
                             background: assign.notifyEmail ? C.bluBg : C.card,
-                            color: assign.notifyEmail ? C.blu : C.sub,
+                            color: assign.notifyEmail ? C.blu : assign.assigneeEmail.trim() ? C.sub : C.mut,
+                            opacity: !assign.assigneeEmail.trim() ? 0.45 : 1,
                           }}
                         >
                           📧 Email
                         </button>
                         <button
                           onClick={() => setAssign(a => a ? { ...a, notifySlack: !a.notifySlack } : a)}
-                          disabled={!assign.assigneeSlackId && assign.mode !== "custom"}
-                          title={!assign.assigneeSlackId && assign.mode !== "custom" ? "This person has no Slack account linked" : ""}
+                          disabled={!assign.assigneeSlackId}
+                          title={!assign.assigneeSlackId ? "No Slack account linked for this person" : ""}
                           style={{
-                            padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: assign.assigneeSlackId || assign.mode === "custom" ? "pointer" : "not-allowed", fontFamily: F,
+                            padding: "5px 14px", borderRadius: 8, fontSize: 11, fontWeight: 600, cursor: assign.assigneeSlackId ? "pointer" : "not-allowed", fontFamily: F,
                             border: `2px solid ${assign.notifySlack ? "#1D9353" : C.brd}`,
                             background: assign.notifySlack ? "#E8F5E9" : C.card,
-                            color: assign.notifySlack ? "#1D9353" : (assign.assigneeSlackId || assign.mode === "custom") ? C.sub : C.mut,
-                            opacity: !assign.assigneeSlackId && assign.mode !== "custom" ? 0.45 : 1,
+                            color: assign.notifySlack ? "#1D9353" : assign.assigneeSlackId ? C.sub : C.mut,
+                            opacity: !assign.assigneeSlackId ? 0.45 : 1,
                           }}
                         >
                           💬 Slack {assign.assigneeSlackId ? "✓" : ""}
                         </button>
                       </div>
-                      {!assign.assigneeSlackId && assign.mode === "team" && (
-                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>No Slack account found for this person</div>
+                      {!assign.assigneeSlackId && assign.mode === "team" && assign.assigneeEmail.trim() && (
+                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>No Slack account linked — email only</div>
+                      )}
+                      {!assign.assigneeEmail.trim() && assign.assigneeSlackId && (
+                        <div style={{ fontSize: 10, color: C.mut, marginTop: 4 }}>No email — Slack only</div>
                       )}
                     </div>
                   </>

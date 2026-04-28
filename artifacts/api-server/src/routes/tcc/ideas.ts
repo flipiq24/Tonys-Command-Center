@@ -6,7 +6,7 @@ import { anthropic, createTrackedMessage } from "@workspace/integrations-anthrop
 import { createLinearIssue, getLinearMembers } from "../../lib/linear";
 import { postTechIdeaToSlack, postSlackMessage, listSlackUsers, notifyAssigneeViaSlack } from "../../lib/slack";
 import { z } from "zod/v4";
-import { businessContextTable } from "../../lib/schema-v2";
+import { businessContextTable, teamRolesTable } from "../../lib/schema-v2";
 import { recordFeedback } from "../../agents/feedback.js";
 import { isAgentRuntimeEnabled } from "../../agents/flags.js";
 import { runAgent } from "../../agents/runtime.js";
@@ -19,18 +19,26 @@ async function getBusinessContext(): Promise<string> {
   return rows.map(r => `[${r.documentType}] ${r.summary || r.content?.substring(0, 300) || ""}`.trim()).join("\n");
 }
 
-// ─── Team members: merge Linear users + Slack users by email ─────────────────
+// ─── Team members: merge team_roles (canonical) + Linear + Slack ─────────────
+// `team_roles` is the canonical source of FlipIQ team members with verified Slack
+// IDs (seeded via /business/team/seed). Linear and Slack workspace scans
+// supplement with members not already in team_roles. Slack ID match prefers:
+//   1. team_roles.slack_id (canonical)
+//   2. slackByEmail (workspace scan email match)
+//   3. slackByName (workspace scan display-name match)
 router.get("/ideas/team-members", async (_req, res): Promise<void> => {
   try {
-    const [linearMembers, slackResult] = await Promise.allSettled([
+    const [teamRoles, linearMembers, slackResult] = await Promise.allSettled([
+      db.select().from(teamRolesTable).orderBy(teamRolesTable.position),
       getLinearMembers(),
       listSlackUsers(),
     ]);
 
+    const team = teamRoles.status === "fulfilled" ? teamRoles.value : [];
     const linear = linearMembers.status === "fulfilled" ? linearMembers.value : [];
     const slackUsers = slackResult.status === "fulfilled" ? (slackResult.value.members ?? []) : [];
 
-    // Build a map of email → slackId from Slack users
+    // Workspace-scan lookup maps for Slack ID matching
     const slackByEmail = new Map<string, string>();
     const slackByName = new Map<string, string>();
     for (const su of slackUsers) {
@@ -40,22 +48,38 @@ router.get("/ideas/team-members", async (_req, res): Promise<void> => {
       if (displayName) slackByName.set(displayName, su.id);
     }
 
-    // Start with Linear members (they have real emails)
-    const members: { name: string; email: string; slackId: string | null; source: string }[] = linear.map(m => {
-      const emailKey = m.email.toLowerCase();
-      const slackId = slackByEmail.get(emailKey)
-        || slackByName.get((m.displayName || m.name).toLowerCase())
-        || null;
-      return {
-        name: m.displayName || m.name,
-        email: m.email,
-        slackId,
-        source: "linear",
-      };
-    });
+    // Layer 1: team_roles — canonical roster with hard-coded Slack IDs
+    const members: { name: string; email: string | null; slackId: string | null; source: string }[] = team
+      .filter(t => t.name && (t.email || t.slackId)) // need at least one channel
+      .map(t => ({
+        name: t.name,
+        email: t.email || null,
+        slackId: t.slackId
+          || (t.email ? slackByEmail.get(t.email.toLowerCase()) : null)
+          || slackByName.get(t.name.toLowerCase())
+          || null,
+        source: "team_roles",
+      }));
 
-    // Add Slack-only users (those with emails not already covered by Linear)
-    const coveredEmails = new Set(members.map(m => m.email.toLowerCase()));
+    const coveredEmails = new Set(members.map(m => m.email?.toLowerCase()).filter(Boolean) as string[]);
+    const coveredNames = new Set(members.map(m => m.name.toLowerCase()));
+
+    // Layer 2: Linear members not already in team_roles
+    for (const lm of linear) {
+      const emailKey = lm.email.toLowerCase();
+      const nameKey = (lm.displayName || lm.name).toLowerCase();
+      if (coveredEmails.has(emailKey) || coveredNames.has(nameKey)) continue;
+      members.push({
+        name: lm.displayName || lm.name,
+        email: lm.email,
+        slackId: slackByEmail.get(emailKey) || slackByName.get(nameKey) || null,
+        source: "linear",
+      });
+      coveredEmails.add(emailKey);
+      coveredNames.add(nameKey);
+    }
+
+    // Layer 3: Slack-only users not already covered
     for (const su of slackUsers) {
       const email = su.profile?.email;
       if (!email || coveredEmails.has(email.toLowerCase())) continue;
@@ -63,12 +87,19 @@ router.get("/ideas/team-members", async (_req, res): Promise<void> => {
         name: su.profile?.display_name || su.real_name || su.name,
         email,
         slackId: su.id,
-        source: "slack" as const,
+        source: "slack",
       });
+      coveredEmails.add(email.toLowerCase());
     }
 
-    // Filter out bots, noreply, and obvious non-humans
-    const filtered = members.filter(m => m.email && !m.email.includes("noreply") && !m.email.includes("bot@") && m.name);
+    // Filter out bots, noreply, and obvious non-humans. Allow null email when
+    // member has a slackId (Slack-only members can still be DM'd).
+    const filtered = members.filter(m =>
+      m.name &&
+      (m.email
+        ? (!m.email.includes("noreply") && !m.email.includes("bot@"))
+        : !!m.slackId)
+    );
     filtered.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ ok: true, members: filtered });
@@ -155,8 +186,25 @@ NEW IDEA: "${text}"`;
     raw = block.text.trim();
   }
 
-  const json = raw.replace(/^```json?\n?/, "").replace(/\n?```$/, "");
-  return JSON.parse(json);
+  // Robust JSON extraction: strip optional markdown fence, fall back to first
+  // {...} block. Models sometimes append prose after the JSON, so we can't rely
+  // on `.replace(/```$/, "")` matching at end-of-string.
+  let json = raw.replace(/^\s*```(?:json)?\s*\n?/i, "");
+  const fenceEnd = json.indexOf("```");
+  if (fenceEnd >= 0) json = json.slice(0, fenceEnd);
+  json = json.trim();
+  if (!json.startsWith("{")) {
+    const m = json.match(/\{[\s\S]*\}/);
+    if (m) json = m[0];
+  }
+  const parsed = JSON.parse(json);
+
+  // Some models wrap output as { classification: {...}, reason: "..." } despite
+  // the schema. Unwrap if we see that shape.
+  if (parsed && typeof parsed === "object" && parsed.classification && typeof parsed.classification === "object" && !parsed.category) {
+    return { ...parsed.classification, ...parsed, classification: undefined };
+  }
+  return parsed;
 }
 
 // ─── Claude-powered Slack notification for Tech ideas ─────────────────────────
@@ -195,6 +243,10 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
   const { text } = parsed.data;
   const recentIdeas = await db.select().from(ideasTable).orderBy(desc(ideasTable.createdAt)).limit(5);
 
+  const VALID_CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", "Product", "Personal"] as const;
+  const VALID_URG = ["Now", "This Week", "This Month", "Someday"] as const;
+  const VALID_TT = ["Bug", "Feature", "Note", "Task", "Strategic"] as const;
+
   let classification: Awaited<ReturnType<typeof classifyIdea>>;
   try {
     classification = await classifyIdea(text, recentIdeas);
@@ -213,6 +265,29 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
       }
     });
     return;
+  }
+
+  // Normalize: AI sometimes returns invalid enum values (e.g. category="Strategic"
+  // or urgency="Parked"). Coerce to valid options so the FE doesn't get "Tech" by
+  // default fallback and lose the AI's actual signal.
+  if (!VALID_CATS.includes(classification.category as any)) {
+    if (classification.category === "Strategic") {
+      classification.category = "Strategic Partners";
+      if (!classification.techType) classification.techType = "Strategic";
+    } else {
+      classification.category = "Operations";
+    }
+  }
+  if (!VALID_URG.includes(classification.urgency as any)) {
+    classification.urgency = "This Week";
+  }
+  if (classification.techType && !VALID_TT.includes(classification.techType as any)) {
+    classification.techType = null;
+  }
+  if (!classification.reason) classification.reason = "Auto-classified.";
+  if (!classification.businessFit) classification.businessFit = "Review manually.";
+  if (!["high", "medium", "low"].includes(classification.priority)) {
+    classification.priority = "medium";
   }
 
   // ── Pushback: check against all business context documents ──
@@ -270,8 +345,16 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
 
         if (pushbackRaw) {
           try {
-            const raw = pushbackRaw.trim().replace(/^```json?\n?/, "").replace(/\n?```$/, "");
-            const parsed2 = JSON.parse(raw);
+            // Robust extract: strip fence, isolate first {...} block, then parse.
+            let cleaned = pushbackRaw.trim().replace(/^\s*```(?:json)?\s*\n?/i, "");
+            const fenceEnd = cleaned.indexOf("```");
+            if (fenceEnd >= 0) cleaned = cleaned.slice(0, fenceEnd);
+            cleaned = cleaned.trim();
+            if (!cleaned.startsWith("{")) {
+              const m = cleaned.match(/\{[\s\S]*\}/);
+              if (m) cleaned = m[0];
+            }
+            const parsed2 = JSON.parse(cleaned);
             if (parsed2.unreasonable) {
               pushback = {
                 message: "I'm parking this and booking a meeting with Ethan to discuss.",

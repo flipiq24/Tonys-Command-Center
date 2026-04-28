@@ -133,4 +133,93 @@ router.get("/contacts/:contactId/brief", async (req, res): Promise<void> => {
   res.json(brief);
 });
 
+// ─── POST /contacts/brief/chat — continue the pre-call brief conversation ──
+// When the brief flags a data conflict (e.g. record says investor but recent
+// comms read like internal team work), Tony clicks "💬 Continue with Chat"
+// and asks follow-up questions. This route resolves the contact context fresh
+// each turn so the AI always reasons over the canonical CRM state, not a
+// stale snapshot from when the brief was first generated.
+const ChatBody = z.object({
+  contactId: z.string().uuid(),
+  briefText: z.string(),
+  messages: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+  })).min(1).max(40),
+});
+
+router.post("/contacts/brief/chat", async (req, res): Promise<void> => {
+  const parsed = ChatBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { contactId, briefText, messages } = parsed.data;
+
+  try {
+    // Re-fetch contact + comms so the AI sees current data, not a stale snapshot.
+    const [contact] = await db.select().from(contactsTable).where(eq(contactsTable.id, contactId)).limit(1);
+    if (!contact) { res.status(404).json({ error: "Contact not found" }); return; }
+
+    const [intel] = await db.select().from(contactIntelligenceTable)
+      .where(eq(contactIntelligenceTable.contactId, contactId)).limit(1);
+
+    const recentComms = await db.select().from(communicationLogTable)
+      .where(eq(communicationLogTable.contactId, contactId))
+      .orderBy(desc(communicationLogTable.loggedAt))
+      .limit(10);
+
+    let contextBlock = `Contact record:\n- Name: ${contact.name}\n- Company: ${contact.company || "—"}\n- Type: ${contact.type || "—"}\n- Status: ${contact.status}\n- Stage: ${intel?.stage || "—"}\n- AI Score: ${intel?.aiScore || "—"}\n- LinkedIn: ${intel?.linkedinUrl || "—"}\n- Email: ${contact.email || "—"}\n- Phone: ${contact.phone || "—"}\n- Next step: ${contact.nextStep || "—"}`;
+    if (intel?.personalityNotes) contextBlock += `\n- Personality notes: ${intel.personalityNotes}`;
+
+    if (recentComms.length > 0) {
+      contextBlock += `\n\nRecent communications (last ${recentComms.length}):`;
+      for (const c of recentComms) {
+        const date = c.loggedAt ? new Date(c.loggedAt).toLocaleDateString() : "?";
+        contextBlock += `\n- [${c.channel}] ${date}: ${c.summary || c.subject || "—"}`;
+      }
+    } else {
+      contextBlock += `\n\nNo communication log entries.`;
+    }
+
+    contextBlock += `\n\n---\n\nPRE-CALL BRIEF ALREADY SHOWN TO TONY:\n${briefText}`;
+
+    // Inject the context block into the FIRST user message so the skill body
+    // (which is loaded as L3) receives the canonical contact state alongside
+    // Tony's question. Subsequent turns are passed verbatim.
+    const firstUser = messages[0];
+    const firstUserAugmented = firstUser.role === "user"
+      ? { role: "user" as const, content: `${contextBlock}\n\n---\n\nTony asks:\n${firstUser.content}` }
+      : firstUser;
+    const augmentedMessages = [firstUserAugmented, ...messages.slice(1)];
+
+    let replyText = "";
+
+    if (isAgentRuntimeEnabled("contacts")) {
+      // The runtime expects a single user message — collapse the chat thread
+      // into one message-block array that the runtime's prompt builder will
+      // hand to Anthropic alongside the skill body system prompt.
+      const result = await runAgent("contacts", "brief-chat", {
+        userMessage: augmentedMessages.map(m => `${m.role === "user" ? "Tony" : "Assistant"}: ${m.content}`).join("\n\n"),
+        caller: "direct",
+        meta: { contactId, turn: messages.length },
+      });
+      replyText = result.text || "";
+    } else {
+      const legacySystem = `You are Tony Diaz's sales assistant continuing a pre-call brief conversation. Tony just read the brief and has follow-up questions. Voice: direct, operator-to-operator, no salesy language. Default 2-4 sentences per turn. Don't re-summarize the brief — answer the new question. When the contact-type field conflicts with the comms log, trust the comms log and surface the discrepancy. Always commit to a recommendation; never refuse the question.`;
+      const response = await createTrackedMessage("contact_brief_chat", {
+        model: "claude-haiku-4-5",
+        max_tokens: 1024,
+        system: legacySystem,
+        messages: augmentedMessages,
+      });
+      const block = response.content.find(b => b.type === "text");
+      replyText = block?.type === "text" ? block.text : "";
+    }
+
+    res.json({ ok: true, reply: replyText.trim() });
+  } catch (err) {
+    console.error("[contacts/brief/chat] error:", err);
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

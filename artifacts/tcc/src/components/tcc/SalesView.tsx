@@ -39,6 +39,11 @@ interface BriefModalData {
   openTasks?: string[];
 }
 
+interface BriefChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt, onConnected, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -59,6 +64,10 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [briefModal, setBriefModal] = useState<BriefModalData | null>(null);
   const [briefLoading, setBriefLoading] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<BriefChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
 
   const hasFilters = !!(search.trim() || filterStatus !== "All" || filterStage !== "All" || filterType !== "All" || filterCategory !== "All");
 
@@ -138,12 +147,45 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
     try {
       const brief = await post<BriefModalData>("/contacts/brief", { contactId: contact.id });
       setBriefModal(brief);
+      // Reset chat state for the new brief.
+      setChatOpen(false);
+      setChatMessages([]);
+      setChatInput("");
     } catch {
       alert("Failed to generate brief");
     } finally {
       setBriefLoading(null);
     }
   }, []);
+
+  // Send a message in the brief-chat side panel. Appends Tony's message
+  // optimistically, calls the backend with the full thread, then appends
+  // the assistant reply.
+  const sendChatMessage = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || !briefModal || chatSending) return;
+    const next: BriefChatMessage[] = [...chatMessages, { role: "user", content: text }];
+    setChatMessages(next);
+    setChatInput("");
+    setChatSending(true);
+    try {
+      const r = await post<{ ok: boolean; reply?: string; error?: string }>("/contacts/brief/chat", {
+        contactId: briefModal.contactId,
+        briefText: briefModal.briefText,
+        messages: next,
+      });
+      if (r.ok && r.reply) {
+        setChatMessages(prev => [...prev, { role: "assistant", content: r.reply! }]);
+      } else {
+        setChatMessages(prev => [...prev, { role: "assistant", content: r.error || "Couldn't get a reply — try again." }]);
+      }
+    } catch (err: any) {
+      const msg = err?.message?.slice(0, 200) || "Network error — try again.";
+      setChatMessages(prev => [...prev, { role: "assistant", content: msg }]);
+    } finally {
+      setChatSending(false);
+    }
+  }, [chatInput, chatMessages, chatSending, briefModal]);
 
   const handlePushToSheets = useCallback(async () => {
     setSyncing("db");
@@ -186,26 +228,138 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
       />
       <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
       {briefModal && (
-        <div style={{ position: "fixed", inset: 0, background: "#00000066", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }} onClick={() => setBriefModal(null)}>
-          <div style={{ ...card, maxWidth: 560, width: "90%", maxHeight: "80vh", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-              <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 700 }}>{briefModal.contactName}</div>
-              {briefModal.linkedinUrl && (
-                <a href={briefModal.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.blu }}>LinkedIn ↗</a>
+        <div
+          style={{ position: "fixed", inset: 0, background: "#00000066", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
+          onClick={() => { setBriefModal(null); setChatOpen(false); setChatMessages([]); setChatInput(""); }}
+        >
+          <div
+            style={{
+              ...card,
+              maxWidth: chatOpen ? 920 : 560,
+              width: "92%", maxHeight: "85vh",
+              display: "flex", flexDirection: "row", overflow: "hidden", padding: 0,
+              transition: "max-width 0.2s ease",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Brief panel (left when chat is open, full width otherwise) */}
+            <div style={{ flex: 1, padding: "18px 20px", overflowY: "auto", minWidth: 0, ...(chatOpen ? { borderRight: `1px solid ${C.brd}` } : {}) }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 700 }}>{briefModal.contactName}</div>
+                {briefModal.linkedinUrl && (
+                  <a href={briefModal.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.blu }}>LinkedIn ↗</a>
+                )}
+              </div>
+              <div style={{ background: C.bg, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+                <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: C.tx }}>{briefModal.briefText}</div>
+              </div>
+              {briefModal.openTasks && briefModal.openTasks.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Open Tasks</div>
+                  {briefModal.openTasks.map((t, i) => <div key={i} style={{ fontSize: 12, color: C.sub }}>→ {t}</div>)}
+                </div>
               )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+                {!chatOpen && (
+                  <button
+                    onClick={() => setChatOpen(true)}
+                    style={{ ...btn2, fontSize: 12, padding: "6px 14px", color: "#7C3AED", borderColor: "#7C3AED" }}
+                    title="Ask follow-up questions about this contact — useful when the brief flagged a data conflict"
+                  >
+                    💬 Continue with Chat
+                  </button>
+                )}
+                <button
+                  onClick={() => { setBriefModal(null); setChatOpen(false); setChatMessages([]); setChatInput(""); }}
+                  style={{ ...btn2, fontSize: 12, padding: "6px 14px" }}
+                >
+                  Close
+                </button>
+              </div>
             </div>
-            <div style={{ background: C.bg, borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
-              <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: C.tx }}>{briefModal.briefText}</div>
-            </div>
-            {briefModal.openTasks && briefModal.openTasks.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Open Tasks</div>
-                {briefModal.openTasks.map((t, i) => <div key={i} style={{ fontSize: 12, color: C.sub }}>→ {t}</div>)}
+
+            {/* Chat panel (right, only when chatOpen) */}
+            {chatOpen && (
+              <div style={{ width: 380, display: "flex", flexDirection: "column", background: "#FAFAF8" }}>
+                <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.brd}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontFamily: FS, fontSize: 14, fontWeight: 700, color: C.tx }}>💬 Brief Chat</div>
+                  <button
+                    onClick={() => { setChatOpen(false); setChatMessages([]); setChatInput(""); }}
+                    style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: C.mut, padding: 0 }}
+                    title="Close chat"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {chatMessages.length === 0 && (
+                    <div style={{ fontSize: 12, color: C.mut, textAlign: "center", padding: "20px 8px", lineHeight: 1.5 }}>
+                      Ask a follow-up about <strong>{briefModal.contactName}</strong> — e.g. "is this person actually an investor or a teammate?", "what should I open with?", "what's the worst case if I pitch them anyway?"
+                    </div>
+                  )}
+                  {chatMessages.map((m, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                        maxWidth: "88%",
+                        padding: "8px 12px",
+                        borderRadius: 12,
+                        fontSize: 12,
+                        lineHeight: 1.55,
+                        whiteSpace: "pre-wrap",
+                        background: m.role === "user" ? C.blu : C.card,
+                        color: m.role === "user" ? "#fff" : C.tx,
+                        border: m.role === "user" ? "none" : `1px solid ${C.brd}`,
+                      }}
+                    >
+                      {m.content}
+                    </div>
+                  ))}
+                  {chatSending && (
+                    <div style={{ alignSelf: "flex-start", fontSize: 11, color: C.mut, fontStyle: "italic", padding: "4px 8px" }}>
+                      Thinking…
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ padding: "10px 12px", borderTop: `1px solid ${C.brd}`, background: C.card }}>
+                  <textarea
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !chatSending && chatInput.trim()) {
+                        e.preventDefault();
+                        void sendChatMessage();
+                      }
+                    }}
+                    placeholder="Ask a follow-up... (⌘↵ to send)"
+                    style={{
+                      width: "100%", minHeight: 50, resize: "vertical",
+                      padding: "8px 10px", fontSize: 12, fontFamily: F,
+                      border: `1px solid ${C.brd}`, borderRadius: 8,
+                      boxSizing: "border-box", background: "#fff",
+                    }}
+                    disabled={chatSending}
+                  />
+                  <button
+                    onClick={() => void sendChatMessage()}
+                    disabled={chatSending || !chatInput.trim()}
+                    style={{
+                      marginTop: 6, width: "100%", padding: "7px 0",
+                      borderRadius: 8, border: "none",
+                      background: "#7C3AED", color: "#fff",
+                      fontSize: 12, fontWeight: 700, fontFamily: F,
+                      cursor: (chatSending || !chatInput.trim()) ? "not-allowed" : "pointer",
+                      opacity: (chatSending || !chatInput.trim()) ? 0.5 : 1,
+                    }}
+                  >
+                    {chatSending ? "Sending…" : "Send"}
+                  </button>
+                </div>
               </div>
             )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-              <button onClick={() => setBriefModal(null)} style={{ ...btn2, fontSize: 12, padding: "6px 14px" }}>Close</button>
-            </div>
           </div>
         </div>
       )}

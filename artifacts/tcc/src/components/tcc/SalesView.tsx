@@ -44,6 +44,18 @@ interface BriefChatMessage {
   content: string;
 }
 
+const STATUS_BG: Record<string, string> = {
+  Hot: "#FEE2E2", Warm: "#FEF3C7", Cold: "#DBEAFE", New: "#F1F5F9",
+};
+
+const ICON_BTN = {
+  display: "flex", alignItems: "center", justifyContent: "center",
+  width: 34, height: 34, borderRadius: "50%",
+  border: "none", cursor: "pointer",
+  fontSize: 15, flexShrink: 0,
+  transition: "background 0.12s",
+};
+
 export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt, onConnected, onSwitchToTasks, onBackToSchedule, onCompose, onConnectedCall }: Props) {
   const [smsContact, setSmsContact] = useState<Contact | null>(null);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
@@ -147,7 +159,6 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
     try {
       const brief = await post<BriefModalData>("/contacts/brief", { contactId: contact.id });
       setBriefModal(brief);
-      // Reset chat state for the new brief.
       setChatOpen(false);
       setChatMessages([]);
       setChatInput("");
@@ -158,9 +169,6 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
     }
   }, []);
 
-  // Send a message in the brief-chat side panel. Appends Tony's message
-  // optimistically, calls the backend with the full thread, then appends
-  // the assistant reply.
   const sendChatMessage = useCallback(async () => {
     const text = chatInput.trim();
     if (!text || !briefModal || chatSending) return;
@@ -227,6 +235,8 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
         }}
       />
       <AddContactModal open={showAddContact} onClose={() => setShowAddContact(false)} onCreated={handleContactCreated} />
+
+      {/* ── Pre-Call Brief Modal ── */}
       {briefModal && (
         <div
           style={{ position: "fixed", inset: 0, background: "#00000066", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}
@@ -242,7 +252,7 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
             }}
             onClick={e => e.stopPropagation()}
           >
-            {/* Brief panel (left when chat is open, full width otherwise) */}
+            {/* Brief panel */}
             <div style={{ flex: 1, padding: "18px 20px", overflowY: "auto", minWidth: 0, ...(chatOpen ? { borderRight: `1px solid ${C.brd}` } : {}) }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
                 <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 700 }}>{briefModal.contactName}</div>
@@ -264,7 +274,7 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                   <button
                     onClick={() => setChatOpen(true)}
                     style={{ ...btn2, fontSize: 12, padding: "6px 14px", color: "#7C3AED", borderColor: "#7C3AED" }}
-                    title="Ask follow-up questions about this contact — useful when the brief flagged a data conflict"
+                    title="Ask follow-up questions about this contact"
                   >
                     💬 Continue with Chat
                   </button>
@@ -278,7 +288,7 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
               </div>
             </div>
 
-            {/* Chat panel (right, only when chatOpen) */}
+            {/* Chat panel */}
             {chatOpen && (
               <div style={{ width: 380, display: "flex", flexDirection: "column", background: "#FAFAF8" }}>
                 <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.brd}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -286,44 +296,30 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                   <button
                     onClick={() => { setChatOpen(false); setChatMessages([]); setChatInput(""); }}
                     style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: C.mut, padding: 0 }}
-                    title="Close chat"
-                  >
-                    ×
-                  </button>
+                  >×</button>
                 </div>
-
                 <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
                   {chatMessages.length === 0 && (
                     <div style={{ fontSize: 12, color: C.mut, textAlign: "center", padding: "20px 8px", lineHeight: 1.5 }}>
-                      Ask a follow-up about <strong>{briefModal.contactName}</strong> — e.g. "is this person actually an investor or a teammate?", "what should I open with?", "what's the worst case if I pitch them anyway?"
+                      Ask a follow-up about <strong>{briefModal.contactName}</strong> — e.g. "is this person actually an investor?", "what should I open with?"
                     </div>
                   )}
                   {chatMessages.map((m, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-                        maxWidth: "88%",
-                        padding: "8px 12px",
-                        borderRadius: 12,
-                        fontSize: 12,
-                        lineHeight: 1.55,
-                        whiteSpace: "pre-wrap",
-                        background: m.role === "user" ? C.blu : C.card,
-                        color: m.role === "user" ? "#fff" : C.tx,
-                        border: m.role === "user" ? "none" : `1px solid ${C.brd}`,
-                      }}
-                    >
+                    <div key={i} style={{
+                      alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                      maxWidth: "88%", padding: "8px 12px", borderRadius: 12,
+                      fontSize: 12, lineHeight: 1.55, whiteSpace: "pre-wrap",
+                      background: m.role === "user" ? C.blu : C.card,
+                      color: m.role === "user" ? "#fff" : C.tx,
+                      border: m.role === "user" ? "none" : `1px solid ${C.brd}`,
+                    }}>
                       {m.content}
                     </div>
                   ))}
                   {chatSending && (
-                    <div style={{ alignSelf: "flex-start", fontSize: 11, color: C.mut, fontStyle: "italic", padding: "4px 8px" }}>
-                      Thinking…
-                    </div>
+                    <div style={{ alignSelf: "flex-start", fontSize: 11, color: C.mut, fontStyle: "italic", padding: "4px 8px" }}>Thinking…</div>
                   )}
                 </div>
-
                 <div style={{ padding: "10px 12px", borderTop: `1px solid ${C.brd}`, background: C.card }}>
                   <textarea
                     value={chatInput}
@@ -334,26 +330,14 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                         void sendChatMessage();
                       }
                     }}
-                    placeholder="Ask a follow-up... (⌘↵ to send)"
-                    style={{
-                      width: "100%", minHeight: 50, resize: "vertical",
-                      padding: "8px 10px", fontSize: 12, fontFamily: F,
-                      border: `1px solid ${C.brd}`, borderRadius: 8,
-                      boxSizing: "border-box", background: "#fff",
-                    }}
+                    placeholder="Ask a follow-up… (⌘↵ to send)"
+                    style={{ width: "100%", minHeight: 50, resize: "vertical", padding: "8px 10px", fontSize: 12, fontFamily: F, border: `1px solid ${C.brd}`, borderRadius: 8, boxSizing: "border-box", background: "#fff" }}
                     disabled={chatSending}
                   />
                   <button
                     onClick={() => void sendChatMessage()}
                     disabled={chatSending || !chatInput.trim()}
-                    style={{
-                      marginTop: 6, width: "100%", padding: "7px 0",
-                      borderRadius: 8, border: "none",
-                      background: "#7C3AED", color: "#fff",
-                      fontSize: 12, fontWeight: 700, fontFamily: F,
-                      cursor: (chatSending || !chatInput.trim()) ? "not-allowed" : "pointer",
-                      opacity: (chatSending || !chatInput.trim()) ? 0.5 : 1,
-                    }}
+                    style={{ marginTop: 6, width: "100%", padding: "7px 0", borderRadius: 8, border: "none", background: "#7C3AED", color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: F, cursor: (chatSending || !chatInput.trim()) ? "not-allowed" : "pointer", opacity: (chatSending || !chatInput.trim()) ? 0.5 : 1 }}
                   >
                     {chatSending ? "Sending…" : "Send"}
                   </button>
@@ -363,6 +347,7 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
           </div>
         </div>
       )}
+
       {syncToast && (
         <div style={{ position: "fixed", bottom: 20, right: 20, background: syncToast.startsWith("✕") ? C.redBg : syncToast.startsWith("✓") ? "#DCFCE7" : "#FFF7ED", color: syncToast.startsWith("✕") ? C.red : syncToast.startsWith("✓") ? "#065F46" : "#9A3412", padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 600, fontFamily: F, zIndex: 9999, boxShadow: "0 4px 16px rgba(0,0,0,0.15)" }}>
           {syncToast}
@@ -373,22 +358,35 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
 
         {/* ── Header ── */}
         <div style={{ ...card, marginBottom: 12, padding: "16px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <h3 style={{ fontFamily: FS, fontSize: 18, margin: 0, color: C.tx }}>Sales Mode</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+              <h3 style={{ fontFamily: FS, fontSize: 20, margin: 0, color: C.tx, letterSpacing: -0.5 }}>Sales Mode</h3>
+              <span style={{ fontSize: 12, color: C.mut, fontWeight: 500 }}>
+                {results.length}{total && total > results.length ? ` of ${total}` : ""} contacts
+              </span>
+            </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.sub }}>Calls: {calls.length}</span>
-              {overdue > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: C.red, background: C.redBg, padding: "2px 8px", borderRadius: 6 }}>{overdue} overdue</span>}
+              {calls.length > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.grn, background: "#F0FDF4", border: `1px solid #BBF7D0`, padding: "4px 10px", borderRadius: 8 }}>
+                  {calls.length} call{calls.length !== 1 ? "s" : ""} today
+                </span>
+              )}
+              {overdue > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.red, background: C.redBg, border: `1px solid #FECACA`, padding: "4px 10px", borderRadius: 8 }}>
+                  ⚠ {overdue} overdue
+                </span>
+              )}
               <button
                 onClick={handlePushToSheets}
                 disabled={!!syncing}
                 title="Push contacts to Google Sheets"
-                style={{ padding: "6px 12px", background: "#FAFAF8", color: C.tx, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: syncing ? "wait" : "pointer", fontFamily: F, opacity: syncing ? 0.6 : 1 }}
+                style={{ padding: "6px 12px", background: "#FAFAF8", color: C.sub, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: syncing ? "wait" : "pointer", fontFamily: F, opacity: syncing ? 0.6 : 1 }}
               >
-                {syncing === "db" ? "↑ Pushing…" : "↑ Push to Sheets"}
+                {syncing === "db" ? "↑ Pushing…" : "↑ Sheets"}
               </button>
               <button
                 onClick={() => setShowAddContact(true)}
-                style={{ padding: "6px 14px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}
+                style={{ padding: "6px 16px", background: C.tx, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: F }}
               >
                 + Add
               </button>
@@ -396,42 +394,33 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
           </div>
 
           {/* ── Filters ── */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <select
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterStatus !== "All" ? C.red : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterStatus !== "All" ? C.red : C.sub, cursor: "pointer", outline: "none", fontWeight: filterStatus !== "All" ? 700 : 400 }}
-            >
-              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s === "All" ? "All Statuses" : s}</option>)}
-            </select>
-            <select
-              value={filterStage}
-              onChange={e => setFilterStage(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterStage !== "All" ? C.blu : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterStage !== "All" ? C.blu : C.sub, cursor: "pointer", outline: "none", fontWeight: filterStage !== "All" ? 700 : 400 }}
-            >
-              <option value="All">All Stages</option>
-              {PIPELINE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select
-              value={filterType}
-              onChange={e => setFilterType(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterType !== "All" ? C.amb : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterType !== "All" ? C.amb : C.sub, cursor: "pointer", outline: "none", fontWeight: filterType !== "All" ? 700 : 400 }}
-            >
-              <option value="All">All Types</option>
-              {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select
-              value={filterCategory}
-              onChange={e => setFilterCategory(e.target.value)}
-              style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${filterCategory !== "All" ? "#7B1FA2" : C.brd}`, fontSize: 12, fontFamily: F, background: "#FAFAF8", color: filterCategory !== "All" ? "#7B1FA2" : C.sub, cursor: "pointer", outline: "none", fontWeight: filterCategory !== "All" ? 700 : 400 }}
-            >
-              <option value="All">All Categories</option>
-              {CONTACT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {[
+              { value: filterStatus, onChange: setFilterStatus, options: STATUS_OPTIONS.map(s => ({ value: s, label: s === "All" ? "All Statuses" : s })), activeColor: C.red },
+              { value: filterStage, onChange: setFilterStage, options: [{ value: "All", label: "All Stages" }, ...PIPELINE_STAGES.map(s => ({ value: s, label: s }))], activeColor: C.blu },
+              { value: filterType, onChange: setFilterType, options: [{ value: "All", label: "All Types" }, ...CONTACT_TYPES.map(t => ({ value: t, label: t }))], activeColor: C.amb },
+              { value: filterCategory, onChange: setFilterCategory, options: [{ value: "All", label: "All Categories" }, ...CONTACT_CATEGORIES.map(c => ({ value: c, label: c }))], activeColor: "#7B1FA2" },
+            ].map((f, i) => (
+              <select
+                key={i}
+                value={f.value}
+                onChange={e => f.onChange(e.target.value)}
+                style={{
+                  padding: "5px 8px", borderRadius: 7,
+                  border: `1px solid ${f.value !== "All" ? f.activeColor : C.brd}`,
+                  fontSize: 12, fontFamily: F, background: "#FAFAF8",
+                  color: f.value !== "All" ? f.activeColor : C.sub,
+                  cursor: "pointer", outline: "none",
+                  fontWeight: f.value !== "All" ? 700 : 400,
+                }}
+              >
+                {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            ))}
             {hasFilters && (
               <button
                 onClick={() => { setFilterStatus("All"); setFilterStage("All"); setFilterType("All"); setFilterCategory("All"); setSearch(""); }}
-                style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.brd}`, background: "#FAFAF8", color: C.mut, fontSize: 12, cursor: "pointer", fontFamily: F }}
+                style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, background: "#FAFAF8", color: C.mut, fontSize: 12, cursor: "pointer", fontFamily: F }}
               >
                 Clear
               </button>
@@ -440,92 +429,199 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
 
           {/* ── Search ── */}
           <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: C.mut, pointerEvents: "none" }}>🔍</span>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by name, company, phone…"
-              style={{ width: "100%", border: `1px solid ${C.brd}`, borderRadius: 10, padding: "9px 36px 9px 12px", fontFamily: F, fontSize: 13, outline: "none", boxSizing: "border-box", background: "#FAFAF8" }}
+              style={{ width: "100%", border: `1px solid ${C.brd}`, borderRadius: 9, padding: "8px 34px 8px 32px", fontFamily: F, fontSize: 13, outline: "none", boxSizing: "border-box", background: "#FAFAF8" }}
             />
             {searching && <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: C.mut }}>…</span>}
             {search && !searching && (
               <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 14, color: C.mut, padding: 2 }}>✕</button>
             )}
           </div>
-          <div style={{ fontSize: 11, color: C.mut, marginTop: 6 }}>
-            {hasFilters
-              ? `${results.length} result${results.length !== 1 ? "s" : ""}${total && total > results.length ? ` of ${total}` : ""}`
-              : `${results.length} contacts · click any row to view details`}
-          </div>
         </div>
 
         {/* ── Contact List ── */}
         {results.length === 0 && !searching && (
-          <div style={{ ...card, textAlign: "center", padding: 32, color: C.mut, fontSize: 14 }}>
+          <div style={{ ...card, textAlign: "center", padding: 40, color: C.mut, fontSize: 14 }}>
             No contacts match your filters.
           </div>
         )}
+
         {results.map(c => {
           const od = isOverdue(c.followUpDate);
+          const statusColor = SC[c.status || "New"] || C.mut;
+          const initials = c.name.split(" ").filter(Boolean).map((n: string) => n[0]).slice(0, 2).join("").toUpperCase();
+
           return (
             <div
               key={c.id}
-              onClick={() => setSelectedContactId(String(c.id))}
-              style={{ display: "flex", gap: 12, padding: 14, marginBottom: 6, background: "#FAFAF8", borderRadius: 12, borderLeft: `4px solid ${SC[c.status || "New"] || C.mut}`, alignItems: "center", cursor: "pointer", transition: "box-shadow 0.15s" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.07)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "none")}
+              style={{
+                display: "flex", alignItems: "stretch",
+                background: "#fff", borderRadius: 12,
+                border: `1px solid ${C.brd}`,
+                borderLeft: `4px solid ${statusColor}`,
+                marginBottom: 7, overflow: "hidden",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                transition: "box-shadow 0.15s",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 3px 14px rgba(0,0,0,0.09)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04)")}
             >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700 }}>{c.name}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: SC[c.status || "New"] || C.mut, background: c.status === "Hot" ? C.redBg : c.status === "Warm" ? C.ambBg : C.bluBg, padding: "2px 8px", borderRadius: 4 }}>{c.status || "New"}</span>
-                  {c.pipelineStage && <span style={{ fontSize: 10, color: C.sub, background: "#F0EEE9", padding: "2px 6px", borderRadius: 4 }}>{c.pipelineStage}</span>}
-                </div>
-                {c.company && <div style={{ fontSize: 12, color: C.sub, marginTop: 2 }}>{c.company}</div>}
-                {c.painPoints && <div style={{ fontSize: 11, color: C.red, marginTop: 3, fontStyle: "italic" }}>⚠ {c.painPoints}</div>}
-                {c.nextStep && <div style={{ fontSize: 13, marginTop: 4, color: C.tx }}>→ {c.nextStep}</div>}
-                <div style={{ fontSize: 11, color: C.mut, marginTop: 2, display: "flex", gap: 10 }}>
-                  {c.followUpDate && <span style={{ color: od ? C.red : C.mut, fontWeight: od ? 700 : 400 }}>{od ? "⚠ OVERDUE " : "📅 "}{c.followUpDate}</span>}
-                  {!c.followUpDate && c.lastContactDate && <span>Last: {c.lastContactDate}</span>}
-                  {c.phone && <span>{c.phone}</span>}
+              {/* Avatar zone — click to open drawer */}
+              <div
+                onClick={() => setSelectedContactId(String(c.id))}
+                style={{
+                  width: 56, flexShrink: 0, cursor: "pointer",
+                  background: `${statusColor}12`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: "50%",
+                  background: statusColor,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 13, fontWeight: 800, color: "#fff",
+                  letterSpacing: -0.5, userSelect: "none",
+                }}>
+                  {initials}
                 </div>
               </div>
+
+              {/* Info block */}
               <div
-                style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}
+                onClick={() => setSelectedContactId(String(c.id))}
+                style={{ flex: 1, minWidth: 0, padding: "10px 14px", cursor: "pointer" }}
+              >
+                {/* Row 1: Name + badges */}
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 2 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: C.tx, letterSpacing: -0.1 }}>{c.name}</span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: statusColor,
+                    background: STATUS_BG[c.status || "New"] || "#F1F5F9",
+                    padding: "1px 7px", borderRadius: 10, letterSpacing: 0.3,
+                  }}>{c.status || "New"}</span>
+                  {c.pipelineStage && (
+                    <span style={{ fontSize: 10, color: "#6B5FF8", background: "#F5F3FF", padding: "1px 6px", borderRadius: 5, fontWeight: 500 }}>
+                      {c.pipelineStage}
+                    </span>
+                  )}
+                  {c.type && (
+                    <span style={{ fontSize: 10, color: C.sub, background: "#F3F4F6", padding: "1px 6px", borderRadius: 5 }}>
+                      {c.type}
+                    </span>
+                  )}
+                </div>
+
+                {/* Row 2: Company + next step */}
+                {(c.company || c.nextStep) && (
+                  <div style={{ fontSize: 12, color: C.sub, display: "flex", gap: 5, flexWrap: "wrap", alignItems: "baseline", marginBottom: 2 }}>
+                    {c.company && <span style={{ fontWeight: 500 }}>{c.company}</span>}
+                    {c.company && c.nextStep && <span style={{ color: C.brd }}>·</span>}
+                    {c.nextStep && (
+                      <span style={{ color: C.tx }}>
+                        → {c.nextStep.length > 60 ? c.nextStep.slice(0, 60) + "…" : c.nextStep}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Row 3: Meta */}
+                <div style={{ fontSize: 11, color: C.mut, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  {c.followUpDate && (
+                    <span style={{ color: od ? C.red : C.mut, fontWeight: od ? 700 : 400 }}>
+                      {od ? "⚠ Overdue" : "📅"} {c.followUpDate}
+                    </span>
+                  )}
+                  {!c.followUpDate && c.lastContactDate && <span>Last: {c.lastContactDate}</span>}
+                  {c.phone && <span style={{ fontVariantNumeric: "tabular-nums" }}>{c.phone}</span>}
+                  {c.painPoints && (
+                    <span style={{ color: C.red, fontStyle: "italic" }}>
+                      ⚠ {c.painPoints.length > 45 ? c.painPoints.slice(0, 45) + "…" : c.painPoints}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Action buttons (horizontal row) ── */}
+              <div
+                style={{
+                  display: "flex", alignItems: "center", gap: 3,
+                  padding: "0 12px", flexShrink: 0,
+                  borderLeft: `1px solid ${C.brd}`,
+                }}
                 onClick={e => e.stopPropagation()}
               >
                 {c.phone && (
                   <a
                     href={`tel:${c.phone}`}
                     onClick={() => onAttempt({ id: c.id, name: c.name })}
-                    style={{ ...btn2, padding: "6px 10px", fontSize: 11, textDecoration: "none", display: "block", textAlign: "center" }}
+                    title="Call"
+                    style={{ ...ICON_BTN, background: "#F0FDF4", color: C.grn, textDecoration: "none" } as React.CSSProperties}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#DCFCE7")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "#F0FDF4")}
                   >
-                    📞 Call
+                    📞
                   </a>
                 )}
                 {c.phone && (
-                  <button onClick={() => setSmsContact(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
-                    💬 Text
+                  <button
+                    onClick={() => setSmsContact(c)}
+                    title="Text"
+                    style={{ ...ICON_BTN, background: "#EFF6FF" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#DBEAFE")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "#EFF6FF")}
+                  >
+                    💬
                   </button>
                 )}
                 {onCompose && (
-                  <button onClick={() => onCompose(c)} style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu }}>
-                    ✉ Email
+                  <button
+                    onClick={() => onCompose(c)}
+                    title="Email"
+                    style={{ ...ICON_BTN, background: "#EFF6FF" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#DBEAFE")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "#EFF6FF")}
+                  >
+                    ✉️
                   </button>
                 )}
                 <button
                   onClick={() => handleGetBrief(c)}
                   disabled={briefLoading === String(c.id)}
-                  style={{ ...btn2, padding: "6px 10px", fontSize: 11, color: C.blu, borderColor: C.blu, opacity: briefLoading === String(c.id) ? 0.6 : 1 }}
+                  title="Pre-call brief"
+                  style={{ ...ICON_BTN, background: "#F5F3FF", opacity: briefLoading === String(c.id) ? 0.5 : 1, cursor: briefLoading === String(c.id) ? "wait" : "pointer" }}
+                  onMouseEnter={e => { if (briefLoading !== String(c.id)) e.currentTarget.style.background = "#EDE9FE"; }}
+                  onMouseLeave={e => (e.currentTarget.style.background = "#F5F3FF")}
                 >
-                  {briefLoading === String(c.id) ? "…" : "📋 Brief"}
+                  {briefLoading === String(c.id) ? "⌛" : "📋"}
                 </button>
                 <Tip tip={TIPS.attempt}>
-                  <button onClick={() => onAttempt({ id: c.id, name: c.name })} style={{ ...btn2, padding: "6px 10px", fontSize: 11 }}>📋 Note</button>
+                  <button
+                    onClick={() => onAttempt({ id: c.id, name: c.name })}
+                    title="Log note / attempt"
+                    style={{ ...ICON_BTN, background: "#FFFBEB" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "#FEF3C7")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "#FFFBEB")}
+                  >
+                    📝
+                  </button>
                 </Tip>
-                <span style={{ background: "#ECFDF5", color: "#065F46", borderRadius: 999, fontSize: 10, padding: "2px 8px", pointerEvents: "none", fontWeight: 500 }}>
-                  ✓ Connected
-                </span>
+                <button
+                  onClick={() => onConnectedCall
+                    ? onConnectedCall({ contactId: String(c.id), contactName: c.name, contactEmail: c.email || undefined })
+                    : onConnected(c.name)
+                  }
+                  title="Log connected call"
+                  style={{ ...ICON_BTN, background: "#F0FDF4", color: C.grn, fontWeight: 700, fontSize: 14 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#DCFCE7")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "#F0FDF4")}
+                >
+                  ✓
+                </button>
               </div>
             </div>
           );
@@ -546,8 +642,10 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
 
         {/* ── Call Log ── */}
         {calls.length > 0 && (
-          <div style={{ ...card, marginTop: 12, background: C.grnBg, padding: "14px 20px" }}>
-            <h3 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 8px", color: C.grn }}>Today's Calls ({calls.length})</h3>
+          <div style={{ ...card, marginTop: 12, background: "#F0FDF4", border: `1px solid #BBF7D0`, padding: "14px 20px" }}>
+            <h3 style={{ fontFamily: FS, fontSize: 15, margin: "0 0 10px", color: C.grn, letterSpacing: -0.3 }}>
+              Today's Calls <span style={{ fontWeight: 400, fontSize: 13, color: C.grn }}>({calls.length})</span>
+            </h3>
             {calls.map((cl, i) => (
               <HoverCard key={i} rows={[
                 { label: "Contact", value: cl.contactName },
@@ -555,12 +653,12 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                 ...(cl.notes ? [{ label: "Notes", value: cl.notes }] : []),
                 ...(cl.createdAt ? [{ label: "Time", value: new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }) }] : []),
               ]}>
-              <div style={{ fontSize: 13, padding: "3px 0", color: C.grn, display: "flex", gap: 8, cursor: "default" }}>
-                <span>{cl.type === "connected" ? "✓" : "📞"}</span>
-                <span style={{ fontWeight: 600 }}>{cl.contactName}</span>
-                <span style={{ color: C.sub }}>— {cl.type}</span>
-                {cl.createdAt && <span style={{ color: C.mut, marginLeft: "auto" }}>{new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })}</span>}
-              </div>
+                <div style={{ fontSize: 13, padding: "3px 0", color: "#065F46", display: "flex", gap: 8, cursor: "default", alignItems: "center" }}>
+                  <span>{cl.type === "connected" ? "✓" : "📞"}</span>
+                  <span style={{ fontWeight: 600 }}>{cl.contactName}</span>
+                  <span style={{ color: C.grn, opacity: 0.7 }}>— {cl.type}</span>
+                  {cl.createdAt && <span style={{ color: C.grn, opacity: 0.6, marginLeft: "auto", fontSize: 11 }}>{new Date(cl.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" })}</span>}
+                </div>
               </HoverCard>
             ))}
           </div>
@@ -568,7 +666,7 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
 
         {/* ── Footer ── */}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={onSwitchToTasks} style={{ ...btn2, flex: 1 }}>✅ Switch to Tasks</button>
+          <button onClick={onSwitchToTasks} style={{ ...btn2, flex: 1, fontWeight: 600 }}>✅ Switch to Tasks</button>
           <button onClick={onBackToSchedule} style={{ ...btn2, flex: 1, color: C.mut }}>← Schedule</button>
         </div>
       </div>

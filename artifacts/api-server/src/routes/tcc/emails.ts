@@ -367,4 +367,73 @@ CRITICAL: Output ONLY the email reply text. Never preface with "Here is your rep
   res.json({ ok: true, message: "Action processed" });
 });
 
+// ─── POST /emails/rewrite — clean up a draft OR generate from a prompt ──────
+// Dual-purpose: the same skill handles both because the user picks behavior
+// implicitly via what they typed (a salutation+body = rewrite; an instruction
+// = generate). The skill body auto-detects.
+//
+// Body: { text, recipientName?, recipientEmail?, threadSnippet? }
+// Returns: { ok, text } where text is paste-ready (no preamble).
+router.post("/emails/rewrite", async (req, res): Promise<void> => {
+  const { text, recipientName, recipientEmail, threadSnippet } = req.body as {
+    text?: string;
+    recipientName?: string;
+    recipientEmail?: string;
+    threadSnippet?: string;
+  };
+
+  if (!text || !text.trim()) {
+    res.status(400).json({ ok: false, error: "text is required" });
+    return;
+  }
+
+  // Build the context block. Each field is optional — the skill handles
+  // missing context by writing a generic-but-on-topic email (per its rules).
+  const ctxLines: string[] = [];
+  if (recipientName) ctxLines.push(`Recipient name: ${recipientName}`);
+  if (recipientEmail) ctxLines.push(`Recipient email: ${recipientEmail}`);
+  if (threadSnippet) {
+    const trimmed = threadSnippet.length > 1500 ? threadSnippet.slice(0, 1500) + "..." : threadSnippet;
+    ctxLines.push(`\nThread snippet (last message in conversation):\n${trimmed}`);
+  }
+
+  const userMessage = ctxLines.length
+    ? `${ctxLines.join("\n")}\n\n---\n\nUSER INPUT TO REWRITE OR USE AS PROMPT:\n${text.trim()}`
+    : `USER INPUT TO REWRITE OR USE AS PROMPT:\n${text.trim()}`;
+
+  try {
+    if (isAgentRuntimeEnabled("email")) {
+      const result = await runAgent("email", "rewrite", {
+        userMessage,
+        caller: "direct",
+        meta: { hasRecipient: !!recipientEmail, hasThread: !!threadSnippet },
+      });
+      const cleaned = (result.text || "").trim()
+        .replace(/^```(?:text|markdown)?\s*\n?/i, "")
+        .replace(/\n?```\s*$/, "")
+        .trim();
+      res.json({ ok: true, text: cleaned });
+      return;
+    }
+
+    // Legacy path — single inline call when runtime flag is off.
+    const legacySystem = `You are Tony Diaz's AI email assistant. Tony runs FlipIQ (real estate wholesaling). Output ONLY the email body. No preamble. No "Here's the rewritten version". No markdown. Start with the salutation. Auto-detect: input may be a draft to clean up OR an instruction like "write to X about Y" — both produce a clean paste-ready email body in Tony's voice. End with "Tony" as the sign-off.`;
+    const msg = await createTrackedMessage("agent_email_rewrite", {
+      model: "claude-haiku-4-5",
+      max_tokens: 1024,
+      system: legacySystem,
+      messages: [{ role: "user", content: userMessage }],
+    });
+    const block = msg.content.find(b => b.type === "text");
+    const out = (block?.type === "text" ? block.text : "").trim()
+      .replace(/^```(?:text|markdown)?\s*\n?/i, "")
+      .replace(/\n?```\s*$/, "")
+      .trim();
+    res.json({ ok: true, text: out });
+  } catch (err) {
+    req.log.error({ err }, "[/emails/rewrite] failed");
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 export default router;

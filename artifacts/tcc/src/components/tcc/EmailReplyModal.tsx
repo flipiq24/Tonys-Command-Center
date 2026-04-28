@@ -46,6 +46,7 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [showThread, setShowThread] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   function fetchDraft(extraNotes?: string) {
@@ -155,6 +156,28 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
     setTimeout(() => onClose(), 1500);
   }
 
+  async function rewriteDraft() {
+    if (!draft.trim() || rewriting) return;
+    setRewriting(true);
+    setSendError("");
+    try {
+      const r = await post<{ ok: boolean; text?: string; error?: string }>("/emails/rewrite", {
+        text: draft,
+        recipientName: email?.from || undefined,
+        threadSnippet: threadBody || undefined,
+      });
+      if (r.ok && r.text) {
+        setDraft(r.text);
+      } else {
+        setSendError(r.error || "Rewrite failed");
+      }
+    } catch (err: any) {
+      setSendError(err?.message?.slice(0, 200) || "Rewrite failed");
+    } finally {
+      setRewriting(false);
+    }
+  }
+
   async function copyDraft() {
     if (!draft.trim()) return;
     try {
@@ -253,13 +276,23 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ fontFamily: FS, fontSize: 13, fontWeight: 700, color: C.tx }}>Your Reply</div>
-              <button
-                onClick={() => fetchDraft(notes)}
-                disabled={loading}
-                style={{ ...btn2, fontSize: 11, padding: "3px 10px", color: C.blu, borderColor: C.blu, opacity: loading ? 0.5 : 1 }}
-              >
-                {loading ? "Drafting..." : "↻ Regenerate"}
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={rewriteDraft}
+                  disabled={loading || rewriting || !draft.trim()}
+                  title="Rewrite the textarea content in Tony's voice. Works on a messy draft OR an instruction like 'ask Chris about Friday'."
+                  style={{ ...btn2, fontSize: 11, padding: "3px 10px", color: "#7C3AED", borderColor: "#7C3AED", opacity: (loading || rewriting || !draft.trim()) ? 0.5 : 1 }}
+                >
+                  {rewriting ? "Rewriting..." : "✨ Rewrite with AI"}
+                </button>
+                <button
+                  onClick={() => fetchDraft(notes)}
+                  disabled={loading || rewriting}
+                  style={{ ...btn2, fontSize: 11, padding: "3px 10px", color: C.blu, borderColor: C.blu, opacity: (loading || rewriting) ? 0.5 : 1 }}
+                >
+                  {loading ? "Drafting..." : "↻ Regenerate"}
+                </button>
+              </div>
             </div>
             {loading ? (
               <div style={{

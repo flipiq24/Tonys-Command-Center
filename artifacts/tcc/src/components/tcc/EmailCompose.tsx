@@ -119,6 +119,7 @@ export function EmailCompose({
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [aiDrafting, setAiDrafting] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
   const [signature, setSignature] = useState("");
   const [sigLoading, setSigLoading] = useState(false);
 
@@ -149,6 +150,35 @@ export function EmailCompose({
       }
     }
   }, [open, prefillTo, prefillSubject, prefillBody, prefillContactId]);
+
+  const handleRewrite = async () => {
+    if (!body.trim() || rewriting) return;
+    setRewriting(true);
+    setError("");
+    try {
+      // Pull the first email out of the to-field (handles "Name <a@b.com>, c@d.com")
+      const firstTo = to.split(",")[0]?.trim() || "";
+      const bracket = firstTo.match(/^([^<]*)<([^>]+)>$/);
+      const recipientName = bracket ? bracket[1].trim() : (prefillContactName || undefined);
+      const recipientEmail = bracket ? bracket[2].trim() : (firstTo.includes("@") ? firstTo : undefined);
+
+      const r = await post<{ ok: boolean; text?: string; error?: string }>("/emails/rewrite", {
+        text: body,
+        recipientName,
+        recipientEmail,
+        threadSnippet: replyToSnippet || undefined,
+      });
+      if (r.ok && r.text) {
+        setBody(r.text);
+      } else {
+        setError(r.error || "Rewrite failed — try again");
+      }
+    } catch (err: any) {
+      setError(err?.message?.slice(0, 200) || "Rewrite failed — try again");
+    } finally {
+      setRewriting(false);
+    }
+  };
 
   const handleAiDraft = async () => {
     setAiDrafting(true);
@@ -247,13 +277,23 @@ export function EmailCompose({
             <div style={{ marginBottom: 4 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: C.mut, textTransform: "uppercase", letterSpacing: 1 }}>Body</label>
-                <button
-                  onClick={handleAiDraft}
-                  disabled={aiDrafting}
-                  style={{ ...btn2, padding: "4px 12px", fontSize: 11, color: C.blu, borderColor: C.blu, opacity: aiDrafting ? 0.6 : 1 }}
-                >
-                  {aiDrafting ? "Drafting…" : "AI Draft"}
-                </button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={handleRewrite}
+                    disabled={rewriting || aiDrafting || !body.trim()}
+                    title="Rewrite the body in Tony's voice. Works on a messy draft OR an instruction like 'write to Chris about Friday meeting'."
+                    style={{ ...btn2, padding: "4px 12px", fontSize: 11, color: "#7C3AED", borderColor: "#7C3AED", opacity: (rewriting || aiDrafting || !body.trim()) ? 0.6 : 1 }}
+                  >
+                    {rewriting ? "Rewriting…" : "✨ Rewrite with AI"}
+                  </button>
+                  <button
+                    onClick={handleAiDraft}
+                    disabled={aiDrafting || rewriting}
+                    style={{ ...btn2, padding: "4px 12px", fontSize: 11, color: C.blu, borderColor: C.blu, opacity: (aiDrafting || rewriting) ? 0.6 : 1 }}
+                  >
+                    {aiDrafting ? "Drafting…" : "AI Draft"}
+                  </button>
+                </div>
               </div>
 
               {/* Compose area: body + signature preview */}

@@ -711,18 +711,16 @@ function AddTaskModal({
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   // Linear ticket flow (only shown when source === "Linear")
   const [hasTicketId, setHasTicketId] = useState<"yes" | "no" | null>(null);
-  const [notifyOwnerForTicket, setNotifyOwnerForTicket] = useState(true);
-  // Generic Slack notification — fires after task creation if the owner has
-  // a Slack account. Sends them the task details + asks them to mirror it
-  // into Linear so it shows up in their queue. Default ON when an assignee
-  // is set (matches the ideas-flow notify behaviour).
-  const [notifyAssigneeOnSlack, setNotifyAssigneeOnSlack] = useState(false);
+  // Single Slack notification toggle. When ON, the backend DMs the owner.
+  // Message adapts: source=Linear + no ticket ID → "create the Linear ticket";
+  // otherwise → "task assigned". Hidden when owner is unset or owner is Tony.
+  const [notifyOwnerOnSlack, setNotifyOwnerOnSlack] = useState(true);
 
   // Reset the Linear sub-flow whenever the user changes Source away from / to Linear
   useEffect(() => {
     if (form.source !== "Linear") {
       setHasTicketId(null);
-      setNotifyOwnerForTicket(true);
+      setNotifyOwnerOnSlack(true);
       if (form.linearId) setForm(f => ({ ...f, linearId: "" }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -768,31 +766,28 @@ function AddTaskModal({
     }
     setLoading(true); setErr("");
     try {
+      // Single Slack-notify path — backend looks at source/linearId to pick the
+      // right message body. Skip when owner is missing or is Tony himself.
+      const ownerNeedsNotify =
+        notifyOwnerOnSlack &&
+        !!form.owner?.trim() &&
+        form.owner.trim().toLowerCase() !== "tony";
+
       // Month derives from dueDate on backend; week has been removed entirely
       const payload: any = {
         ...form,
         // If source=Linear + ticket not yet created, ensure linearId is null
         linearId: form.source === "Linear" && hasTicketId === "yes" ? form.linearId : null,
-        // Ask backend to Slack-notify the owner to create the Linear ticket
-        requiresLinearTicket: form.source === "Linear" && hasTicketId === "no" && notifyOwnerForTicket,
+        // Single flag — backend picks message body from source + linearId.
+        // The legacy `requiresLinearTicket` is also set so existing backend
+        // logic still fires the create-ticket message variant correctly.
+        notifyOwnerSlack: ownerNeedsNotify,
+        requiresLinearTicket: ownerNeedsNotify && form.source === "Linear" && hasTicketId === "no",
         parentTaskId: form.parentTaskId || undefined,
         // User may have nudged the placement ▲/▼ in the preview panel
         manualPosition: manualOffset !== 0 ? finalIdx : undefined,
       };
       const result:any = await post("/plan/task", payload);
-      // Optional Slack DM to the owner — fire-and-forget so a Slack outage
-      // never blocks the task save. Only fires when Tony explicitly opted in
-      // and an owner is set on the task.
-      if (notifyAssigneeOnSlack && form.owner && form.owner.trim()) {
-        post("/plan/task/notify-assignee", {
-          taskTitle: form.title,
-          owner: form.owner,
-          priority: form.priority,
-          dueDate: form.dueDate || undefined,
-          workNotes: form.workNotes || undefined,
-          category: form.category,
-        }).catch(() => { /* non-blocking */ });
-      }
       onCreated(result);
     } catch (e: any) {
       setErr(e.message || "Failed to create task");
@@ -996,50 +991,38 @@ function AddTaskModal({
                 </div>
               )}
 
-              {hasTicketId === "no" && (
-                <div style={{ marginTop: 12 }}>
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={notifyOwnerForTicket}
-                      onChange={e => setNotifyOwnerForTicket(e.target.checked)}
-                      style={{ marginTop: 2, accentColor: "#F97316" }}
-                    />
-                    <span style={{ fontSize: 12, color: C.tx, lineHeight: 1.4 }}>
-                      Notify <strong>{form.owner || "the owner"}</strong> via Slack to create the Linear ticket
-                      <div style={{ fontSize: 10, color: C.mut, marginTop: 2 }}>
-                        The task will be saved with source=Linear and no ID. Once {form.owner || "the owner"} creates the ticket, paste the Linear ID back here.
-                      </div>
-                    </span>
-                  </label>
-                </div>
-              )}
             </div>
           )}
 
           {form.source !== "Linear" && <div style={{ marginBottom: 6 }} />}
 
-          {/* Slack notify checkbox — only meaningful when an owner is set.
-              When enabled, the backend looks up the owner's Slack ID and DMs
-              them the task details + asks them to mirror it into Linear. */}
-          {form.owner && form.owner.trim() && form.owner.toLowerCase() !== "tony" && (
-            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px", border: `1px solid ${C.brd}`, borderRadius: 8, background: "#F9FAFB", marginBottom: 12, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={notifyAssigneeOnSlack}
-                onChange={e => setNotifyAssigneeOnSlack(e.target.checked)}
-                style={{ marginTop: 2, cursor: "pointer" }}
-              />
-              <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.tx, fontFamily: F }}>
-                  💬 Notify {form.owner} on Slack
+          {/* Single Slack-notify checkbox — visible whenever the owner is set
+              and is NOT Tony. Label/description adapts: when source=Linear and
+              no ticket ID is provided, the DM asks the owner to create the
+              Linear ticket; otherwise it's a generic task-assigned notice. */}
+          {form.owner && form.owner.trim() && form.owner.trim().toLowerCase() !== "tony" && (() => {
+            const isLinearCreate = form.source === "Linear" && hasTicketId === "no";
+            return (
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px", border: `1px solid ${C.brd}`, borderRadius: 8, background: "#F9FAFB", marginBottom: 12, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={notifyOwnerOnSlack}
+                  onChange={e => setNotifyOwnerOnSlack(e.target.checked)}
+                  style={{ marginTop: 2, accentColor: "#F97316", cursor: "pointer" }}
+                />
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: C.tx, fontFamily: F }}>
+                    💬 Notify <strong>{form.owner}</strong> on Slack
+                  </span>
+                  <span style={{ display: "block", fontSize: 11, color: C.mut, marginTop: 2, fontFamily: F, lineHeight: 1.4 }}>
+                    {isLinearCreate
+                      ? `Sends a DM with the task details and asks ${form.owner} to create the matching Linear ticket. Once they paste the Linear ID back here, both systems stay in sync.`
+                      : `Sends a DM with the task details so ${form.owner} sees it in Slack right away.`}
+                  </span>
                 </span>
-                <span style={{ display: "block", fontSize: 11, color: C.mut, marginTop: 2, fontFamily: F }}>
-                  Sends a DM with task details + asks them to create the matching Linear ticket.
-                </span>
-              </span>
-            </label>
-          )}
+              </label>
+            );
+          })()}
 
           {err && <div style={{ background: C.redBg, color: C.red, borderRadius: 7, padding: "8px 12px", fontSize: 12, marginBottom: 14, fontFamily: F }}>{err}</div>}
 

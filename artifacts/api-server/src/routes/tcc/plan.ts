@@ -606,7 +606,7 @@ router.patch("/plan/item/:id", async (req, res): Promise<void> => {
 // POST /plan/task — create a new task with smart priority placement
 router.post("/plan/task", async (req, res): Promise<void> => {
   try {
-    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition, requiresLinearTicket } = req.body;
+    const { category, subcategoryName, title, owner, coOwner, priority, dueDate, month, atomicKpi, source, executionTier, workNotes, linearId, taskType, parentTaskId, manualPosition, requiresLinearTicket, notifyOwnerSlack } = req.body;
 
     if (!category || !title) {
       res.status(400).json({ error: "category and title are required" });
@@ -725,15 +725,31 @@ router.post("/plan/task", async (req, res): Promise<void> => {
 
     triggerSheetsSync();
 
-    // If this task needs a Linear ticket created by the owner, DM them on Slack
+    // Single Slack-notify path. Either the new `notifyOwnerSlack` flag or the
+    // legacy `requiresLinearTicket` flag triggers exactly ONE DM to the owner.
+    // The message body adapts: when the task is a Linear-source task without a
+    // ticket ID, the DM asks the owner to create the matching Linear ticket;
+    // otherwise it's a generic task-assigned notice. Self-assigns (owner=Tony)
+    // are silently skipped — Tony doesn't need to be DM'd about his own tasks.
     let slackNotified: { ok: boolean; owner: string; slackId?: string; error?: string } | null = null;
-    if (requiresLinearTicket && owner) {
+    const shouldNotifyOwner = !!(
+      (notifyOwnerSlack || requiresLinearTicket) &&
+      owner &&
+      typeof owner === "string" &&
+      owner.trim() &&
+      owner.trim().toLowerCase() !== "tony"
+    );
+    if (shouldNotifyOwner) {
       try {
         const [tm] = await db.select().from(teamRolesTable).where(eq(teamRolesTable.name, owner)).limit(1);
         if (tm?.slackId) {
+          const isLinearCreate = source === "Linear" && !linearId;
           const dueLine = dueDate ? `\n*Due:* ${dueDate}` : "";
           const priorityLine = priority ? ` • *Priority:* ${priority}` : "";
-          const text = `🎯 *Tony assigned you a task — please create a Linear ticket*\n> ${title}\n*Category:* ${category}${priorityLine}${dueLine}\n\nOnce the Linear ticket is created, paste its ID into the task in TCC so both systems stay in sync.`;
+          const notesLine = workNotes ? `\n*Notes:* ${workNotes}` : "";
+          const text = isLinearCreate
+            ? `🎯 *Tony assigned you a task — please create a Linear ticket*\n> ${title}\n*Category:* ${category}${priorityLine}${dueLine}${notesLine}\n\nOnce the Linear ticket is created, paste its ID into the task in TCC so both systems stay in sync.`
+            : `🎯 *Tony assigned you a task*\n> ${title}\n*Category:* ${category}${priorityLine}${dueLine}${notesLine}`;
           const r = await postSlackMessage({ channel: tm.slackId, text });
           slackNotified = { ok: r.ok, owner, slackId: tm.slackId, error: r.error };
         } else {

@@ -117,8 +117,16 @@ export async function sendEmail(params: {
 
     return { ok: true, messageId: sent.data.id || undefined };
   } catch (err) {
-    console.warn("[Gmail] sendEmail failed:", err instanceof Error ? err.message : err);
-    return { ok: false, error: String(err) };
+    // Extract the cleanest message from Gmail's response so the FE can show
+    // it directly. The Google client throws GaxiosError with .message AND a
+    // nested .response.data.error structure depending on the failure type.
+    const anyErr = err as { message?: string; response?: { data?: { error?: { message?: string } | string } } };
+    const apiMsg = typeof anyErr?.response?.data === "object" && anyErr.response.data
+      ? (typeof anyErr.response.data.error === "object" ? anyErr.response.data.error?.message : anyErr.response.data.error)
+      : undefined;
+    const msg = apiMsg || anyErr?.message || String(err);
+    console.warn("[Gmail] sendEmail failed:", msg);
+    return { ok: false, error: msg.slice(0, 300) };
   }
 }
 

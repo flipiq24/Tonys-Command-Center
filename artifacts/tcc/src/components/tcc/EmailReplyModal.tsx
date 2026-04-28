@@ -108,6 +108,13 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
 
   async function handleSend() {
     if (!email || !draft.trim()) return;
+    // Pre-flight: Send Reply requires the original Gmail message id so the
+    // backend can resolve the recipient and the thread. Without it the backend
+    // returns 400 — surface that early instead of attempting the call.
+    if (!email.gmailMessageId) {
+      setSendError("This email is missing its Gmail link — can't send a reply directly. Use Copy & Open in Gmail above.");
+      return;
+    }
     setSending(true);
     setSendError("");
     try {
@@ -124,8 +131,14 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
       } else {
         setSendError(r.error || "Send failed — try again");
       }
-    } catch {
-      setSendError("Send failed — try again");
+    } catch (err: any) {
+      // Surface the actual reason (handleResponse now extracts the backend
+      // error body) so Tony knows whether it was auth, recipient lookup, or
+      // a Gmail API failure rather than seeing a generic "network error".
+      const msg = typeof err?.message === "string" && err.message
+        ? err.message
+        : "Send failed — try again";
+      setSendError(msg.slice(0, 240));
     } finally {
       setSending(false);
     }
@@ -388,15 +401,20 @@ export function EmailReplyModal({ email, onClose, onSnooze }: Props) {
             <div style={{ flex: 2, display: "flex", alignItems: "center", justifyContent: "center", color: C.grn, fontWeight: 700, fontSize: 15, fontFamily: F }}>
               ✓ Sent!
             </div>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={sending || loading || !draft.trim()}
-              style={{ ...btn1, flex: 2, fontSize: 13, padding: "11px 0", opacity: (sending || loading || !draft.trim()) ? 0.5 : 1 }}
-            >
-              {sending ? "Sending..." : "Send Reply"}
-            </button>
-          )}
+          ) : (() => {
+            const missingMsgId = !email.gmailMessageId;
+            const disabled = sending || loading || !draft.trim() || missingMsgId;
+            return (
+              <button
+                onClick={handleSend}
+                disabled={disabled}
+                title={missingMsgId ? "This email lost its Gmail link — refresh the inbox or use Copy & Open in Gmail" : ""}
+                style={{ ...btn1, flex: 2, fontSize: 13, padding: "11px 0", opacity: disabled ? 0.5 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
+              >
+                {sending ? "Sending..." : missingMsgId ? "Send Reply (unavailable)" : "Send Reply"}
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>

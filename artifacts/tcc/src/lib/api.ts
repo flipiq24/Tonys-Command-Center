@@ -28,7 +28,24 @@ export function hasAuthToken(): boolean {
 
 async function handleResponse<T>(res: Response, label: string): Promise<T> {
   if (res.status === 401) throw new Error("UNAUTHORIZED");
-  if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+  if (!res.ok) {
+    // Try to extract a meaningful error message from the backend JSON body so
+    // callers can show the actual problem (e.g. "gmailMessageId is required")
+    // instead of a useless "POST /emails/action failed: 400".
+    let detail = "";
+    try {
+      const text = await res.text();
+      if (text) {
+        try {
+          const obj = JSON.parse(text) as { error?: string; message?: string };
+          detail = obj.error || obj.message || text.slice(0, 200);
+        } catch {
+          detail = text.slice(0, 200);
+        }
+      }
+    } catch { /* body already consumed or network gone */ }
+    throw new Error(detail ? `${detail}` : `${label} failed: ${res.status}`);
+  }
   return res.json();
 }
 

@@ -86,7 +86,9 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
   }, []);
 
   useEffect(() => {
-    if (open && teamMembers.length === 0) {
+    // Re-fetch every time the modal opens so newly seeded team_roles or Slack
+    // re-mappings show up without a hard refresh.
+    if (open) {
       get<{ ok: boolean; members: TeamMember[] }>("/ideas/team-members")
         .then(res => { if (res.ok && mountedRef.current) setTeamMembers(res.members); })
         .catch(() => {});

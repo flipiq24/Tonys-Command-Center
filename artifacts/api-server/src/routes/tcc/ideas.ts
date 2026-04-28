@@ -92,14 +92,19 @@ router.get("/ideas/team-members", async (_req, res): Promise<void> => {
       coveredEmails.add(email.toLowerCase());
     }
 
-    // Filter out bots, noreply, and obvious non-humans. Allow null email when
-    // member has a slackId (Slack-only members can still be DM'd).
-    const filtered = members.filter(m =>
-      m.name &&
-      (m.email
-        ? (!m.email.includes("noreply") && !m.email.includes("bot@"))
-        : !!m.slackId)
-    );
+    // Filter out bots, noreply, Linear/integration accounts, and obvious
+    // non-humans. Allow null email when member has a slackId.
+    const filtered = members.filter(m => {
+      if (!m.name) return false;
+      if (m.email) {
+        const e = m.email.toLowerCase();
+        if (e.includes("noreply") || e.includes("bot@")) return false;
+        if (e.includes("@linear.linear.app") || e.startsWith("linear-")) return false;
+      } else if (!m.slackId) {
+        return false; // no email AND no slack → can't notify
+      }
+      return true;
+    });
     filtered.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ ok: true, members: filtered });

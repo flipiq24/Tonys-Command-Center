@@ -3315,31 +3315,36 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
           <IdeasView
             ideas={[]}
             onIdeasChange={() => { /* IdeasView fetches its own list */ }}
-            onCreateTask={async (ideaText, category, urgency, techType) => {
-              // Ask the AI to fill task fields; fall back to a basic stub
-              // if it fails. Stash the result in BusinessView state so it
-              // survives the tab switch, then jump to the Tasks tab —
-              // MasterTaskTab will see initialPrefill on mount and open
-              // the AddTaskModal with no race condition.
-              let taskFields: any = null;
-              try {
-                const res = await post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", {
-                  ideaText, category, urgency, techType,
-                });
-                if (res?.ok && res.taskFields) taskFields = res.taskFields;
-              } catch { /* fallback below */ }
-              if (!taskFields) {
-                taskFields = {
-                  title: ideaText.slice(0, 120),
-                  category: (category || "tech").toLowerCase(),
-                  owner: "Tony",
-                  priority: urgency === "Now" ? "P0" : urgency === "This Week" ? "P1" : "P2",
-                  source: "TCC",
-                  workNotes: ideaText,
-                };
-              }
-              setPendingTaskPrefill(taskFields);
+            onCreateTask={(ideaText, category, urgency, techType) => {
+              // INSTANT tab switch + modal open. The previous version
+              // awaited the AI generate-task call (5-10s) before switching
+              // tabs — Tony saw "nothing happening" and would manually switch,
+              // which is exactly when the modal would finally pop up. Now
+              // we open the modal immediately with computed fallback fields
+              // and fire the AI enhancement in the background; if the AI
+              // returns better fields, we upgrade the prefill via the
+              // existing tcc:prefill-task event so AddTaskModal can refresh.
+              const fallback = {
+                title: ideaText.slice(0, 120),
+                category: (category || "tech").toLowerCase(),
+                owner: "Tony",
+                priority: urgency === "Now" ? "P0" : urgency === "This Week" ? "P1" : "P2",
+                source: "TCC",
+                workNotes: ideaText,
+              };
+              setPendingTaskPrefill(fallback);
               setTab("tasks");
+              // Background AI upgrade — fire-and-forget; non-blocking.
+              post<{ ok: boolean; taskFields?: any }>("/ideas/generate-task", {
+                ideaText, category, urgency, techType,
+              }).then(res => {
+                if (res?.ok && res.taskFields) {
+                  // Dispatch the legacy event so any open AddTaskModal can
+                  // pick up the AI-enhanced fields (only effective if user
+                  // hasn't started editing yet — safe for the common case).
+                  window.dispatchEvent(new CustomEvent("tcc:prefill-task", { detail: res.taskFields }));
+                }
+              }).catch(() => { /* AI failed — fallback already in place */ });
             }}
             onNavigate={() => { /* unused — sidebar handles nav */ }}
           />

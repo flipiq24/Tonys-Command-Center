@@ -7,6 +7,10 @@ import { C, F, FS } from "@/components/tcc/constants";
 
 type DetailTab = "training" | "memory" | "skills" | "runs";
 
+// Agents that have explicit UI feedback buttons wired up.
+// All others show "Coming Soon" on the Training tab.
+const FEEDBACK_ENABLED_AGENTS = new Set(["email", "tasks", "ideas"]);
+
 interface MemoryEntry {
   kind: string;
   section_name: string;
@@ -279,10 +283,24 @@ interface TrainingTabProps {
 }
 
 function TrainingTabContent(props: TrainingTabProps) {
-  const { state, feedback, proposals, selected, training, refreshing, lastRefreshed, error, pipelineEnabled, onRefresh, onToggle, onSelectAll, onClearAll, onStartTraining, onDecide } = props;
-  // agent prop intentionally unused inside this presentational wrapper —
-  // the callbacks already capture the agent in their closures.
-  void props.agent;
+  const { agent, state, feedback, proposals, selected, training, refreshing, lastRefreshed, error, pipelineEnabled, onRefresh, onToggle, onSelectAll, onClearAll, onStartTraining, onDecide } = props;
+
+  if (!FEEDBACK_ENABLED_AGENTS.has(agent)) {
+    return (
+      <div style={{ padding: "48px 24px", textAlign: "center", background: C.card, borderRadius: 12, border: `1px solid ${C.brd}` }}>
+        <div style={{ fontSize: 36, marginBottom: 14 }}>🔜</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: C.tx, marginBottom: 10, fontFamily: FS }}>Coming Soon</div>
+        <div style={{ fontSize: 13, color: C.mut, maxWidth: 380, margin: "0 auto", lineHeight: 1.7 }}>
+          Feedback collection for <strong style={{ color: C.tx, textTransform: "capitalize" }}>{agent}</strong> isn't wired to the UI yet.
+          Once feedback buttons are added in the relevant view, this training queue will become active.
+        </div>
+        <div style={{ marginTop: 20, fontSize: 12, color: C.sub, padding: "8px 14px", background: C.bg, borderRadius: 8, display: "inline-block" }}>
+          Active feedback: <strong>email · tasks · ideas</strong>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Refresh row */}

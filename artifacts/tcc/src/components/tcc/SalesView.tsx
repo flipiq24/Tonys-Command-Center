@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { get, post } from "@/lib/api";
 import { C, F, FS, card, btn2, TIPS, SC, PIPELINE_STAGES, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
-import { Tip } from "./Tip";
 import { SmsModal } from "./SmsModal";
 import { ContactDrawer } from "./ContactDrawer";
 import { AddContactModal } from "./AddContactModal";
@@ -599,17 +598,15 @@ export function SalesView({ contacts: initialContacts, calls, calSide, onAttempt
                 >
                   {briefLoading === String(c.id) ? "⌛" : "📋"}
                 </button>
-                <Tip tip={TIPS.attempt}>
-                  <button
-                    onClick={() => onAttempt({ id: c.id, name: c.name })}
-                    title="Log note / attempt"
-                    style={{ ...ICON_BTN, background: "#FFFBEB" }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#FEF3C7")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "#FFFBEB")}
-                  >
-                    📝
-                  </button>
-                </Tip>
+                <button
+                  onClick={() => onAttempt({ id: c.id, name: c.name })}
+                  title={TIPS.attempt}
+                  style={{ ...ICON_BTN, background: "#FFFBEB" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#FEF3C7")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "#FFFBEB")}
+                >
+                  📝
+                </button>
                 <button
                   onClick={() => onConnectedCall
                     ? onConnectedCall({ contactId: String(c.id), contactName: c.name, contactEmail: c.email || undefined })

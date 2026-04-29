@@ -37,7 +37,6 @@ router.get("/linear/live", async (_req, res) => {
           description: issue.description ?? null,
           labels: labelNodes.map((l: any) => l.name),
           url: issue.url,
-          inSequence: false,
         };
       }),
     );

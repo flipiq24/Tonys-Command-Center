@@ -100,7 +100,7 @@ type EmailPromotion = { id: number; from: string; subj: string; why: string };
 type SlackItem = { from: string; message: string; level: string; channel: string };
 type LinearItem = {
   who: string; task: string; id: string; level: string;
-  dueDate?: string | null; startDate?: string | null; size?: string | null; inSequence?: boolean | null;
+  dueDate?: string | null; startDate?: string | null; size?: string | null;
   state?: string; stateType?: string;
   description?: string | null; labels?: string[]; url?: string;
 };
@@ -410,7 +410,6 @@ async function fetchLiveLinear(): Promise<LinearItem[] | null> {
       dueDate: n.dueDate ?? null,
       startDate: n.startedAt ? n.startedAt.slice(0, 10) : null,
       size: estToSize(n.estimate),
-      inSequence: isCompleted ? null : (idx === 0 ? true : priorityToLevel(n.priority) !== "high"),
       state: n.state.name,
       stateType: n.state.type,
       description: n.description ?? null,

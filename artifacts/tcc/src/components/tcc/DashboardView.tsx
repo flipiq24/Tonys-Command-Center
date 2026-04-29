@@ -432,7 +432,7 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
   items: LinearItem[];
   prefix: string;
   todayStr: string;
-  trackStatus: (l: LinearItem) => "overdue" | "due-today" | "at-risk" | "ok";
+  trackStatus: (l: LinearItem) => "overdue" | "due-today" | "due-soon" | "ok" | "no-date";
   fmtDue: (d: string | null | undefined) => string;
   setHoveredLin: (l: LinearItem | null) => void;
   setTooltipPos: (p: { x: number; y: number }) => void;
@@ -455,12 +455,15 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
           const isDone = l.stateType === "completed" || l.stateType === "cancelled";
           const ts = trackStatus(l);
           const rowBg = isDone ? "#F9F9F9" : l.level === "high" ? "#FFF5F5" : "#fff";
-          const trackColor = isDone ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
-          const trackLabel = isDone ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
+          const trackColor = isDone ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "due-soon" ? "#B45309" : ts === "no-date" ? "#999" : "#2E7D32";
+          const trackLabel = isDone ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "due-soon" ? "⚠ Due Soon" : ts === "no-date" ? "—" : "✓ OK";
           const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
           const stateGlyph = isDone && l.stateType === "completed" ? "✓" : isDone ? "✕" : l.stateType === "started" ? "▷" : l.stateType === "backlog" ? "·" : "○";
           const stateColor = isDone && l.stateType === "completed" ? "#2E7D32" : isDone ? "#999" : l.stateType === "started" ? "#2563EB" : "#aaa";
-          const isMentioned = slackItems.some(s => l.id && s.message?.includes(l.id));
+          // Match on COM-411-style identifier (preferred), falling back to the id field
+          // since the daily-brief response stuffs the identifier into id while /linear/live keeps it separate.
+          const linId = l.identifier || (l.id && !/^[0-9a-f-]{32,}$/i.test(l.id) ? l.id : "");
+          const isMentioned = !!linId && slackItems.some(s => s.message?.includes(linId));
           return (
             <tr
               key={`${prefix}-${i}`}
@@ -608,10 +611,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const emails   = emailsImportant.slice(0, 3);
   const todayStr    = new Date().toISOString().slice(0, 10);
   const priorityRank = (l: LinearItem) => l.level === "high" ? 0 : l.level === "mid" ? 1 : 2;
-  const isActionable = (l: LinearItem) => {
-    if (l.stateType === "completed" || l.stateType === "cancelled") return false;
-    return l.stateType === "started" || l.dueDate === todayStr || (!!l.dueDate && l.dueDate < todayStr);
-  };
   const stateRank = (l: LinearItem) => l.state === "In Progress" ? 0 : 1;
   const allLinItems = linearItems
     .filter(l => l.state === "In Progress" || l.state === "In QA")
@@ -621,12 +620,13 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));
   const wb       = computeWorkBlocks(meetings);
 
-  const trackStatus = (l: LinearItem): "overdue" | "due-today" | "at-risk" | "ok" => {
-    if (l.dueDate) {
-      if (l.dueDate < todayStr) return "overdue";
-      if (l.dueDate === todayStr) return "due-today";
-    }
-    if (l.level === "high") return "at-risk";
+  // ON TRACK label — only based on real due-date proximity. No more "high priority + no date = At Risk" lie.
+  const trackStatus = (l: LinearItem): "overdue" | "due-today" | "due-soon" | "ok" | "no-date" => {
+    if (!l.dueDate) return "no-date";
+    if (l.dueDate < todayStr) return "overdue";
+    if (l.dueDate === todayStr) return "due-today";
+    const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    if (l.dueDate <= threeDaysOut) return "due-soon";
     return "ok";
   };
   const fmtDue = (d: string | null | undefined): string => {
@@ -836,12 +836,11 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   <TH w={56} center>DUE</TH>
                   <TH w={68} center>ON TRACK</TH>
                   <TH w={36} center>SIZE</TH>
-                  <TH w={40} center>IN SEQ?</TH>
                 </tr>
               </thead>
               <tbody>
                 {linItems.length === 0 && (
-                  <tr><td colSpan={11} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
+                  <tr><td colSpan={10} style={{ padding: "10px", fontSize: 10, color: "#bbb", fontStyle: "italic", textAlign: "center" }}>No active issues</td></tr>
                 )}
                 {linItems.map((l, i) => {
                   const isCompleted = l.stateType === "completed" || l.stateType === "cancelled";
@@ -849,11 +848,9 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   const noDue = !l.dueDate;
                   const rowBg = isCompleted ? "#F9F9F9" : l.level === "high" ? "#FFF5F5" : noDue ? "#FFFBEB" : "#fff";
                   const rowOpacity = isCompleted ? 0.55 : 1;
-                  const trackColor = isCompleted ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "at-risk" ? "#E65100" : "#2E7D32";
-                  const trackLabel = isCompleted ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "at-risk" ? "⚠ At Risk" : "✓ OK";
+                  const trackColor = isCompleted ? "#999" : ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : ts === "due-soon" ? "#B45309" : ts === "no-date" ? "#999" : "#2E7D32";
+                  const trackLabel = isCompleted ? "— Done" : ts === "overdue" ? "✗ Overdue" : ts === "due-today" ? "🔥 Today" : ts === "due-soon" ? "⚠ Due Soon" : ts === "no-date" ? "—" : "✓ OK";
                   const flagIcon = isCompleted ? "" : l.level === "high" ? "🚩" : l.level === "mid" ? "⚠" : "";
-                  const seqColor = l.inSequence === false ? "#C62828" : "#2E7D32";
-                  const seqLabel = isCompleted ? "—" : l.inSequence === false ? "✗" : l.inSequence === true ? "✓" : "—";
                   const sizeColor = l.size === "XL" ? "#C62828" : l.size === "L" ? "#1565C0" : l.size === "M" ? "#2E7D32" : "#888";
                   const stateGlyph = isCompleted && l.stateType === "completed" ? "✓"
                     : isCompleted ? "✕"
@@ -864,7 +861,10 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                     : isCompleted ? "#999"
                     : l.stateType === "started" ? "#2563EB"
                     : "#aaa";
-                  const isMentioned = slackItems.some(s => l.id && s.message?.includes(l.id));
+                  // Match on COM-411-style identifier (preferred), falling back to the id field
+                  // since the daily-brief response stuffs the identifier into id while /linear/live keeps it separate.
+                  const linId = l.identifier || (l.id && !/^[0-9a-f-]{32,}$/i.test(l.id) ? l.id : "");
+                  const isMentioned = !!linId && slackItems.some(s => s.message?.includes(linId));
                   const isForTony = !!(l.who?.toLowerCase().includes("tony") || l.who?.toLowerCase().includes("diaz"));
                   return (
                     <tr
@@ -922,9 +922,6 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       </TD>
                       <TD small center>
                         <span style={{ fontWeight: 800, color: sizeColor }}>{l.size || "—"}</span>
-                      </TD>
-                      <TD small center>
-                        <span style={{ fontWeight: 700, color: seqColor }}>{seqLabel}</span>
                       </TD>
                     </tr>
                   );

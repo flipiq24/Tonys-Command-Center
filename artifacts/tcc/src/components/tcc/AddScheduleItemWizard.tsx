@@ -308,7 +308,7 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
 
           {/* Guests */}
           <div>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, width:"420px" }}>
               <span style={{ fontSize: 16, paddingTop: 10 }}>👥</span>
               <div style={{ flex: 1 }} ref={guestRef}>
                 <div style={{ position: "relative" }}>

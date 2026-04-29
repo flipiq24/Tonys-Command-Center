@@ -206,12 +206,13 @@ router.put("/agents/:agent/memory/:section", async (req, res): Promise<void> => 
 
   const kind = (req.query.kind as string) || "memory";
 
-  // D5: outside of approved Coach proposals, only kind='memory' is writable
-  // through this endpoint. Identity-tier kinds stay developer-locked
+  // D5: outside of approved Coach proposals, only kind='memory' and kind='soul'
+  // are writable through this endpoint. Soul edits require a UI disclaimer
+  // acknowledgement. All other identity-tier kinds stay developer-locked
   // (changes flow through git + the seed script).
-  if (kind !== "memory") {
+  if (kind !== "memory" && kind !== "soul") {
     res.status(403).json({
-      error: `kind='${kind}' is git-locked — only kind='memory' can be edited via this endpoint`,
+      error: `kind='${kind}' is git-locked — only kind='memory' and kind='soul' can be edited via this endpoint`,
     });
     return;
   }

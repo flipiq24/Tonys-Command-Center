@@ -390,6 +390,40 @@ function TrainingTabContent(props: TrainingTabProps) {
   );
 }
 
+// ── Soul disclaimer modal ─────────────────────────────────────────────────────
+function SoulDisclaimerModal({ sectionName, onConfirm, onCancel }: { sectionName: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <>
+      <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.32)", zIndex: 1100, backdropFilter: "blur(2px)" }} />
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+        width: 460, background: "#FFF", borderRadius: 14, padding: "28px 28px 20px",
+        zIndex: 1101, boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <span style={{ fontSize: 22 }}>&#9888;</span>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#B45309", fontFamily: FS }}>Edit Soul File</h3>
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.6, color: C.tx, margin: "0 0 8px" }}>
+          You are about to edit <strong>{sectionName}</strong>.
+        </p>
+        <p style={{ fontSize: 13, lineHeight: 1.6, color: C.tx, margin: "0 0 16px" }}>
+          Soul files define this agent&apos;s core personality, voice, and values.
+          Editing these directly can <strong>fundamentally change</strong> how the agent behaves.
+          Changes take effect on the next agent run.
+        </p>
+        <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: "10px 12px", marginBottom: 20, fontSize: 12, color: "#92400E", lineHeight: 1.5 }}>
+          Tip: For minor behavior tweaks, prefer training via feedback + Coach proposals (Memory sections). Only edit soul files when you want to change the agent&apos;s fundamental character.
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button onClick={onCancel} style={{ padding: "8px 16px", fontSize: 13, fontFamily: F, border: `1px solid ${C.brd}`, borderRadius: 8, background: "#FFF", cursor: "pointer", color: C.tx }}>Cancel</button>
+          <button onClick={onConfirm} style={{ padding: "8px 16px", fontSize: 13, fontFamily: F, border: "none", borderRadius: 8, background: "#D97706", color: "#FFF", cursor: "pointer", fontWeight: 600 }}>I understand — Unlock editing</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Memory tab ────────────────────────────────────────────────────────────────
 function MemoryTab({ agent }: { agent: string }) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
@@ -399,6 +433,8 @@ function MemoryTab({ agent }: { agent: string }) {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [soulEditUnlocked, setSoulEditUnlocked] = useState<Set<string>>(new Set());
+  const [showSoulWarning, setShowSoulWarning] = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -417,6 +453,7 @@ function MemoryTab({ agent }: { agent: string }) {
     setSelectedSection(null);
     setContent("");
     setOriginalContent("");
+    setSoulEditUnlocked(new Set());
   }, [agent, loadList]);
 
   const loadSection = async (kind: string, section: string) => {
@@ -436,11 +473,11 @@ function MemoryTab({ agent }: { agent: string }) {
 
   const save = async () => {
     if (!selectedSection) return;
-    const [, section] = selectedSection.split("/");
+    const [kind, section] = selectedSection.split("/");
     setSaving(true);
     setError("");
     try {
-      await put(`/agents/${agent}/memory/${section}?kind=memory`, { content, updated_by: "tony" });
+      await put(`/agents/${agent}/memory/${section}?kind=${encodeURIComponent(kind)}`, { content, updated_by: "tony" });
       setOriginalContent(content);
       await loadList();
     } catch (err) {
@@ -450,12 +487,28 @@ function MemoryTab({ agent }: { agent: string }) {
     }
   };
 
+  const handleUnlockSoul = () => {
+    if (!selectedSection) return;
+    setSoulEditUnlocked(prev => new Set(prev).add(selectedSection));
+    setShowSoulWarning(false);
+  };
+
   const memoryEntries = entries.filter(e => e.kind === "memory");
-  const otherEntries = entries.filter(e => e.kind !== "memory");
+  const soulEntries = entries.filter(e => e.kind === "soul");
+  const systemEntries = entries.filter(e => e.kind !== "memory" && e.kind !== "soul");
   const dirty = content !== originalContent;
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16 }}>
+      {/* Soul disclaimer modal */}
+      {showSoulWarning && selectedSection && (
+        <SoulDisclaimerModal
+          sectionName={selectedSection.split("/")[1]}
+          onConfirm={handleUnlockSoul}
+          onCancel={() => setShowSoulWarning(false)}
+        />
+      )}
+
       {/* Section list */}
       <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 10, overflow: "hidden", maxHeight: "70vh", overflowY: "auto" }}>
         <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", background: "#FAFAFA" }}>Memory (editable)</div>
@@ -478,8 +531,31 @@ function MemoryTab({ agent }: { agent: string }) {
             )}
           </button>
         ))}
-        <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", background: "#FAFAFA", marginTop: 4 }}>Identity (read-only)</div>
-        {otherEntries.map(e => (
+
+        {soulEntries.length > 0 && (
+          <>
+            <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: "#92400E", textTransform: "uppercase", background: "#FFFBEB", marginTop: 4 }}>Soul (edit with caution)</div>
+            {soulEntries.map(e => (
+              <button
+                key={`${e.kind}/${e.section_name}`}
+                onClick={() => loadSection(e.kind, e.section_name)}
+                style={{
+                  display: "block", width: "100%", textAlign: "left", border: "none",
+                  padding: "8px 12px", fontSize: 13, fontFamily: F, cursor: "pointer",
+                  background: selectedSection === `${e.kind}/${e.section_name}` ? "#FEF3C7" : "transparent",
+                  color: selectedSection === `${e.kind}/${e.section_name}` ? "#B45309" : C.tx,
+                  borderBottom: `1px solid ${C.brd}`,
+                }}
+              >
+                <span style={{ fontSize: 9, marginRight: 6, padding: "1px 5px", background: "#FEF3C7", color: "#B45309", borderRadius: 4, textTransform: "uppercase" }}>SOUL</span>
+                {e.section_name}
+              </button>
+            ))}
+          </>
+        )}
+
+        <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", background: "#FAFAFA", marginTop: 4 }}>System (read-only)</div>
+        {systemEntries.map(e => (
           <button
             key={`${e.kind}/${e.section_name}`}
             onClick={() => loadSection(e.kind, e.section_name)}
@@ -502,23 +578,38 @@ function MemoryTab({ agent }: { agent: string }) {
         {!selectedSection && <div style={{ color: C.mut, padding: 24 }}>Pick a section on the left to view or edit.</div>}
         {selectedSection && (() => {
           const [kind] = selectedSection.split("/");
-          const readOnly = kind !== "memory";
+          const isSoul = kind === "soul";
+          const isSoulUnlocked = isSoul && soulEditUnlocked.has(selectedSection);
+          const readOnly = kind !== "memory" && !isSoulUnlocked;
           return (
             <>
-              <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 6 }}>
                 <h3 style={{ fontSize: 14, fontWeight: 700, color: C.tx, margin: 0, fontFamily: FS }}>{selectedSection}</h3>
-                {readOnly && (
-                  <span style={{ marginLeft: 8, fontSize: 10, padding: "2px 6px", background: "#ECEFF1", color: C.mut, borderRadius: 4 }}>READ-ONLY</span>
+                {readOnly && !isSoul && (
+                  <span style={{ fontSize: 10, padding: "2px 6px", background: "#ECEFF1", color: C.mut, borderRadius: 4 }}>READ-ONLY</span>
+                )}
+                {isSoul && !isSoulUnlocked && (
+                  <button onClick={() => setShowSoulWarning(true)} style={{ fontSize: 11, padding: "3px 10px", background: "#D97706", color: "#FFF", border: "none", borderRadius: 6, cursor: "pointer", fontFamily: F, fontWeight: 600 }}>
+                    Unlock Edit
+                  </button>
+                )}
+                {isSoulUnlocked && (
+                  <span style={{ fontSize: 10, padding: "2px 6px", background: "#FEF3C7", color: "#B45309", borderRadius: 4, fontWeight: 600 }}>UNLOCKED</span>
                 )}
                 <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                   {dirty && !readOnly && <span style={{ fontSize: 11, color: C.amb }}>Unsaved</span>}
                   {!readOnly && (
-                    <button onClick={save} disabled={!dirty || saving} style={{ ...btn1, background: dirty ? C.grn : C.mut, opacity: saving ? 0.6 : 1 }}>
+                    <button onClick={save} disabled={!dirty || saving} style={{ ...btn1, background: dirty ? (isSoul ? "#D97706" : C.grn) : C.mut, opacity: saving ? 0.6 : 1 }}>
                       {saving ? "Saving…" : "Save"}
                     </button>
                   )}
                 </div>
               </div>
+              {isSoul && isSoulUnlocked && (
+                <div style={{ background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px", marginBottom: 8, fontSize: 12, color: "#92400E", lineHeight: 1.4 }}>
+                  Editing soul file — changes affect agent personality and take effect on next run.
+                </div>
+              )}
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
@@ -526,8 +617,8 @@ function MemoryTab({ agent }: { agent: string }) {
                 style={{
                   width: "100%", minHeight: 480, padding: 12,
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13,
-                  border: `1px solid ${C.brd}`, borderRadius: 8, resize: "vertical",
-                  background: readOnly ? "#FAFAFA" : C.card, color: C.tx,
+                  border: `1px solid ${isSoulUnlocked ? "#FDE68A" : C.brd}`, borderRadius: 8, resize: "vertical",
+                  background: readOnly ? "#FAFAFA" : isSoulUnlocked ? "#FFFBEB" : C.card, color: C.tx,
                 }}
               />
             </>

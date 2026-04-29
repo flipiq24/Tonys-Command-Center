@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { get, post, del } from "@/lib/api";
 import { FontLink } from "@/components/tcc/FontLink";
 import { CheckinGate } from "@/components/tcc/CheckinGate";
@@ -138,6 +138,26 @@ export default function App() {
     const interval = setInterval(pollEmails, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Refresh emails when navigating to Dashboard or Emails view. We poll Gmail
+  // for new arrivals (cheap, no AI) and refetch the brief's email lanes — but
+  // never trigger AI reclassification, which is reserved for the Reclassify
+  // modal. 30-second debounce per view so rapid tab switching doesn't spam.
+  const lastViewEmailRefreshRef = useRef<number>(0);
+  useEffect(() => {
+    if (view !== "dashboard" && view !== "emails") return;
+    const now = Date.now();
+    if (now - lastViewEmailRefreshRef.current < 30_000) return;
+    lastViewEmailRefreshRef.current = now;
+    (async () => {
+      try { await get("/emails/poll"); } catch { /* silent — no Gmail token, etc. */ }
+      try { await refreshBrief(["emails"]); } catch { /* refresh failure logged inside */ }
+    })();
+    // refreshBrief identity changes every refresh start/stop — depending on it
+    // would re-fire this effect mid-refresh and break the debounce.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
   const [showReclassifyModal, setShowReclassifyModal] = useState(false);
   const openReclassifyModal = () => setShowReclassifyModal(true);
   const handleReclassifySubmit = async ({ mode, sinceUnixSeconds }: { mode: ReclassifyMode; sinceUnixSeconds?: number }) => {

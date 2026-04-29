@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { C, F, FS } from "./constants";
 import { get, patch, post } from "@/lib/api";
 import { ContactDrawer } from "./ContactDrawer";
@@ -550,6 +550,211 @@ function PageHeader({ title, sub }: { title: string; sub: string }) {
   );
 }
 
+// ── Linear table filter bar ──────────────────────────────────────────
+type LinFiltersShape = {
+  teams: string[]; projects: string[];
+  cycle: "all" | "current" | "next" | "none";
+  statuses: string[]; owners: string[]; priorities: string[]; sizes: string[]; labels: string[];
+  due: "all" | "overdue" | "today" | "this-week" | "no-date";
+  search: string;
+};
+
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "3px 9px", borderRadius: 999, fontSize: 10, fontWeight: 700,
+        border: `1px solid ${active ? "#E65100" : "#D1D5DB"}`,
+        background: active ? "#FFF3EB" : "#fff",
+        color: active ? "#9A3412" : "#374151",
+        cursor: "pointer", whiteSpace: "nowrap", letterSpacing: 0.2,
+      }}
+    >{label}</button>
+  );
+}
+
+function FilterDropdown({ label, options, selected, onChange }: {
+  label: string; options: string[]; selected: string[]; onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const summary = selected.length === 0 ? label : selected.length === 1 ? selected[0] : `${label} (${selected.length})`;
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          padding: "3px 10px", borderRadius: 999, fontSize: 10, fontWeight: 700,
+          border: `1px solid ${selected.length ? "#E65100" : "#D1D5DB"}`,
+          background: selected.length ? "#FFF3EB" : "#fff",
+          color: selected.length ? "#9A3412" : "#374151",
+          cursor: "pointer", whiteSpace: "nowrap", letterSpacing: 0.2,
+        }}
+      >{summary} ▾</button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
+          background: "#fff", border: "1px solid #D1D5DB", borderRadius: 8,
+          boxShadow: "0 6px 18px rgba(0,0,0,0.12)", padding: 6,
+          maxHeight: 260, overflowY: "auto", minWidth: 180,
+        }}>
+          {options.length === 0 ? (
+            <div style={{ padding: "6px 10px", fontSize: 10, color: "#999", fontStyle: "italic" }}>No options</div>
+          ) : options.map(opt => {
+            const checked = selected.includes(opt);
+            return (
+              <label key={opt} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", fontSize: 11, cursor: "pointer", borderRadius: 6 }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#F3F4F6")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onChange(checked ? selected.filter(s => s !== opt) : [...selected, opt])}
+                  style={{ margin: 0, cursor: "pointer" }}
+                />
+                <span style={{ color: "#1F2937" }}>{opt}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LinearFilterBar({
+  filters, setFilters, options, filteredCount, totalCount, filtersActive, onClear,
+}: {
+  filters: LinFiltersShape;
+  setFilters: React.Dispatch<React.SetStateAction<LinFiltersShape>>;
+  options: { teams: string[]; projects: string[]; statuses: string[]; owners: string[]; labels: string[]; sizes: string[] };
+  filteredCount: number; totalCount: number;
+  filtersActive: boolean; onClear: () => void;
+}) {
+  const toggleArr = (key: keyof LinFiltersShape, val: string) => {
+    setFilters(f => {
+      const arr = (f[key] as string[]).slice();
+      const i = arr.indexOf(val);
+      if (i >= 0) arr.splice(i, 1); else arr.push(val);
+      return { ...f, [key]: arr };
+    });
+  };
+  return (
+    <div style={{
+      border: "1px solid #E5E7EB", borderRadius: 8, padding: "8px 10px",
+      marginBottom: 8, background: "#FAFAF9", display: "flex", flexWrap: "wrap",
+      gap: 8, alignItems: "center",
+    }}>
+      {/* Team chips (small set, render inline) */}
+      {options.teams.length > 0 && (
+        <FilterRow label="Team">
+          {options.teams.map(t => (
+            <FilterChip key={t} label={t} active={filters.teams.includes(t)} onClick={() => toggleArr("teams", t)} />
+          ))}
+        </FilterRow>
+      )}
+
+      {/* Project — dropdown (cascades from team) */}
+      <FilterRow label="Project">
+        <FilterDropdown label="All projects" options={options.projects} selected={filters.projects} onChange={v => setFilters(f => ({ ...f, projects: v }))} />
+      </FilterRow>
+
+      {/* Cycle */}
+      <FilterRow label="Cycle">
+        {(["all", "current", "next", "none"] as const).map(c => (
+          <FilterChip key={c} label={c === "all" ? "All" : c === "current" ? "Current" : c === "next" ? "Next" : "No cycle"}
+            active={filters.cycle === c} onClick={() => setFilters(f => ({ ...f, cycle: c }))} />
+        ))}
+      </FilterRow>
+
+      {/* Status */}
+      <FilterRow label="Status">
+        {options.statuses.map(s => (
+          <FilterChip key={s} label={s} active={filters.statuses.includes(s)} onClick={() => toggleArr("statuses", s)} />
+        ))}
+      </FilterRow>
+
+      {/* Priority */}
+      <FilterRow label="Priority">
+        {(["high", "mid", "low"] as const).map(p => (
+          <FilterChip key={p} label={p === "high" ? "High" : p === "mid" ? "Mid" : "Low"}
+            active={filters.priorities.includes(p)} onClick={() => toggleArr("priorities", p)} />
+        ))}
+      </FilterRow>
+
+      {/* Owner — dropdown (long list) */}
+      <FilterRow label="Owner">
+        <FilterDropdown label="All owners" options={options.owners} selected={filters.owners} onChange={v => setFilters(f => ({ ...f, owners: v }))} />
+      </FilterRow>
+
+      {/* Due */}
+      <FilterRow label="Due">
+        {(["all", "overdue", "today", "this-week", "no-date"] as const).map(d => (
+          <FilterChip key={d} label={d === "all" ? "All" : d === "overdue" ? "Overdue" : d === "today" ? "Today" : d === "this-week" ? "This Week" : "No date"}
+            active={filters.due === d} onClick={() => setFilters(f => ({ ...f, due: d }))} />
+        ))}
+      </FilterRow>
+
+      {/* Size + Labels */}
+      {options.sizes.length > 0 && (
+        <FilterRow label="Size">
+          {options.sizes.map(s => (
+            <FilterChip key={s} label={s} active={filters.sizes.includes(s)} onClick={() => toggleArr("sizes", s)} />
+          ))}
+        </FilterRow>
+      )}
+      {options.labels.length > 0 && (
+        <FilterRow label="Labels">
+          <FilterDropdown label="All labels" options={options.labels} selected={filters.labels} onChange={v => setFilters(f => ({ ...f, labels: v }))} />
+        </FilterRow>
+      )}
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="🔍 Search task or ID…"
+        value={filters.search}
+        onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+        style={{
+          padding: "4px 10px", borderRadius: 8, fontSize: 11,
+          border: "1px solid #D1D5DB", background: "#fff", color: "#1F2937",
+          minWidth: 180, flex: "1 1 180px",
+        }}
+      />
+
+      {/* Count + Clear */}
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontSize: 10, color: "#4B5563", whiteSpace: "nowrap" }}>
+        <span style={{ fontWeight: 600 }}>Showing {filteredCount} of {totalCount}</span>
+        {filtersActive && (
+          <button onClick={onClear} style={{
+            padding: "3px 10px", borderRadius: 999, fontSize: 10, fontWeight: 700,
+            border: "1px solid #E65100", background: "#fff", color: "#9A3412",
+            cursor: "pointer", letterSpacing: 0.2,
+          }}>Clear all</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilterRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, color: "#6B7280", textTransform: "uppercase", letterSpacing: 0.6 }}>{label}:</span>
+      <div style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>{children}</div>
+    </div>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════
 export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, calls = [], onComplete, onNavigate, onOpenEmail, onAttempt, onCompose }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
@@ -557,6 +762,33 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
   const [hoveredLin, setHoveredLin] = useState<LinearItem | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
+  // ── Linear table filter state ────────────────────────────────────
+  // All multi-select arrays use [] = "no filter" (i.e. show everything).
+  // Default Status keeps the historical view: only "In Progress" + "In QA".
+  const [linFilters, setLinFilters] = useState<{
+    teams: string[];        // teamKey list
+    projects: string[];     // projectName list
+    cycle: "all" | "current" | "next" | "none";
+    statuses: string[];     // l.state list
+    owners: string[];       // l.who list
+    priorities: string[];   // "high" | "mid" | "low"
+    sizes: string[];        // "XL" | "L" | "M" | "S" | etc.
+    labels: string[];
+    due: "all" | "overdue" | "today" | "this-week" | "no-date";
+    search: string;
+  }>({
+    teams: [],
+    projects: [],
+    cycle: "all",
+    statuses: ["In Progress", "In QA"],
+    owners: [],
+    priorities: [],
+    sizes: [],
+    labels: [],
+    due: "all",
+    search: "",
+  });
 
   // ── Generic hover tooltip for calls / top3 / emails ──────────────
   type HoverPayload =
@@ -622,13 +854,105 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const emails   = emailsImportant.slice(0, 3);
   const todayStr    = new Date().toISOString().slice(0, 10);
   const priorityRank = (l: LinearItem) => l.level === "high" ? 0 : l.level === "mid" ? 1 : 2;
-  const stateRank = (l: LinearItem) => l.state === "In Progress" ? 0 : 1;
-  const allLinItems = linearItems
-    .filter(l => l.state === "In Progress" || l.state === "In QA")
-    .sort((a, b) => stateRank(a) - stateRank(b) || priorityRank(a) - priorityRank(b));
-  const ethanItems  = allLinItems.filter(l => l.who?.toLowerCase().includes("ethan"));
-  const ramiItems   = allLinItems.filter(l => l.who?.toLowerCase().includes("rami") || l.who?.toLowerCase().includes("ramy") || l.who?.toLowerCase().includes("remy"));
-  const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));
+  const stateRank = (l: LinearItem) => l.state === "In Progress" ? 0 : l.state === "In QA" ? 1 : 2;
+
+  // Sorted issue list before filters applied — used to populate the filter
+  // dropdown options (so users see every project/owner/label that exists).
+  const allLinItems = useMemo(
+    () => [...linearItems].sort((a, b) => stateRank(a) - stateRank(b) || priorityRank(a) - priorityRank(b)),
+    [linearItems],
+  );
+
+  // Apply linFilters to produce the filtered list rendered in the table.
+  const linItems = useMemo(() => {
+    const todayDate = new Date(); todayDate.setHours(0, 0, 0, 0);
+    const sevenDaysOut = new Date(todayDate.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+    const search = linFilters.search.trim().toLowerCase();
+
+    return allLinItems.filter(l => {
+      if (linFilters.teams.length && !linFilters.teams.includes(l.teamKey || "")) return false;
+      if (linFilters.projects.length && !linFilters.projects.includes(l.projectName || "")) return false;
+      if (linFilters.statuses.length && !linFilters.statuses.includes(l.state || "")) return false;
+      if (linFilters.owners.length && !linFilters.owners.includes(l.who || "")) return false;
+      if (linFilters.priorities.length && !linFilters.priorities.includes(l.level)) return false;
+      if (linFilters.sizes.length && !linFilters.sizes.includes(l.size || "—")) return false;
+      if (linFilters.labels.length && !(l.labels || []).some(lab => linFilters.labels.includes(lab))) return false;
+
+      if (linFilters.cycle !== "all") {
+        const startsAt = l.cycleStartsAt?.slice(0, 10);
+        const endsAt = l.cycleEndsAt?.slice(0, 10);
+        const isCurrent = !!startsAt && !!endsAt && startsAt <= todayStr && todayStr <= endsAt;
+        if (linFilters.cycle === "current" && !isCurrent) return false;
+        if (linFilters.cycle === "next" && (isCurrent || !startsAt || startsAt <= todayStr)) return false;
+        if (linFilters.cycle === "none" && (l.cycleNumber != null || l.cycleName)) return false;
+      }
+
+      if (linFilters.due !== "all") {
+        const deadline = l.dueDate || (l.cycleEndsAt ? l.cycleEndsAt.slice(0, 10) : null);
+        if (linFilters.due === "no-date" && deadline) return false;
+        if (linFilters.due === "overdue" && (!deadline || deadline >= todayStr)) return false;
+        if (linFilters.due === "today" && deadline !== todayStr) return false;
+        if (linFilters.due === "this-week" && (!deadline || deadline > sevenDaysOut)) return false;
+      }
+
+      if (search) {
+        const haystack = `${l.task || ""} ${l.identifier || l.id || ""}`.toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+
+      return true;
+    });
+  }, [allLinItems, linFilters, todayStr]);
+
+  // Filter option lists — derived from the unfiltered set so dropdowns never
+  // shrink to zero options when filters are active.
+  const filterOptions = useMemo(() => {
+    const teams = new Set<string>(), projects = new Set<string>(), statuses = new Set<string>();
+    const owners = new Set<string>(), labels = new Set<string>(), sizes = new Set<string>();
+    for (const l of allLinItems) {
+      if (l.teamKey) teams.add(l.teamKey);
+      if (l.projectName) projects.add(l.projectName);
+      if (l.state) statuses.add(l.state);
+      if (l.who) owners.add(l.who);
+      if (l.size) sizes.add(l.size);
+      for (const lab of l.labels || []) labels.add(lab);
+    }
+    // Project dropdown cascades — if teams are filtered, only show projects in those teams.
+    const visibleProjects = new Set<string>();
+    for (const l of allLinItems) {
+      if (linFilters.teams.length && !linFilters.teams.includes(l.teamKey || "")) continue;
+      if (l.projectName) visibleProjects.add(l.projectName);
+    }
+    return {
+      teams: [...teams].sort(),
+      projects: [...(linFilters.teams.length ? visibleProjects : projects)].sort(),
+      statuses: [...statuses].sort(),
+      owners: [...owners].sort(),
+      labels: [...labels].sort(),
+      sizes: [...sizes].sort(),
+    };
+  }, [allLinItems, linFilters.teams]);
+
+  // True when any filter differs from default — controls Clear-all button visibility.
+  const filtersActive =
+    linFilters.teams.length > 0 ||
+    linFilters.projects.length > 0 ||
+    linFilters.cycle !== "all" ||
+    linFilters.owners.length > 0 ||
+    linFilters.priorities.length > 0 ||
+    linFilters.sizes.length > 0 ||
+    linFilters.labels.length > 0 ||
+    linFilters.due !== "all" ||
+    linFilters.search.trim() !== "" ||
+    !(linFilters.statuses.length === 2 && linFilters.statuses.includes("In Progress") && linFilters.statuses.includes("In QA"));
+
+  const clearLinFilters = () => setLinFilters({
+    teams: [], projects: [], cycle: "all",
+    statuses: ["In Progress", "In QA"],
+    owners: [], priorities: [], sizes: [], labels: [],
+    due: "all", search: "",
+  });
+
   const wb       = computeWorkBlocks(meetings);
 
   // FlipIQ uses Linear cycles (sprints) as the deadline mechanism — most issues
@@ -884,8 +1208,20 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
         </div>
         <div style={{ padding: "0 20px 18px" }}>
 
-            {/* ── LINEAR — Engineering in Progress (flags + sequence baked in) ── */}
+            {/* ── LINEAR — Engineering in Progress ── */}
             <SL text="⚡ Linear — Engineering in Progress" color="#E65100" />
+
+            {/* ── Filter bar ── */}
+            <LinearFilterBar
+              filters={linFilters}
+              setFilters={setLinFilters}
+              options={filterOptions}
+              filteredCount={linItems.length}
+              totalCount={allLinItems.length}
+              filtersActive={filtersActive}
+              onClear={clearLinFilters}
+            />
+
             <table style={{ width: "100%", borderCollapse: "collapse", border: BORDER, marginBottom: 12 }}>
               <thead>
                 <tr>
@@ -998,21 +1334,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
               </tbody>
             </table>
 
-            {/* ── COO — Ethan ── */}
-            {ethanItems.length > 0 && (
-              <>
-                <SL text="COO — Ethan" color="#444" />
-                <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} fmtCycle={fmtCycle} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
-              </>
-            )}
-
-            {/* ── CSM — Ramy ── */}
-            {ramiItems.length > 0 && (
-              <>
-                <SL text="CSM — Ramy" color="#444" />
-                <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} fmtCycle={fmtCycle} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
-              </>
-            )}
+            {/* Ethan/Rami sub-tables removed — use the Owner filter to scope by person. */}
 
             {/* ── TODAY'S WINS ── */}
             <SL text="🏆 Today's Wins" color="#B7791F" />

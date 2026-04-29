@@ -9,67 +9,82 @@ function priorityToLevel(p: number): "high" | "mid" | "low" {
   return "low";
 }
 
+// Single raw GraphQL query so we don't blow Linear's 2500-req/hour limit.
+// The SDK's lazy accessors (issue.cycle, issue.team, issue.project) each
+// dispatch their own request — at 200 issues that's 600+ extra calls per
+// /linear/live invocation. One pre-fetched query keeps it at exactly 1.
+const LIVE_ISSUES_QUERY = `
+  query LiveIssues($first: Int!, $filter: IssueFilter) {
+    issues(first: $first, filter: $filter) {
+      nodes {
+        id
+        identifier
+        title
+        description
+        priority
+        estimate
+        dueDate
+        url
+        state { id name type }
+        assignee { id name email }
+        team { id key name }
+        project { id name }
+        cycle { id number name startsAt endsAt progress }
+        labels { nodes { id name } }
+      }
+    }
+  }
+`;
+
 router.get("/linear/live", async (_req, res) => {
   try {
-    const issues = await linear.issues({
-      filter: {
-        state: { type: { in: ["started"] } },
-      },
-      first: 100,
+    // Started + unstarted + backlog (i.e. not completed/cancelled). The FE filter
+    // bar gates which statuses render; default keeps "In Progress" + "In QA".
+    const data = await (linear as any).client.rawRequest(LIVE_ISSUES_QUERY, {
+      first: 200,
+      filter: { state: { type: { in: ["started", "unstarted", "backlog"] } } },
+    });
+    const issuesData = data?.data?.issues?.nodes ?? [];
+
+    const nodes = issuesData.map((issue: any) => {
+      const cycle = issue.cycle;
+      return {
+        id: issue.id,
+        identifier: issue.identifier,
+        who: issue.assignee?.name ?? "Unassigned",
+        task: issue.title,
+        level: priorityToLevel(issue.priority ?? 4),
+        dueDate: issue.dueDate ?? null,
+        size: issue.estimate != null ? String(issue.estimate) : null,
+        state: issue.state?.name ?? null,
+        stateType: issue.state?.type ?? null,
+        description: issue.description ?? null,
+        labels: (issue.labels?.nodes ?? []).map((l: any) => l.name),
+        url: issue.url,
+        // Cycle (sprint) info — used by the dashboard's Cycle column.
+        cycleNumber: cycle?.number ?? null,
+        cycleName: cycle?.name ?? null,
+        cycleStartsAt: cycle?.startsAt ?? null,
+        cycleEndsAt: cycle?.endsAt ?? null,
+        cycleProgress: typeof cycle?.progress === "number" ? cycle.progress : null,
+        // Team + project — feed the dashboard filter bar.
+        teamKey: issue.team?.key ?? null,
+        teamName: issue.team?.name ?? null,
+        projectId: issue.project?.id ?? null,
+        projectName: issue.project?.name ?? null,
+      };
     });
 
-    const nodes = await Promise.all(
-      issues.nodes.map(async (issue) => {
-        const [state, assignee, labelsConn, cycle, team, project] = await Promise.all([
-          issue.state,
-          issue.assignee,
-          issue.labels(),
-          issue.cycle,
-          issue.team,
-          issue.project,
-        ]);
-        const labelNodes = labelsConn?.nodes ?? [];
-        // Cycle = the FlipIQ team's deadline mechanism. Tasks rarely have a due date
-        // but almost always belong to a cycle (Linear sprint). Surface it so the
-        // dashboard can show "Cycle 14 · 8 weekdays left" instead of fake "No date".
-        const endsAtRaw = (cycle as any)?.endsAt;
-        const startsAtRaw = (cycle as any)?.startsAt;
-        return {
-          id: issue.id,
-          identifier: issue.identifier,
-          who: assignee?.name ?? "Unassigned",
-          task: issue.title,
-          level: priorityToLevel(issue.priority ?? 4),
-          dueDate: issue.dueDate ?? null,
-          size: issue.estimate != null ? String(issue.estimate) : null,
-          state: state?.name ?? null,
-          stateType: state?.type ?? null,
-          description: issue.description ?? null,
-          labels: labelNodes.map((l: any) => l.name),
-          url: issue.url,
-          // Cycle (sprint) info — used by the dashboard's Cycle column.
-          cycleNumber: cycle?.number ?? null,
-          cycleName: (cycle as any)?.name ?? null,
-          cycleStartsAt: startsAtRaw instanceof Date ? startsAtRaw.toISOString() : (startsAtRaw ?? null),
-          cycleEndsAt: endsAtRaw instanceof Date ? endsAtRaw.toISOString() : (endsAtRaw ?? null),
-          cycleProgress: typeof cycle?.progress === "number" ? cycle.progress : null,
-          // Team + project — feed the dashboard filter bar (Phase B).
-          teamKey: team?.key ?? null,
-          teamName: team?.name ?? null,
-          projectId: project?.id ?? null,
-          projectName: project?.name ?? null,
-        };
-      }),
-    );
-
-    nodes.sort((a, b) => {
-      const order = { high: 0, mid: 1, low: 2 };
+    nodes.sort((a: any, b: any) => {
+      const order: Record<string, number> = { high: 0, mid: 1, low: 2 };
       return (order[a.level] ?? 2) - (order[b.level] ?? 2);
     });
 
     res.json(nodes);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch live issues" });
+    const msg = err?.response?.errors?.[0]?.message || err?.message || "Failed to fetch live issues";
+    console.error("[linear/live] error:", msg);
+    res.status(500).json({ error: msg });
   }
 });
 

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { planItemsTable, brainTrainingLogTable, businessContextTable, teamRolesTable } from "../../lib/schema-v2";
+import { BUSINESS_CONTEXT_DEFAULTS } from "../../lib/business-context-defaults";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { syncTasksTab } from "./sheets-sync";
@@ -1043,7 +1044,84 @@ router.get("/plan/brain/logs", async (req, res): Promise<void> => {
   }
 });
 
-// PUT /plan/brain/context — save the brain context document
+// ── Business context docs (DB-backed source of truth) ─────────────────────
+// Tony's three editable docs all live in business_context, distinguished by
+// documentType. The dashboard FE reads these from /business/context/:type so
+// what Tony sees in the UI matches what the AI sees in its prompts. Old
+// hardcoded JS constants in BusinessView.tsx are gone — first read here
+// seeds defaults if a row is missing, so nothing visible to Tony disappears.
+const BUSINESS_CONTEXT_DOC_TYPES = new Set([
+  "business_plan",
+  "90_day_plan",
+  "brain_context",
+  "north_star",
+  "daily_spiritual",
+]);
+
+function isValidDocType(t: string): boolean {
+  return BUSINESS_CONTEXT_DOC_TYPES.has(t);
+}
+
+// GET /business/context/:documentType — load one doc, seeding default on first read.
+router.get("/business/context/:documentType", async (req, res): Promise<void> => {
+  try {
+    const { documentType } = req.params;
+    if (!isValidDocType(documentType)) {
+      res.status(400).json({ error: `Unknown documentType: ${documentType}` }); return;
+    }
+    let [ctx] = await db.select().from(businessContextTable)
+      .where(eq(businessContextTable.documentType, documentType));
+    // First-read seed — keeps the old hardcoded text alive without a separate migration.
+    if (!ctx && BUSINESS_CONTEXT_DEFAULTS[documentType]) {
+      const seed = BUSINESS_CONTEXT_DEFAULTS[documentType];
+      const [inserted] = await db.insert(businessContextTable).values({
+        documentType,
+        content: seed.content,
+        summary: seed.summary,
+      }).returning();
+      ctx = inserted;
+    }
+    res.json({
+      documentType,
+      content: ctx?.content || "",
+      summary: ctx?.summary || null,
+      lastUpdated: ctx?.lastUpdated || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// PUT /business/context/:documentType — upsert one doc.
+router.put("/business/context/:documentType", async (req, res): Promise<void> => {
+  try {
+    const { documentType } = req.params;
+    if (!isValidDocType(documentType)) {
+      res.status(400).json({ error: `Unknown documentType: ${documentType}` }); return;
+    }
+    const { content, summary } = req.body as { content: string; summary?: string };
+    if (typeof content !== "string") { res.status(400).json({ error: "content is required" }); return; }
+    const cleaned = content.trim();
+    const existing = await db.select().from(businessContextTable)
+      .where(eq(businessContextTable.documentType, documentType));
+    if (existing.length > 0) {
+      await db.update(businessContextTable)
+        .set({ content: cleaned, summary: summary ?? existing[0].summary, lastUpdated: new Date() })
+        .where(eq(businessContextTable.documentType, documentType));
+    } else {
+      await db.insert(businessContextTable).values({
+        documentType,
+        content: cleaned,
+        summary: summary || BUSINESS_CONTEXT_DEFAULTS[documentType]?.summary || null,
+      });
+    }
+    res.json({ ok: true, documentType });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Legacy aliases — kept so existing FE/AI calls to /plan/brain/context keep working.
 router.put("/plan/brain/context", async (req, res): Promise<void> => {
   try {
     const { content } = req.body as { content: string };
@@ -1067,7 +1145,6 @@ router.put("/plan/brain/context", async (req, res): Promise<void> => {
   }
 });
 
-// GET /plan/brain/context — load the brain context document
 router.get("/plan/brain/context", async (req, res): Promise<void> => {
   try {
     const [ctx] = await db.select().from(businessContextTable)

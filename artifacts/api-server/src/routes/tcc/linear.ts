@@ -20,10 +20,20 @@ router.get("/linear/live", async (_req, res) => {
 
     const nodes = await Promise.all(
       issues.nodes.map(async (issue) => {
-        const state = await issue.state;
-        const assignee = await issue.assignee;
-        const labelsConn = await issue.labels();
+        const [state, assignee, labelsConn, cycle, team, project] = await Promise.all([
+          issue.state,
+          issue.assignee,
+          issue.labels(),
+          issue.cycle,
+          issue.team,
+          issue.project,
+        ]);
         const labelNodes = labelsConn?.nodes ?? [];
+        // Cycle = the FlipIQ team's deadline mechanism. Tasks rarely have a due date
+        // but almost always belong to a cycle (Linear sprint). Surface it so the
+        // dashboard can show "Cycle 14 · 8 weekdays left" instead of fake "No date".
+        const endsAtRaw = (cycle as any)?.endsAt;
+        const startsAtRaw = (cycle as any)?.startsAt;
         return {
           id: issue.id,
           identifier: issue.identifier,
@@ -37,6 +47,17 @@ router.get("/linear/live", async (_req, res) => {
           description: issue.description ?? null,
           labels: labelNodes.map((l: any) => l.name),
           url: issue.url,
+          // Cycle (sprint) info — used by the dashboard's Cycle column.
+          cycleNumber: cycle?.number ?? null,
+          cycleName: (cycle as any)?.name ?? null,
+          cycleStartsAt: startsAtRaw instanceof Date ? startsAtRaw.toISOString() : (startsAtRaw ?? null),
+          cycleEndsAt: endsAtRaw instanceof Date ? endsAtRaw.toISOString() : (endsAtRaw ?? null),
+          cycleProgress: typeof cycle?.progress === "number" ? cycle.progress : null,
+          // Team + project — feed the dashboard filter bar (Phase B).
+          teamKey: team?.key ?? null,
+          teamName: team?.name ?? null,
+          projectId: project?.id ?? null,
+          projectName: project?.name ?? null,
         };
       }),
     );

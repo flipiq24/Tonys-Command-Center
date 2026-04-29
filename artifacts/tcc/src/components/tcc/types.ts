@@ -103,6 +103,18 @@ export interface LinearItem {
   description?: string | null;
   labels?: string[];
   url?: string;
+  // Cycle = Linear sprint. FlipIQ team uses cycles instead of due dates,
+  // so the dashboard renders "Cycle 14 · 8 weekdays left" in the deadline column.
+  cycleNumber?: number | null;
+  cycleName?: string | null;
+  cycleStartsAt?: string | null;
+  cycleEndsAt?: string | null;
+  cycleProgress?: number | null;
+  // Team + project — used by the dashboard filter bar.
+  teamKey?: string | null;
+  teamName?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
 }
 
 export interface DailyBrief {

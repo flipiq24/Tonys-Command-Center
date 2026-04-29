@@ -428,12 +428,13 @@ function TD({ children, center, bold, small, dim, strike }: {
 }
 
 // ── Management task table (Ethan / Ramy) ────────────────────────────
-function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin, setTooltipPos, slackItems = [] }: {
+function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, fmtCycle, setHoveredLin, setTooltipPos, slackItems = [] }: {
   items: LinearItem[];
   prefix: string;
   todayStr: string;
   trackStatus: (l: LinearItem) => "overdue" | "due-today" | "due-soon" | "ok" | "no-date";
   fmtDue: (d: string | null | undefined) => string;
+  fmtCycle: (l: LinearItem) => { label: string; sub: string; tone: "ok" | "soon" | "over" | "none" };
   setHoveredLin: (l: LinearItem | null) => void;
   setTooltipPos: (p: { x: number; y: number }) => void;
   slackItems?: SlackItem[];
@@ -445,7 +446,7 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
           <TH w={22} center>ST</TH>
           <TH w={68}>ID</TH>
           <TH>TASK</TH>
-          <TH w={56} center>DUE</TH>
+          <TH w={92} center>CYCLE</TH>
           <TH w={68} center>STATUS</TH>
           <TH w={36} center>SIZE</TH>
         </tr>
@@ -492,9 +493,19 @@ function MgmtTable({ items, prefix, todayStr, trackStatus, fmtDue, setHoveredLin
                 </span>
               </TD>
               <TD small center>
-                <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
-                  {fmtDue(l.dueDate)}
-                </span>
+                {(() => {
+                  const c = fmtCycle(l);
+                  if (c.tone === "none" && c.label === "—") {
+                    return <span style={{ fontWeight: 700, color: "#B45309", fontSize: 9, letterSpacing: 0.3 }}>⚠ No cycle</span>;
+                  }
+                  const subColor = c.tone === "over" ? "#C62828" : c.tone === "soon" ? "#E65100" : c.tone === "ok" ? "#2E7D32" : "#999";
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                      <span style={{ fontWeight: 700, color: "#374151", fontSize: 10 }}>{c.label}</span>
+                      {c.sub && <span style={{ fontSize: 9, fontWeight: 600, color: subColor }}>{c.sub}</span>}
+                    </div>
+                  );
+                })()}
               </TD>
               <TD small center>
                 <span style={{ fontWeight: 700, color: trackColor }}>{trackLabel}</span>
@@ -620,21 +631,73 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
   const linItems    = allLinItems.filter(l => !ethanItems.includes(l) && !ramiItems.includes(l));
   const wb       = computeWorkBlocks(meetings);
 
-  // ON TRACK label — only based on real due-date proximity. No more "high priority + no date = At Risk" lie.
+  // FlipIQ uses Linear cycles (sprints) as the deadline mechanism — most issues
+  // have no dueDate but do have a cycle. effectiveDeadline picks dueDate when set,
+  // falling back to the cycle's end date so the dashboard shows real urgency.
+  const effectiveDeadline = (l: LinearItem): string | null => {
+    if (l.dueDate) return l.dueDate;
+    if (l.cycleEndsAt) return l.cycleEndsAt.slice(0, 10);
+    return null;
+  };
+
+  // Count weekdays (Mon-Fri) between today and target — matches Linear's "8 weekdays left" display.
+  const weekdaysUntil = (targetISO: string | null | undefined): number | null => {
+    if (!targetISO) return null;
+    const target = new Date(targetISO + (targetISO.length === 10 ? "T00:00:00" : ""));
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    if (isNaN(target.getTime())) return null;
+    let count = 0;
+    const sign = target >= today ? 1 : -1;
+    const cursor = new Date(today);
+    while (cursor.toISOString().slice(0, 10) !== target.toISOString().slice(0, 10)) {
+      cursor.setDate(cursor.getDate() + sign);
+      const day = cursor.getDay();
+      if (day !== 0 && day !== 6) count += sign;
+    }
+    return count;
+  };
+
+  // ON TRACK label — uses cycle end date when no explicit dueDate is set.
   const trackStatus = (l: LinearItem): "overdue" | "due-today" | "due-soon" | "ok" | "no-date" => {
-    if (!l.dueDate) return "no-date";
-    if (l.dueDate < todayStr) return "overdue";
-    if (l.dueDate === todayStr) return "due-today";
+    const d = effectiveDeadline(l);
+    if (!d) return "no-date";
+    if (d < todayStr) return "overdue";
+    if (d === todayStr) return "due-today";
     const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-    if (l.dueDate <= threeDaysOut) return "due-soon";
+    if (d <= threeDaysOut) return "due-soon";
     return "ok";
   };
+
+  // Cycle cell — shows "Cycle 14 · 8wd left" or just the date if only dueDate is set.
+  const fmtCycle = (l: LinearItem): { label: string; sub: string; tone: "ok" | "soon" | "over" | "none" } => {
+    const wd = weekdaysUntil(l.cycleEndsAt || l.dueDate);
+    // Prefer custom cycle name if set, else "Cycle <n>". If neither and we only have a dueDate, label as "Due".
+    const cycleLabel = l.cycleName?.trim()
+      ? l.cycleName.trim()
+      : l.cycleNumber != null
+      ? `Cycle ${l.cycleNumber}`
+      : l.dueDate
+      ? "Due"
+      : "—";
+    let sub = "";
+    let tone: "ok" | "soon" | "over" | "none" = "none";
+    if (wd != null) {
+      if (wd < 0) { sub = `${Math.abs(wd)}wd over`; tone = "over"; }
+      else if (wd === 0) { sub = "ends today"; tone = "soon"; }
+      else if (wd <= 3) { sub = `${wd}wd left`; tone = "soon"; }
+      else { sub = `${wd}wd left`; tone = "ok"; }
+    }
+    return { label: cycleLabel, sub, tone };
+  };
+
+  // Compact date formatter — reused by hover tooltip + Ethan/Rami sub-tables.
   const fmtDue = (d: string | null | undefined): string => {
     if (!d) return "—";
-    if (d === todayStr) return "Today";
+    const iso = d.length > 10 ? d.slice(0, 10) : d;
+    if (iso === todayStr) return "Today";
     const tmrw = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    if (d === tmrw) return "Tmrw";
-    return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    if (iso === tmrw) return "Tmrw";
+    return new Date(iso + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
   };
 
   return (
@@ -833,7 +896,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                   <TH>TASK</TH>
                   <TH w={64}>OWNER</TH>
                   <TH w={24} center>🚩</TH>
-                  <TH w={56} center>DUE</TH>
+                  <TH w={92} center>CYCLE</TH>
                   <TH w={68} center>ON TRACK</TH>
                   <TH w={36} center>SIZE</TH>
                 </tr>
@@ -909,13 +972,19 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
                       <TD small>{l.who || "—"}</TD>
                       <TD center><span style={{ fontSize: 11 }}>{flagIcon}</span></TD>
                       <TD small center>
-                        {noDue ? (
-                          <span style={{ fontWeight: 700, color: "#B45309", fontSize: 9, letterSpacing: 0.3 }}>⚠ No date</span>
-                        ) : (
-                          <span style={{ fontWeight: ts === "overdue" || ts === "due-today" ? 800 : 400, color: ts === "overdue" ? "#C62828" : ts === "due-today" ? "#E65100" : "#777" }}>
-                            {fmtDue(l.dueDate)}
-                          </span>
-                        )}
+                        {(() => {
+                          const c = fmtCycle(l);
+                          if (c.tone === "none" && c.label === "—") {
+                            return <span style={{ fontWeight: 700, color: "#B45309", fontSize: 9, letterSpacing: 0.3 }}>⚠ No cycle</span>;
+                          }
+                          const subColor = c.tone === "over" ? "#C62828" : c.tone === "soon" ? "#E65100" : c.tone === "ok" ? "#2E7D32" : "#999";
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                              <span style={{ fontWeight: 700, color: "#374151", fontSize: 10 }}>{c.label}</span>
+                              {c.sub && <span style={{ fontSize: 9, fontWeight: 600, color: subColor }}>{c.sub}</span>}
+                            </div>
+                          );
+                        })()}
                       </TD>
                       <TD small center>
                         <span style={{ fontWeight: 700, color: trackColor }}>{trackLabel}</span>
@@ -933,7 +1002,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             {ethanItems.length > 0 && (
               <>
                 <SL text="COO — Ethan" color="#444" />
-                <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
+                <MgmtTable items={ethanItems} prefix="ethan" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} fmtCycle={fmtCycle} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
               </>
             )}
 
@@ -941,7 +1010,7 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
             {ramiItems.length > 0 && (
               <>
                 <SL text="CSM — Ramy" color="#444" />
-                <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
+                <MgmtTable items={ramiItems} prefix="rami" todayStr={todayStr} trackStatus={trackStatus} fmtDue={fmtDue} fmtCycle={fmtCycle} setHoveredLin={setHoveredLin} setTooltipPos={setTooltipPos} slackItems={slackItems} />
               </>
             )}
 

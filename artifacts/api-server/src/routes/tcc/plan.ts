@@ -1054,6 +1054,7 @@ const BUSINESS_CONTEXT_DOC_TYPES = new Set([
   "business_plan",
   "90_day_plan",
   "brain_context",
+  "linear_priorities",
   "north_star",
   "daily_spiritual",
 ]);

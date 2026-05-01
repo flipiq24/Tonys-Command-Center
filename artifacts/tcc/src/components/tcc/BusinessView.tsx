@@ -2664,9 +2664,11 @@ function TeamTab() {
 
 
 // Maps the FE tab key to the documentType that lives in business_context.
-// All three docs are now DB-backed and editable from this tab — the AI
-// reads the same rows, so what Tony types here is what the AI sees.
-const BUSINESS_DOC_META: Record<"bp" | "oap" | "brain", {
+// All four docs are DB-backed and editable from this tab — the AI reads
+// the same rows, so what Tony types here is what the AI sees.
+type BusinessDocKey = "bp" | "oap" | "brain" | "linear";
+
+const BUSINESS_DOC_META: Record<BusinessDocKey, {
   documentType: string;
   label: string;
   emoji: string;
@@ -2694,10 +2696,17 @@ const BUSINESS_DOC_META: Record<"bp" | "oap" | "brain", {
     blurb: "Loose context the AI uses when organizing your sprint — current priorities, constraints, relationships that don't fit in a task. Tony-style.",
     placeholder: `Example:\n\n- Capital is the #1 constraint. Anything that doesn't directly move revenue or reduce burn is noise.\n- DBTM operator is our showcase client — never let them wait.\n- Bondilyn has been waiting 2 weeks for sales materials. That's a P0.\n- Engineering is solid. Don't micromanage Faisal or Haris.\n- Tony's most productive hours are 6–10am. Don't schedule calls before 10am.`,
   },
+  linear: {
+    documentType: "linear_priorities",
+    label: "Linear Priorities",
+    emoji: "⚡",
+    blurb: "Quarterly triage of every Linear ticket and project — DO NOW / KEEP / PROMOTE / KILL / PAUSE / DEFER. Cross-references each item to its Q2 plan section.",
+    placeholder: "Paste your Linear priorities markdown table…",
+  },
 };
 
 function BusinessPlanTab() {
-  const [activeDoc, setActiveDoc] = useState<"bp" | "oap" | "brain">("bp");
+  const [activeDoc, setActiveDoc] = useState<BusinessDocKey>("bp");
   // Per-doc state — content/saving/saved/loading/lastUpdated are tracked
   // separately so editing one doc doesn't blow away another's unsaved work.
   const [contents, setContents] = useState<Record<string, string>>({});
@@ -2756,15 +2765,18 @@ function BusinessPlanTab() {
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
-        {(Object.keys(BUSINESS_DOC_META) as Array<"bp" | "oap" | "brain">).map(k => {
+        {(Object.keys(BUSINESS_DOC_META) as BusinessDocKey[]).map(k => {
           const m = BUSINESS_DOC_META[k];
           const active = activeDoc === k;
+          // Brain Context + Linear Priorities use the blue accent (info / triage),
+          // Business Plan + 90-Day OAP use the orange accent (strategic).
+          const usesBlue = k === "brain" || k === "linear";
           return (
             <button key={k} onClick={() => setActiveDoc(k)} style={{
               padding: "7px 14px", borderRadius: 8,
-              border: `1px solid ${active ? (k === "brain" ? C.blu : "#F97316") : C.brd}`,
-              background: active ? (k === "brain" ? C.bluBg : "#F97316") : C.card,
-              color: active ? (k === "brain" ? C.blu : "#fff") : C.sub,
+              border: `1px solid ${active ? (usesBlue ? C.blu : "#F97316") : C.brd}`,
+              background: active ? (usesBlue ? C.bluBg : "#F97316") : C.card,
+              color: active ? (usesBlue ? C.blu : "#fff") : C.sub,
               fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F,
             }}>{m.emoji} {m.label}</button>
           );

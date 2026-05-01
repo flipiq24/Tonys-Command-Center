@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
 import { get, post, patch, put, del } from "@/lib/api";
 import { C, F } from "@/components/tcc/constants";
 import { IdeasView } from "@/components/tcc/IdeasView";
@@ -37,6 +37,7 @@ type Tab = "goals" | "team" | "tasks" | "plan" | "ideas";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CAT_COLORS: Record<string, { bg: string; border: string; accent: string }> = {
+  goals:      { bg: "#FFF7E1", border: "#E0CB7E", accent: "#8A6A00" },
   adaptation: { bg: "#FAEEDA", border: "#E8C78A", accent: "#B45309" },
   sales:      { bg: "#EAF3DE", border: "#9FC97A", accent: "#3B6D11" },
   tech:       { bg: "#E6F1FB", border: "#7FB3E8", accent: "#185FA5" },
@@ -54,6 +55,7 @@ function personColor(name: string): string {
 }
 
 const CAT_LABELS: Record<string, string> = {
+  goals: "00 Goals",
   adaptation: "01 Adaptation", sales: "02 Sales", tech: "03 Tech",
   capital: "04 Capital", team: "05 Team",
 };
@@ -273,7 +275,7 @@ function getWeeksForDate(dateStr?: string): { n: number; label: string; dates: s
   return weeks;
 }
 
-const CAT_KEYS = ["adaptation", "sales", "tech", "capital", "team"];
+const CAT_KEYS = ["goals", "adaptation", "sales", "tech", "capital", "team"];
 const OWNER_OPTIONS = ["Tony", "Ethan", "Ramy", "Faisal", "Haris", "Nate", "Bondilyn", "Chris", "TBD PM"];
 const PRIORITY_OPTS = [
   { value: "P0", label: "P0 — Critical. Blocks revenue or AA performance today." },
@@ -796,8 +798,8 @@ function AddTaskModal({
     }
   }
 
-  const inputStyle: React.CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, fontSize: 13, background: "#fff", boxSizing: "border-box" };
-  const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: F, marginBottom: 4, display: "block" };
+  const inputStyle: CSSProperties = { width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, fontSize: 13, background: "#fff", boxSizing: "border-box" };
+  const labelStyle: CSSProperties = { fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: F, marginBottom: 4, display: "block" };
 
   // Visualizer computes preview placement based on priority rank + any user nudge
   const { previewList, baseIdx, finalIdx } = (() => {
@@ -1204,11 +1206,11 @@ function TaskDetailModal({ task, onClose, onSaved }: {
     finally { setSaving(false); }
   }
 
-  const inp: React.CSSProperties = {
+  const inp: CSSProperties = {
     width: "100%", padding: "8px 10px", borderRadius: 7, border: `1px solid ${C.brd}`,
     fontFamily: F, fontSize: 13, background: "#fafafa", boxSizing: "border-box",
   };
-  const lbl: React.CSSProperties = { fontSize: 10, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" };
+  const lbl: CSSProperties = { fontSize: 10, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9000, display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
@@ -1929,7 +1931,7 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
     return () => { clearTimeout(scrollTimer); clearTimeout(clearTimer); };
   }, [justCreatedId]);
 
-  const selStyle: React.CSSProperties = { fontSize: 12, padding: "6px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, background: C.card };
+  const selStyle: CSSProperties = { fontSize: 12, padding: "6px 10px", borderRadius: 7, border: `1px solid ${C.brd}`, fontFamily: F, background: C.card };
 
   // Count tasks per category for the nav bar badges
   const catCounts = CAT_KEYS.reduce<Record<string, number>>((acc, k) => {
@@ -2666,7 +2668,7 @@ function TeamTab() {
 // Maps the FE tab key to the documentType that lives in business_context.
 // All four docs are DB-backed and editable from this tab — the AI reads
 // the same rows, so what Tony types here is what the AI sees.
-type BusinessDocKey = "bp" | "oap" | "brain" | "linear";
+type BusinessDocKey = "bp" | "oap" | "brain";
 
 const BUSINESS_DOC_META: Record<BusinessDocKey, {
   documentType: string;
@@ -2696,14 +2698,458 @@ const BUSINESS_DOC_META: Record<BusinessDocKey, {
     blurb: "Loose context the AI uses when organizing your sprint — current priorities, constraints, relationships that don't fit in a task. Tony-style.",
     placeholder: `Example:\n\n- Capital is the #1 constraint. Anything that doesn't directly move revenue or reduce burn is noise.\n- DBTM operator is our showcase client — never let them wait.\n- Bondilyn has been waiting 2 weeks for sales materials. That's a P0.\n- Engineering is solid. Don't micromanage Faisal or Haris.\n- Tony's most productive hours are 6–10am. Don't schedule calls before 10am.`,
   },
-  linear: {
-    documentType: "linear_priorities",
-    label: "Linear Priorities",
-    emoji: "⚡",
-    blurb: "Quarterly triage of every Linear ticket and project — DO NOW / KEEP / PROMOTE / KILL / PAUSE / DEFER. Cross-references each item to its Q2 plan section.",
-    placeholder: "Paste your Linear priorities markdown table…",
-  },
 };
+
+// ─── Linear Priorities (sub-tab inside Master task) ───────────────────────────
+
+type LinearPriority = {
+  id: string;
+  priorityOrder: number;
+  linearRef: string;
+  isProject: boolean;
+  title: string;
+  status: string;
+  priority: string;
+  owner: string | null;
+  team: string | null;
+  q2PlanRef: string | null;
+  action: string;
+  why: string;
+  nextStep: string | null;
+};
+
+const LP_ACTIONS = ["DO NOW", "KEEP", "PROMOTE", "PAUSE", "DEFER", "KILL"] as const;
+
+const LP_ACTION_COLORS: Record<string, { bg: string; fg: string }> = {
+  "DO NOW":  { bg: "#FEE2E2", fg: "#991B1B" },
+  "KEEP":    { bg: "#DCFCE7", fg: "#166534" },
+  "PROMOTE": { bg: "#DBEAFE", fg: "#1E40AF" },
+  "PAUSE":   { bg: "#FEF3C7", fg: "#92400E" },
+  "DEFER":   { bg: "#F3F4F6", fg: "#4B5563" },
+  "KILL":    { bg: "#F3F4F6", fg: "#6B7280" },
+};
+
+function MasterSubTabBar({ value, onChange }: { value: "tasks" | "linear"; onChange: (v: "tasks" | "linear") => void }) {
+  const pill = (active: boolean): CSSProperties => ({
+    padding: "6px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: F,
+    background: active ? "#1A1A1A" : C.card,
+    color: active ? "#fff" : C.sub,
+    border: `1px solid ${active ? "#1A1A1A" : C.brd}`,
+    borderRadius: 8,
+    cursor: "pointer",
+  });
+  return (
+    <div style={{ display: "flex", gap: 8, padding: "8px 0 12px", borderBottom: `1px solid ${C.brd}`, marginBottom: 12 }}>
+      <button style={pill(value === "tasks")} onClick={() => onChange("tasks")}>📋 Tasks</button>
+      <button style={pill(value === "linear")} onClick={() => onChange("linear")}>⚡ Linear Priorities</button>
+    </div>
+  );
+}
+
+function LinearPriorityActionChip({ action }: { action: string }) {
+  const color = LP_ACTION_COLORS[action] || { bg: "#F3F4F6", fg: "#374151" };
+  const isKill = action === "KILL";
+  return (
+    <span style={{
+      display: "inline-block",
+      padding: "3px 10px",
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 700,
+      fontFamily: F,
+      letterSpacing: 0.3,
+      background: color.bg,
+      color: color.fg,
+      textDecoration: isKill ? "line-through" : "none",
+    }}>{action}</span>
+  );
+}
+
+type LinearPriorityDraft = {
+  linearRef: string;
+  title: string;
+  status: string;
+  priority: string;
+  owner: string;
+  team: string;
+  q2PlanRef: string;
+  action: string;
+  why: string;
+  nextStep: string;
+};
+
+const EMPTY_LP_DRAFT: LinearPriorityDraft = {
+  linearRef: "", title: "", status: "Backlog", priority: "P2",
+  owner: "", team: "", q2PlanRef: "", action: "KEEP", why: "", nextStep: "",
+};
+
+function LinearPrioritiesTable() {
+  const [rows, setRows] = useState<LinearPriority[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterAction, setFilterAction] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [edit, setEdit] = useState<Partial<LinearPriority>>({});
+  const [showAdd, setShowAdd] = useState(false);
+  const [draft, setDraft] = useState<LinearPriorityDraft>(EMPTY_LP_DRAFT);
+  const [saving, setSaving] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await get("/linear-priorities");
+      setRows((data as LinearPriority[]) || []);
+    } catch { /**/ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const counts: Record<string, number> = { all: rows.length };
+  for (const a of LP_ACTIONS) counts[a] = 0;
+  for (const r of rows) counts[r.action] = (counts[r.action] || 0) + 1;
+
+  let displayed = rows;
+  if (filterAction) displayed = displayed.filter((r) => r.action === filterAction);
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    displayed = displayed.filter((r) =>
+      r.title.toLowerCase().includes(q) ||
+      r.linearRef.toLowerCase().includes(q) ||
+      (r.why || "").toLowerCase().includes(q),
+    );
+  }
+
+  const startEdit = (r: LinearPriority) => {
+    setEditingId(r.id);
+    setEdit({ ...r });
+  };
+  const cancelEdit = () => { setEditingId(null); setEdit({}); };
+  const saveEdit = async () => {
+    if (!editingId) return;
+    try {
+      await patch(`/linear-priorities/${editingId}`, edit as Record<string, unknown>);
+      await load();
+      cancelEdit();
+    } catch { /**/ }
+  };
+  const deleteRow = async (id: string) => {
+    if (!confirm("Delete this Linear Priority row?")) return;
+    try { await del(`/linear-priorities/${id}`); await load(); } catch { /**/ }
+  };
+  const openAdd = () => { setDraft(EMPTY_LP_DRAFT); setCreateError(null); setShowAdd(true); };
+  const closeAdd = () => { setShowAdd(false); setCreateError(null); };
+  const submitAdd = async () => {
+    setCreateError(null);
+    const trimmedRef = draft.linearRef.trim();
+    const trimmedTitle = draft.title.trim();
+    if (!trimmedRef || !trimmedTitle || !draft.action) {
+      setCreateError("Linear ref, Title, and Action are required.");
+      return;
+    }
+    if (!trimmedRef.startsWith("Project:") && !/^[A-Z]+-\d+$/.test(trimmedRef)) {
+      setCreateError("Linear ref must look like 'COM-338' or 'Project: <name>'.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await post("/linear-priorities", {
+        linearRef: trimmedRef,
+        title: trimmedTitle,
+        status: draft.status.trim(),
+        priority: draft.priority.trim(),
+        owner: draft.owner.trim() || null,
+        team: draft.team.trim() || null,
+        q2PlanRef: draft.q2PlanRef.trim() || null,
+        action: draft.action,
+        why: draft.why.trim(),
+        nextStep: draft.nextStep.trim() || null,
+      });
+      await load();
+      closeAdd();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const linearUrl = (ref: string, isProject: boolean) => {
+    if (isProject) return null; // projects need Linear org slug we don't have client-side
+    if (!/^[A-Z]+-\d+$/.test(ref)) return null;
+    return `https://linear.app/flipiq/issue/${ref}`;
+  };
+
+  const pill = (active: boolean, c?: { bg: string; fg: string }): CSSProperties => ({
+    padding: "5px 12px", fontSize: 12, fontWeight: 600, fontFamily: F,
+    background: active ? (c?.bg || "#1A1A1A") : C.card,
+    color: active ? (c?.fg || "#fff") : C.sub,
+    border: `1px solid ${active ? (c?.fg || "#1A1A1A") : C.brd}`,
+    borderRadius: 999, cursor: "pointer",
+  });
+  const th: CSSProperties = {
+    textAlign: "left", padding: "10px 12px", fontSize: 11, fontWeight: 600, color: C.sub,
+    borderBottom: `1px solid ${C.brd}`, background: C.bg, textTransform: "uppercase", letterSpacing: 0.4,
+    whiteSpace: "nowrap",
+  };
+  const td: CSSProperties = {
+    padding: "10px 12px", fontSize: 13, color: C.tx, borderBottom: `1px solid ${C.brd}`, verticalAlign: "top",
+  };
+
+  if (loading) return <div style={{ padding: 24, color: C.mut, fontFamily: F }}>Loading Linear Priorities…</div>;
+
+  return (
+    <div style={{ fontFamily: F }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <button style={pill(filterAction === "")} onClick={() => setFilterAction("")}>All · {counts.all}</button>
+        {LP_ACTIONS.map((a) => (
+          <button key={a} style={pill(filterAction === a, LP_ACTION_COLORS[a])} onClick={() => setFilterAction(a === filterAction ? "" : a)}>
+            {a} · {counts[a] || 0}
+          </button>
+        ))}
+        <input
+          type="search"
+          placeholder="Search title, Linear ID, or why…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            marginLeft: "auto", padding: "6px 12px", fontSize: 13, fontFamily: F,
+            border: `1px solid ${C.brd}`, borderRadius: 8, background: C.card, color: C.tx, minWidth: 280,
+          }}
+        />
+        <button
+          onClick={openAdd}
+          style={{
+            padding: "7px 14px", fontSize: 13, fontWeight: 600, fontFamily: F,
+            background: "#F97316", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer",
+          }}
+        >
+          + Add Linear Priority
+        </button>
+      </div>
+
+      <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>#</th>
+              <th style={th}>Linear</th>
+              <th style={th}>Title</th>
+              <th style={th}>Status</th>
+              <th style={th}>Priority</th>
+              <th style={th}>Owner</th>
+              <th style={th}>Team</th>
+              <th style={th}>Q2 Plan Ref</th>
+              <th style={th}>Action</th>
+              <th style={th}>Why</th>
+              <th style={th}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayed.map((r, i) => {
+              const isEditing = editingId === r.id;
+              const url = linearUrl(r.linearRef, r.isProject);
+              return (
+                <tr key={r.id} style={{ background: i % 2 === 0 ? C.card : "#FAFAFA" }}>
+                  <td style={td}>{i + 1}</td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <input value={edit.linearRef || ""} onChange={(e) => setEdit({ ...edit, linearRef: e.target.value })} style={{ width: 140, fontSize: 12, padding: 4 }} />
+                    ) : url ? (
+                      <a href={url} target="_blank" rel="noreferrer" style={{ color: C.blu, fontWeight: 600 }}>{r.linearRef}</a>
+                    ) : (
+                      <span style={{ color: C.sub, fontWeight: 500, fontSize: 12 }}>{r.linearRef}</span>
+                    )}
+                  </td>
+                  <td style={{ ...td, maxWidth: 320 }}>
+                    {isEditing ? (
+                      <input value={edit.title || ""} onChange={(e) => setEdit({ ...edit, title: e.target.value })} style={{ width: "100%", fontSize: 13, padding: 4 }} />
+                    ) : r.title}
+                  </td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <input value={edit.status || ""} onChange={(e) => setEdit({ ...edit, status: e.target.value })} style={{ width: 120, fontSize: 12, padding: 4 }} />
+                    ) : <span style={{ fontSize: 12, color: C.sub }}>{r.status}</span>}
+                  </td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <input value={edit.priority || ""} onChange={(e) => setEdit({ ...edit, priority: e.target.value })} style={{ width: 80, fontSize: 12, padding: 4 }} />
+                    ) : <span style={{ fontSize: 12, fontWeight: 600 }}>{r.priority}</span>}
+                  </td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <input value={edit.owner || ""} onChange={(e) => setEdit({ ...edit, owner: e.target.value })} style={{ width: 90, fontSize: 12, padding: 4 }} />
+                    ) : <span style={{ fontSize: 12, color: r.owner ? personColor(r.owner) : C.mut, fontWeight: 600 }}>{r.owner || "—"}</span>}
+                  </td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <input value={edit.team || ""} onChange={(e) => setEdit({ ...edit, team: e.target.value })} style={{ width: 110, fontSize: 12, padding: 4 }} />
+                    ) : <span style={{ fontSize: 12, color: C.sub }}>{r.team || "—"}</span>}
+                  </td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <input value={edit.q2PlanRef || ""} onChange={(e) => setEdit({ ...edit, q2PlanRef: e.target.value })} style={{ width: 120, fontSize: 12, padding: 4 }} />
+                    ) : <span style={{ fontSize: 11, color: C.mut }}>{r.q2PlanRef || "—"}</span>}
+                  </td>
+                  <td style={td}>
+                    {isEditing ? (
+                      <select value={edit.action || ""} onChange={(e) => setEdit({ ...edit, action: e.target.value })} style={{ fontSize: 12, padding: 4 }}>
+                        {LP_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                    ) : <LinearPriorityActionChip action={r.action} />}
+                  </td>
+                  <td style={{ ...td, maxWidth: 360, fontSize: 12, color: C.sub }}>
+                    {isEditing ? (
+                      <textarea value={edit.why || ""} onChange={(e) => setEdit({ ...edit, why: e.target.value })} style={{ width: "100%", fontSize: 12, padding: 4, minHeight: 60 }} />
+                    ) : r.why}
+                  </td>
+                  <td style={{ ...td, whiteSpace: "nowrap" }}>
+                    {isEditing ? (
+                      <>
+                        <button onClick={saveEdit} style={{ marginRight: 6, padding: "4px 10px", fontSize: 12, fontWeight: 600, background: C.grn, color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>Save</button>
+                        <button onClick={cancelEdit} style={{ padding: "4px 10px", fontSize: 12, background: C.card, border: `1px solid ${C.brd}`, color: C.sub, borderRadius: 6, cursor: "pointer" }}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => startEdit(r)} style={{ marginRight: 6, padding: "4px 8px", fontSize: 12, background: C.card, border: `1px solid ${C.brd}`, color: C.sub, borderRadius: 6, cursor: "pointer" }}>✏</button>
+                        <button onClick={() => deleteRow(r.id)} style={{ padding: "4px 8px", fontSize: 12, background: C.card, border: `1px solid ${C.brd}`, color: C.red, borderRadius: 6, cursor: "pointer" }}>🗑</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {displayed.length === 0 && (
+              <tr><td colSpan={11} style={{ ...td, textAlign: "center", color: C.mut, padding: 32 }}>No Linear Priorities match the current filters.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showAdd && (
+        <LinearPriorityAddModal
+          draft={draft}
+          onChange={setDraft}
+          onCancel={closeAdd}
+          onSave={submitAdd}
+          saving={saving}
+          error={createError}
+        />
+      )}
+    </div>
+  );
+}
+
+function LinearPriorityAddModal({ draft, onChange, onCancel, onSave, saving, error }: {
+  draft: LinearPriorityDraft;
+  onChange: (d: LinearPriorityDraft) => void;
+  onCancel: () => void;
+  onSave: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const inp: CSSProperties = {
+    width: "100%", padding: "8px 10px", borderRadius: 6, border: `1px solid ${C.brd}`,
+    fontFamily: F, fontSize: 13, background: "#fff", boxSizing: "border-box",
+  };
+  const lbl: CSSProperties = {
+    fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase",
+    letterSpacing: 0.4, marginBottom: 4, display: "block",
+  };
+  const field = (label: string, key: keyof LinearPriorityDraft, opts?: { wide?: boolean; placeholder?: string }) => (
+    <div style={{ gridColumn: opts?.wide ? "1 / -1" : "auto" }}>
+      <label style={lbl}>{label}</label>
+      <input
+        style={inp}
+        value={draft[key]}
+        placeholder={opts?.placeholder}
+        onChange={(e) => onChange({ ...draft, [key]: e.target.value })}
+      />
+    </div>
+  );
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: C.card, borderRadius: 12, padding: 24, width: "min(720px, 92vw)",
+          maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 50px rgba(0,0,0,0.3)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.tx }}>Add Linear Priority</h2>
+          <button onClick={onCancel} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: C.mut }}>×</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {field("Linear Ref *", "linearRef", { placeholder: "COM-338 or Project: <name>" })}
+          <div>
+            <label style={lbl}>Action *</label>
+            <select
+              style={inp}
+              value={draft.action}
+              onChange={(e) => onChange({ ...draft, action: e.target.value })}
+            >
+              {LP_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          {field("Title *", "title", { wide: true, placeholder: "Short ticket title" })}
+          {field("Status", "status", { placeholder: "In Progress, Backlog, …" })}
+          {field("Priority", "priority", { placeholder: "P0 / P1 / P2 / P3" })}
+          {field("Owner", "owner", { placeholder: "Tony, Ethan, Haris, …" })}
+          {field("Team", "team", { placeholder: "Command, Management, …" })}
+          {field("Q2 Plan Ref", "q2PlanRef", { wide: true, placeholder: "Q2 Plan 2.1.1" })}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={lbl}>Why (alignment)</label>
+            <textarea
+              style={{ ...inp, minHeight: 80, resize: "vertical" }}
+              value={draft.why}
+              placeholder="Why is this on the priority list?"
+              onChange={(e) => onChange({ ...draft, why: e.target.value })}
+            />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={lbl}>Next Step</label>
+            <textarea
+              style={{ ...inp, minHeight: 60, resize: "vertical" }}
+              value={draft.nextStep}
+              placeholder="Concrete next action"
+              onChange={(e) => onChange({ ...draft, nextStep: e.target.value })}
+            />
+          </div>
+        </div>
+        {error && (
+          <div style={{ marginTop: 12, padding: 10, background: C.redBg, color: C.red, borderRadius: 6, fontSize: 13 }}>{error}</div>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: C.card, border: `1px solid ${C.brd}`, color: C.sub, borderRadius: 8, cursor: "pointer" }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: saving ? C.mut : "#F97316", color: "#fff", border: "none", borderRadius: 8, cursor: saving ? "not-allowed" : "pointer" }}
+          >
+            {saving ? "Saving…" : "Save Priority"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function BusinessPlanTab() {
   const [activeDoc, setActiveDoc] = useState<BusinessDocKey>("bp");
@@ -2770,7 +3216,7 @@ function BusinessPlanTab() {
           const active = activeDoc === k;
           // Brain Context + Linear Priorities use the blue accent (info / triage),
           // Business Plan + 90-Day OAP use the orange accent (strategic).
-          const usesBlue = k === "brain" || k === "linear";
+          const usesBlue = k === "brain";
           return (
             <button key={k} onClick={() => setActiveDoc(k)} style={{
               padding: "7px 14px", borderRadius: 8,
@@ -2864,6 +3310,7 @@ function BusinessPlanTab() {
 export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () => void; defaultTab?: Tab; onTabChange?: (tab: Tab) => void }) {
   const [tab, setTabRaw] = useState<Tab>(defaultTab || "goals");
   const setTab = useCallback((t: Tab) => { setTabRaw(t); onTabChange?.(t); }, [onTabChange]);
+  const [masterSubTab, setMasterSubTab] = useState<"tasks" | "linear">("tasks");
   const [pendingParentFilter, setPendingParentFilter] = useState<string | null>(null);
   // Survives the Ideas → Tasks tab switch so MasterTaskTab opens the
   // AddTaskModal with the right prefill on mount, no event-listener race.
@@ -2961,7 +3408,7 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
   const totalTasks = categories.reduce((s, c) => s + c.totalTasks, 0);
   const doneTasks = categories.reduce((s, c) => s + c.completedTasks, 0);
 
-  const tabStyle = (active: boolean): React.CSSProperties => ({
+  const tabStyle = (active: boolean): CSSProperties => ({
     padding: "7px 14px", borderRadius: 8, border: "none", fontSize: 12,
     fontWeight: active ? 700 : 500, cursor: "pointer", fontFamily: F,
     background: active ? "#F97316" : C.card, color: active ? "#fff" : C.sub,
@@ -3040,14 +3487,20 @@ export function BusinessView({ onBack, defaultTab, onTabChange }: { onBack: () =
 
         {tab === "team" && <TeamTab />}
         {tab === "tasks" && (
-          <MasterTaskTab
-            onRefreshAll={() => { loadPlan(); loadWeekly(); }}
-            categories={categories}
-            initialParentFilter={pendingParentFilter}
-            onInitialParentFilterConsumed={() => setPendingParentFilter(null)}
-            initialPrefill={pendingTaskPrefill}
-            onInitialPrefillConsumed={() => setPendingTaskPrefill(null)}
-          />
+          <>
+            <MasterSubTabBar value={masterSubTab} onChange={setMasterSubTab} />
+            {masterSubTab === "tasks" && (
+              <MasterTaskTab
+                onRefreshAll={() => { loadPlan(); loadWeekly(); }}
+                categories={categories}
+                initialParentFilter={pendingParentFilter}
+                onInitialParentFilterConsumed={() => setPendingParentFilter(null)}
+                initialPrefill={pendingTaskPrefill}
+                onInitialPrefillConsumed={() => setPendingTaskPrefill(null)}
+              />
+            )}
+            {masterSubTab === "linear" && <LinearPrioritiesTable />}
+          </>
         )}
         {tab === "ideas" && (
           <IdeasView

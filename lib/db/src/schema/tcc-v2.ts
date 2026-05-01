@@ -297,3 +297,24 @@ export const brainTrainingLogTable = pgTable("brain_training_log", {
   index("idx_btl_moved").on(table.movedItemId),
   index("idx_btl_created").on(table.createdAt),
 ]);
+
+export const linearPrioritiesTable = pgTable("linear_priorities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  priorityOrder: integer("priority_order").notNull(),
+  linearRef: text("linear_ref").notNull(),
+  isProject: boolean("is_project").notNull().default(false),
+  title: text("title").notNull(),
+  status: text("status").notNull().default(""),
+  priority: text("priority").notNull().default(""),
+  owner: text("owner"),
+  team: text("team"),
+  q2PlanRef: text("q2_plan_ref"),
+  action: text("action").notNull(),
+  why: text("why").notNull().default(""),
+  nextStep: text("next_step"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("idx_lp_order").on(table.priorityOrder),
+  index("idx_lp_action").on(table.action),
+]);

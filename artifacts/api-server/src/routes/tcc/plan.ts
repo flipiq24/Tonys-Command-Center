@@ -27,6 +27,7 @@ type PlanItem = typeof planItemsTable.$inferSelect;
 // ─── Sprint ID helper ─────────────────────────────────────────────────────────
 
 const CAT_PREFIX: Record<string, string> = {
+  goals:      "GLS",
   adaptation: "ADP",
   sales:      "SLS",
   tech:       "TCH",
@@ -1054,7 +1055,6 @@ const BUSINESS_CONTEXT_DOC_TYPES = new Set([
   "business_plan",
   "90_day_plan",
   "brain_context",
-  "linear_priorities",
   "north_star",
   "daily_spiritual",
 ]);

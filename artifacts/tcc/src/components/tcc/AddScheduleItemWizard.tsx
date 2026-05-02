@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from "react";
 import { C, F, FS, inp, lbl, btn1, btn2 } from "./constants";
 import { post, get } from "../../lib/api";
+import { showToast } from "./Toast";
 
 interface Props {
   onClose: () => void;
@@ -205,6 +206,11 @@ export function AddScheduleItemWizard({ onClose, onSaved }: Props) {
         setError((result as any).error || "Failed to create event");
         return;
       }
+
+      const whenLabel = allDay
+        ? new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+        : `${new Date(date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${startTime}`;
+      showToast({ title: "Event created", description: `${title} — ${whenLabel}` });
 
       onSaved();
       onClose();

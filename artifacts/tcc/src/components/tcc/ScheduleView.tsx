@@ -20,6 +20,7 @@ const CAL_COLORS: Record<string, string> = {
 
 interface Props {
   items: CalItem[];
+  loaded?: boolean;
   onEnterSales: () => void;
   onEnterTasks: () => void;
   onRefresh?: () => Promise<void>;
@@ -113,7 +114,7 @@ function getCalendarUrl(ev: CalItem): string {
   return "https://calendar.google.com";
 }
 
-export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: Props) {
+export function ScheduleView({ items, loaded = true, onEnterSales, onEnterTasks, onRefresh }: Props) {
   const [nowMin, setNowMin] = useState(getNowMinutes);
   const [refreshing, setRefreshing] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
@@ -270,7 +271,23 @@ export function ScheduleView({ items, onEnterSales, onEnterTasks, onRefresh }: P
         </div>
       )}
 
-      {items.length === 0 ? (
+      {!loaded ? (
+        <div style={{
+          position: "relative", height: 360, borderRadius: 8,
+          border: `1px solid ${C.brd}`, background: "#FAFAF8", padding: 12,
+          display: "flex", flexDirection: "column", gap: 10,
+        }}>
+          {[0, 1, 2, 3, 4].map(i => (
+            <div key={i} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div style={{ width: 50, height: 10, background: "#EEE", borderRadius: 3 }} />
+              <div style={{ flex: 1, height: 32, background: i % 2 === 0 ? "#F0F0F0" : "#E8E8E8", borderRadius: 6 }} />
+            </div>
+          ))}
+          <div style={{ marginTop: "auto", textAlign: "center", fontSize: 12, color: C.mut, fontStyle: "italic" }}>
+            Loading schedule…
+          </div>
+        </div>
+      ) : items.length === 0 ? (
         <div style={{
           padding: "60px 0", textAlign: "center", color: C.mut, fontSize: 14,
           background: "#FAFAF8", borderRadius: 8, border: `1px solid ${C.brd}`,

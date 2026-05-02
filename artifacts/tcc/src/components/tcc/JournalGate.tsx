@@ -7,6 +7,19 @@ interface Props {
   onComplete: (formatted: string) => void;
 }
 
+function cleanAnchor(raw: string): string {
+  if (!raw) return "";
+  let text = raw.trim();
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.anchor === "string") return parsed.anchor.trim();
+    } catch { /* fall through */ }
+  }
+  return text;
+}
+
 export function JournalGate({ onComplete }: Props) {
   const [jTxt, setJTxt] = useState("");
   const [saving, setSaving] = useState(false);
@@ -16,7 +29,7 @@ export function JournalGate({ onComplete }: Props) {
 
   useEffect(() => {
     get<{ anchor: string; perfSummary: string }>("/brief/spiritual-anchor")
-      .then(r => setAnchor(r.anchor || ""))
+      .then(r => setAnchor(cleanAnchor(r.anchor || "")))
       .catch(() => setAnchor(""))
       .finally(() => setAnchorLoading(false));
   }, []);

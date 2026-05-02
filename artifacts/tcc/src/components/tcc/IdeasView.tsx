@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { get, post, patch, del } from "@/lib/api";
 import { C, F, FS, btn1, btn2 } from "./constants";
+import { showToast } from "./Toast";
 import type { Idea } from "./types";
 
 interface Props {
@@ -50,6 +51,7 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [parking, setParking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const hasChanges = form.text !== (idea.text || "") || form.category !== (idea.category || "") ||
     form.urgency !== (idea.urgency || "") || form.techType !== (idea.techType || "") ||
@@ -106,11 +108,18 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
   };
 
   const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
     try {
       await del(`/ideas/${idea.id}`);
+      showToast({ title: "Idea deleted" });
       onDeleted(idea.id);
       onClose();
-    } catch { /* ignore */ }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast({ title: "Failed to delete idea", description: msg, variant: "error" });
+      setDeleting(false);
+    }
   };
 
   const handlePark = async () => {
@@ -243,8 +252,10 @@ function IdeaDetailModal({ idea, onClose, onUpdated, onDeleted, onCreateTask }: 
               {/* Delete */}
               {confirmDelete ? (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={handleDelete} style={{ flex: 1, padding: "8px", borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Confirm Delete</button>
-                  <button onClick={() => setConfirmDelete(false)} style={{ flex: 1, padding: "8px", borderRadius: 7, border: `1px solid ${C.brd}`, background: "#fff", fontSize: 12, cursor: "pointer" }}>Cancel</button>
+                  <button onClick={handleDelete} disabled={deleting} style={{ flex: 1, padding: "8px", borderRadius: 7, border: "none", background: "#DC2626", color: "#fff", fontSize: 12, fontWeight: 700, cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.6 : 1 }}>
+                    {deleting ? "Deleting…" : "Confirm Delete"}
+                  </button>
+                  <button onClick={() => setConfirmDelete(false)} disabled={deleting} style={{ flex: 1, padding: "8px", borderRadius: 7, border: `1px solid ${C.brd}`, background: "#fff", fontSize: 12, cursor: deleting ? "not-allowed" : "pointer", opacity: deleting ? 0.6 : 1 }}>Cancel</button>
                 </div>
               ) : (
                 <button onClick={() => setConfirmDelete(true)} style={{ width: "100%", padding: "8px", borderRadius: 7, border: `1px solid #FECACA`, background: "#FEF2F2", color: "#DC2626", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: F }}>Delete Idea</button>

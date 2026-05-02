@@ -154,7 +154,25 @@ export const dailyBriefsTable = pgTable("daily_briefs", {
   linearItems: jsonb("linear_items"),
   tasks: jsonb("tasks"),
   createdAt: timestamp("created_at").defaultNow(),
+  emailsRefreshedAt: timestamp("emails_refreshed_at", { withTimezone: true }),
+  calendarRefreshedAt: timestamp("calendar_refreshed_at", { withTimezone: true }),
+  linearRefreshedAt: timestamp("linear_refreshed_at", { withTimezone: true }),
 });
+
+// Single cache table for view-scoped sections — one row per section name
+// ("emails", "calendar", "linear", "slack"). Read by GET /brief/{section}.
+// Written by 15-min auto-refresh (raw, no AI) and explicit reclassify
+// (emails only — bumps ai_processed_at). 6-hour AI TTL on emails.
+export const sectionCacheTable = pgTable("section_cache", {
+  section: text("section").primaryKey(),
+  data: jsonb("data").notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+  aiProcessedAt: timestamp("ai_processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type SectionCache = typeof sectionCacheTable.$inferSelect;
 
 export const taskCompletionsTable = pgTable("task_completions", {
   id: uuid("id").defaultRandom().primaryKey(),

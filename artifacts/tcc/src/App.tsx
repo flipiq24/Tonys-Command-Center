@@ -20,6 +20,7 @@ import { BusinessView } from "@/components/tcc/BusinessView";
 import { AiUsageView } from "@/components/tcc/AiUsageView";
 import { AgentsSettingsView } from "@/components/tcc/AgentsSettingsView";
 import { ReclassifyModal, type ReclassifyMode } from "@/components/tcc/ReclassifyModal";
+import { ToastViewport } from "@/components/tcc/Toast";
 import { C, F, FS } from "@/components/tcc/constants";
 import type { CheckinState, CalItem, EmailItem, TaskItem, Contact, CallEntry, Idea, DailyBrief, SlackItem, LinearItem } from "@/components/tcc/types";
 
@@ -94,113 +95,174 @@ export default function App() {
     setCustomTips(prev => ({ ...prev, [key]: text }));
   }, []);
 
-  // Auto-refresh: fetch fresh brief data every 15 minutes
+  // ─── Section loading state ─────────────────────────────────────────────────
+  // Each view-scoped section (calendar, emails, slack, linear) has its own
+  // loaded flag so skeletons can hide independently as data arrives.
   const [lastRefresh, setLastRefresh] = useState<string>("");
   const [refreshing, setRefreshing] = useState(false);
+  const [lastEmailAiAt, setLastEmailAiAt] = useState<Date | null>(null);
+  const [sectionsLoaded, setSectionsLoaded] = useState({ calendar: false, emails: false, slack: false, linear: false });
 
+  // ─── Per-section loaders ───────────────────────────────────────────────────
+  // Each loads from cache (fast). Pass force=true to bypass cache + run live
+  // fetch (calendar/linear/slack) or full AI reclassify (emails).
+  type CalendarRes = { calendarData: CalItem[]; fetchedAt: string | null };
+  type EmailsRes = { emailsImportant: EmailItem[]; emailsFyi: EmailItem[]; emailsPromotions: EmailItem[]; aiProcessedAt: string | null; fetchedAt: string | null };
+  type SlackRes = { slackItems: SlackItem[]; fetchedAt: string | null };
+  type LinearRes = { linearItems: LinearItem[]; fetchedAt: string | null };
+
+  const loadCalendar = useCallback(async (force = false) => {
+    try {
+      if (force) await post<{ ok: boolean }>("/brief/calendar/refetch", {}).catch(() => {});
+      const r = await get<CalendarRes>("/brief/calendar");
+      setBrief(prev => ({ ...(prev ?? {} as DailyBrief), calendarData: r.calendarData }));
+      setSectionsLoaded(s => ({ ...s, calendar: true }));
+    } catch (err) { console.warn("[loadCalendar] failed:", err); }
+  }, []);
+
+  const loadEmails = useCallback(async (force = false) => {
+    try {
+      if (force) await post<{ ok: boolean }>("/brief/emails/reclassify", {}).catch(() => {});
+      const r = await get<EmailsRes>("/brief/emails");
+      setBrief(prev => ({
+        ...(prev ?? {} as DailyBrief),
+        emailsImportant: r.emailsImportant,
+        emailsFyi: r.emailsFyi,
+        emailsPromotions: r.emailsPromotions,
+      }));
+      setLastEmailAiAt(r.aiProcessedAt ? new Date(r.aiProcessedAt) : null);
+      setSectionsLoaded(s => ({ ...s, emails: true }));
+    } catch (err) { console.warn("[loadEmails] failed:", err); }
+  }, []);
+
+  const loadSlack = useCallback(async (force = false) => {
+    try {
+      if (force) await post<{ ok: boolean }>("/brief/slack/refetch", {}).catch(() => {});
+      const r = await get<SlackRes>("/brief/slack");
+      setBrief(prev => ({ ...(prev ?? {} as DailyBrief), slackItems: r.slackItems }));
+      setSectionsLoaded(s => ({ ...s, slack: true }));
+    } catch (err) { console.warn("[loadSlack] failed:", err); }
+  }, []);
+
+  // Linear engineering tasks for the Dashboard "Operations & Awareness" table.
+  // Uses /linear/live (returns up to 200 issues with full cycle/team/project
+  // metadata) — the /brief/linear cache only summarizes a few items, so the
+  // rich live data is the source of truth for this section.
+  const [liveLinear, setLiveLinear] = useState<LinearItem[]>([]);
+  const loadLinear = useCallback(async (_force = false) => {
+    try {
+      const data = await get<LinearItem[]>("/linear/live");
+      if (Array.isArray(data)) setLiveLinear(data);
+      setSectionsLoaded(s => ({ ...s, linear: true }));
+    } catch (err) { console.warn("[loadLinear] failed:", err); }
+  }, []);
+
+  // Backward-compat: refreshBrief(sources?) — maps sources to per-section calls.
+  // Without sources: refreshes everything in parallel.
   const refreshBrief = useCallback(async (sources?: string[]) => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      const qs = sources?.length ? `?refresh=${sources.join(",")}` : "";
-      const data = await get<DailyBrief>(`/brief/today${qs}`);
-      if (!data || (data as { error?: string }).error) return;
-      setBrief(data);
+      const which = sources?.length ? sources : ["calendar", "emails", "slack", "linear"];
+      await Promise.all(which.map(s => {
+        if (s === "calendar") return loadCalendar(true);
+        if (s === "emails")   return loadEmails(true);
+        if (s === "slack")    return loadSlack(true);
+        if (s === "linear")   return loadLinear(true);
+        return Promise.resolve();
+      }));
       setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
-      console.log("[TCC] Brief refreshed at", new Date().toLocaleTimeString(), "sources:", sources ?? "all");
-    } catch (err) {
-      console.warn("[TCC] Auto-refresh failed (skipping):", err);
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing]);
+  }, [refreshing, loadCalendar, loadEmails, loadSlack, loadLinear]);
 
-  useEffect(() => {
-    const interval = setInterval(refreshBrief, 15 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [refreshBrief]);
-
-  // Email polling — check for new received emails every 5 minutes
+  // ─── New-email banner state ────────────────────────────────────────────────
+  // 15-min poll detects new Gmail messages. If AI is stale (>6h since last
+  // reclassify), reclassification fires automatically. Otherwise the banner
+  // asks Tony to reclassify.
   const [newEmailCount, setNewEmailCount] = useState(0);
   const [pendingNewEmails, setPendingNewEmails] = useState<{ from: string; subject: string; snippet: string; messageId: string }[]>([]);
   const [reclassifying, setReclassifying] = useState(false);
-  useEffect(() => {
-    const pollEmails = async () => {
-      try {
-        const res = await get<{ ok: boolean; newCount: number; newEmails: { from: string; subject: string; snippet: string; messageId: string }[] }>("/emails/poll");
-        if (res?.newCount > 0) {
-          setNewEmailCount(prev => prev + res.newCount);
-          setPendingNewEmails(prev => [...prev, ...res.newEmails]);
-        }
-      } catch { /* silent fail */ }
-    };
-    pollEmails();
-    const interval = setInterval(pollEmails, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
 
-  // Refresh emails when navigating to Dashboard or Emails view. We poll Gmail
-  // for new arrivals (cheap, no AI) and refetch the brief's email lanes — but
-  // never trigger AI reclassification, which is reserved for the Reclassify
-  // modal. 30-second debounce per view so rapid tab switching doesn't spam.
-  const lastViewEmailRefreshRef = useRef<number>(0);
+  const reclassifyEmailsNow = useCallback(async () => {
+    if (reclassifying) return;
+    setReclassifying(true);
+    try {
+      await loadEmails(true);
+      setNewEmailCount(0);
+      setPendingNewEmails([]);
+    } finally {
+      setReclassifying(false);
+    }
+  }, [reclassifying, loadEmails]);
+
+  const dismissNewEmails = () => { setNewEmailCount(0); setPendingNewEmails([]); };
+
+  // ─── 15-min auto-refresh interval ──────────────────────────────────────────
+  // Refetches all sections raw. Emails are POLLED (not reclassified). If AI
+  // is stale (>6h), reclassification kicks off automatically. Otherwise new
+  // emails surface via the banner.
   useEffect(() => {
-    if (view !== "dashboard" && view !== "emails") return;
-    const now = Date.now();
-    if (now - lastViewEmailRefreshRef.current < 30_000) return;
-    lastViewEmailRefreshRef.current = now;
-    (async () => {
-      try { await get("/emails/poll"); } catch { /* silent — no Gmail token, etc. */ }
-      try { await refreshBrief(["emails"]); } catch { /* refresh failure logged inside */ }
-    })();
-    // refreshBrief identity changes every refresh start/stop — depending on it
-    // would re-fire this effect mid-refresh and break the debounce.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      // Background refetch of calendar / linear / slack. Linear uses /linear/live
+      // directly (no refetch endpoint — live fetch is fast and returns full data).
+      Promise.allSettled([
+        post<{ ok: boolean }>("/brief/calendar/refetch", {}).then(() => loadCalendar()),
+        loadLinear(),
+        post<{ ok: boolean }>("/brief/slack/refetch", {}).then(() => loadSlack()),
+      ]).catch(() => {});
+
+      // Email poll — check for new arrivals + AI freshness
+      try {
+        const res = await post<{ ok: boolean; newCount: number; newEmails: { from: string; subject: string; snippet: string; messageId: string }[]; aiProcessedAt: string | null; aiStale: boolean }>("/brief/emails/poll", {});
+        if (cancelled) return;
+        if (res?.aiStale) {
+          // AI hasn't run in >6h — reclassify automatically
+          await reclassifyEmailsNow();
+        } else if (res?.newCount > 0) {
+          // Append new emails to banner queue
+          setNewEmailCount(prev => prev + res.newCount);
+          setPendingNewEmails(prev => {
+            const seen = new Set(prev.map(p => p.messageId));
+            const fresh = res.newEmails.filter(n => !seen.has(n.messageId));
+            return [...prev, ...fresh];
+          });
+        }
+      } catch { /* silent */ }
+    };
+
+    const interval = setInterval(tick, 15 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [loadCalendar, loadLinear, loadSlack, reclassifyEmailsNow]);
 
   const [showReclassifyModal, setShowReclassifyModal] = useState(false);
   const openReclassifyModal = () => setShowReclassifyModal(true);
   const handleReclassifySubmit = async ({ mode, sinceUnixSeconds }: { mode: ReclassifyMode; sinceUnixSeconds?: number }) => {
     setReclassifying(true);
     try {
+      // Granular reclassify (modes: all / new / custom) — keep existing legacy
+      // endpoint for the explicit "Reclassify All" modal flow.
       const body: { mode: ReclassifyMode; sinceUnixSeconds?: number; newEmails?: typeof pendingNewEmails } = { mode };
       if (mode === "new") body.newEmails = pendingNewEmails;
       if (mode === "custom") body.sinceUnixSeconds = sinceUnixSeconds;
       const res = await post<{ ok: boolean; emailsImportant?: any[]; emailsFyi?: any[]; emailsPromotions?: any[] }>("/emails/reclassify", body);
-      if (res?.ok && brief) {
-        setBrief({
-          ...brief,
-          emailsImportant: res.emailsImportant ?? brief.emailsImportant,
-          emailsFyi: res.emailsFyi ?? brief.emailsFyi,
-          emailsPromotions: res.emailsPromotions ?? brief.emailsPromotions ?? [],
-        });
+      if (res?.ok) {
+        // Refresh the section cache from the new endpoint so timestamps stay correct
+        await loadEmails();
       }
-      // Clear pending state after any successful classify run (the new ones are now in the brief)
       setNewEmailCount(0);
       setPendingNewEmails([]);
       setShowReclassifyModal(false);
     } catch {
-      // On failure: fall back to full brief refresh so the UI stays consistent
-      await refreshBrief(["emails"]);
+      await loadEmails(true);
       setShowReclassifyModal(false);
     }
     setReclassifying(false);
   };
-  const dismissNewEmails = () => { setNewEmailCount(0); setPendingNewEmails([]); };
-
-  // Live Linear data — fetch fresh on mount and every 5 minutes
-  const [liveLinear, setLiveLinear] = useState<LinearItem[]>([]);
-  useEffect(() => {
-    const fetchLinear = async () => {
-      try {
-        const data = await get<LinearItem[]>("/linear/live");
-        if (Array.isArray(data) && data.length > 0) setLiveLinear(data);
-      } catch { /* silent fail — brief fallback used */ }
-    };
-    fetchLinear();
-    const interval = setInterval(fetchLinear, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Auto-EOD at 4:30 PM Pacific — polls every minute, handles retroactive send
   useEffect(() => {
@@ -282,18 +344,16 @@ export default function App() {
     return () => clearTimeout(t);
   }, [meetingWarning]);
 
-  // Load all state from DB on mount
+  // Load state in two phases:
+  //   Phase 1 (blocking) — checkin + journal + instructions decide which view to show.
+  //   Phase 2 (background) — brief, calls, ideas, snoozed, tasks populate the dashboard
+  //     while the shell + skeletons are already on screen.
   useEffect(() => {
     (async () => {
       try {
-        const [checkin, journal, briefData, callData, ideaData, snoozedData, taskData, instructionsData] = await Promise.all([
+        const [checkin, journal, instructionsData] = await Promise.all([
           get<{ id?: string; done?: boolean; bedtime?: string; waketime?: string; sleepHours?: string; bible?: boolean; workout?: boolean; journal?: boolean; nutrition?: string; unplug?: boolean }>("/checkin/today").catch(() => null),
           get<{ formattedText?: string; rawText?: string }>("/journal/today").catch(() => null),
-          get<DailyBrief>("/brief/today").catch(() => null),
-          get<CallEntry[]>("/calls").catch(() => []),
-          get<Idea[]>("/ideas").catch(() => []),
-          get<Record<number, string>>("/emails/snoozed").catch(() => ({})),
-          get<{ taskId: string }[]>("/tasks/completed").catch(() => []),
           get<Record<string, string>>("/system-instructions").catch(() => ({})),
         ]);
 
@@ -321,31 +381,69 @@ export default function App() {
           }
         }
 
-        if (briefData) setBrief(briefData);
-        if (callData?.length) setCalls(callData);
-        if (ideaData?.length) setIdeas(ideaData);
-        if (snoozedData) setSnoozed(snoozedData);
-        if (taskData?.length) {
-          const done: Record<string, boolean> = {};
-          for (const t of taskData) done[t.taskId] = true;
-          setTDone(done);
-        }
         if (instructionsData && Object.keys(instructionsData).length > 0) {
           const tipKeys = Object.fromEntries(
             Object.entries(instructionsData).filter(([k]) => k !== "active_view" && k !== "email_brain")
           );
           setCustomTips(tipKeys);
         }
-        setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
       } catch {
         /* start fresh */
       }
+
+      // Render the shell — view-scoped loaders fire below.
       setLoading(false);
+
+      // Slack always loads (header bell visible on every view).
+      loadSlack();
+
+      // Note: per-section data + cross-view (calls/ideas/snoozed/completed)
+      // are loaded by the view-change effect below based on which view is
+      // active. This keeps initial load lean.
+
+      setLastRefresh(new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/Los_Angeles" }));
     })();
   }, []);
 
-  // Load contacts on mount so Dashboard call list is populated immediately
-  useEffect(() => {
+  // ─── View-scoped section loading ───────────────────────────────────────────
+  // Each view triggers loads only for the data it actually displays. Already-
+  // loaded sections stay cached in state — no refetch on revisit.
+  const [callsLoaded, setCallsLoaded] = useState(false);
+  const [ideasLoaded, setIdeasLoaded] = useState(false);
+  const [snoozedLoaded, setSnoozedLoaded] = useState(false);
+  const [tasksCompletedLoaded, setTasksCompletedLoaded] = useState(false);
+
+  const loadCalls = useCallback(() => {
+    if (callsLoaded) return;
+    get<CallEntry[]>("/calls").then(d => { if (d?.length) setCalls(d); }).catch(() => {});
+    setCallsLoaded(true);
+  }, [callsLoaded]);
+
+  const loadIdeas = useCallback(() => {
+    if (ideasLoaded) return;
+    get<Idea[]>("/ideas").then(d => { if (d?.length) setIdeas(d); }).catch(() => {});
+    setIdeasLoaded(true);
+  }, [ideasLoaded]);
+
+  const loadSnoozed = useCallback(() => {
+    if (snoozedLoaded) return;
+    get<Record<number, string>>("/emails/snoozed").then(d => { if (d) setSnoozed(d); }).catch(() => {});
+    setSnoozedLoaded(true);
+  }, [snoozedLoaded]);
+
+  const loadTasksCompleted = useCallback(() => {
+    if (tasksCompletedLoaded) return;
+    get<{ taskId: string }[]>("/tasks/completed").then(d => {
+      if (d?.length) {
+        const done: Record<string, boolean> = {};
+        for (const t of d) done[t.taskId] = true;
+        setTDone(done);
+      }
+    }).catch(() => {});
+    setTasksCompletedLoaded(true);
+  }, [tasksCompletedLoaded]);
+
+  const loadContacts = useCallback(() => {
     if (contactsLoaded) return;
     get<{ contacts: Contact[]; total: number } | Contact[]>("/contacts?limit=50").then(r => {
       const list = Array.isArray(r) ? r : r.contacts;
@@ -355,6 +453,31 @@ export default function App() {
       setContactsLoaded(true);
     });
   }, [contactsLoaded]);
+
+  // Per-view section requirements. Only fires loaders for sections this view
+  // displays. Already-loaded sections short-circuit (no-op).
+  useEffect(() => {
+    if (loading) return;
+    switch (view) {
+      case "dashboard":
+        loadCalendar(); loadEmails(); loadLinear();
+        loadCalls(); loadContacts(); loadSnoozed(); loadTasksCompleted();
+        break;
+      case "emails":
+        loadEmails(); loadSnoozed();
+        break;
+      case "schedule":
+        loadCalendar();
+        break;
+      case "sales":
+        loadContacts(); loadCalls(); loadCalendar(); // calendar for sidebar
+        break;
+      case "business":
+        loadLinear(); loadIdeas();
+        break;
+      // checkin / journal / chat / ai-usage / agents-settings — no section data needed
+    }
+  }, [view, loading, loadCalendar, loadEmails, loadLinear, loadCalls, loadContacts, loadSnoozed, loadTasksCompleted, loadIdeas]);
 
   const handleSnooze = useCallback((emailId: number, until: string) => {
     setSnoozed(prev => ({ ...prev, [emailId]: until }));
@@ -432,11 +555,39 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100vh", background: C.bg, fontFamily: F }}>
         <FontLink />
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: FS, fontSize: 24, marginBottom: 8 }}>COO Dashboard</div>
-          <div style={{ color: C.mut, fontSize: 14 }}>Loading your day...</div>
+        {/* Header skeleton */}
+        <div style={{ background: "#fff", borderBottom: `1px solid ${C.brd}`, padding: "12px 20px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: "#EEE" }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ width: 200, height: 14, background: "#EEE", borderRadius: 4, marginBottom: 4 }} />
+            <div style={{ width: 140, height: 10, background: "#F2F2F2", borderRadius: 4 }} />
+          </div>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: "#F2F2F2" }} />
+        </div>
+        {/* Skeleton cards */}
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ background: "#fff", border: `1px solid ${C.brd}`, borderRadius: 10, padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ width: 160, height: 14, background: "#EEE", borderRadius: 4 }} />
+                <div style={{ width: 80, height: 10, background: "#F2F2F2", borderRadius: 4 }} />
+              </div>
+              {[0, 1, 2].map(j => (
+                <div key={j} style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: j === 0 ? "none" : `1px solid #F5F5F5` }}>
+                  <div style={{ width: 14, height: 14, borderRadius: 3, background: "#EEE" }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ width: "35%", height: 10, background: "#EEE", borderRadius: 3, marginBottom: 5 }} />
+                    <div style={{ width: "70%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+          <div style={{ textAlign: "center", color: C.mut, fontSize: 12, fontStyle: "italic", padding: "8px 0" }}>
+            Loading your day…
+          </div>
         </div>
       </div>
     );
@@ -505,23 +656,24 @@ export default function App() {
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
     }}>
       <span style={{ fontSize: 14, color: "#1E40AF", fontWeight: 600 }}>
-        📬 {newEmailCount} new email{newEmailCount > 1 ? "s" : ""} arrived
+        📬 {newEmailCount} new email{newEmailCount > 1 ? "s" : ""} — Reclassify?
       </span>
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={openReclassifyModal} disabled={reclassifying} style={{
+        <button onClick={reclassifyEmailsNow} disabled={reclassifying} style={{
           background: "#2563EB", color: "#fff", border: "none", borderRadius: 6,
           padding: "6px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: reclassifying ? 0.6 : 1,
-        }}>{reclassifying ? "Classifying..." : "Classify & Update"}</button>
-        <button onClick={dismissNewEmails} style={{
+        }}>{reclassifying ? "Classifying…" : "Reclassify Now"}</button>
+        <button onClick={dismissNewEmails} disabled={reclassifying} style={{
           background: "transparent", color: "#6B7280", border: "1px solid #D1D5DB",
           borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: "pointer",
-        }}>Dismiss</button>
+        }}>Later</button>
       </div>
     </div>
   ) : null;
 
   const sharedModals = (
     <>
+      <ToastViewport />
       <ReclassifyModal
         open={showReclassifyModal}
         newEmailCount={newEmailCount}
@@ -677,6 +829,9 @@ export default function App() {
         linearItems={activeLinearItems}
         contacts={contacts}
         calls={calls}
+        emailsLoaded={sectionsLoaded.emails}
+        briefLoaded={sectionsLoaded.calendar}
+        lastEmailAiAt={lastEmailAiAt}
         onComplete={handleTaskComplete}
         onNavigate={v => persistView(v as View)}
         onOpenEmail={em => setEmailCompose({ threadId: em.gmailMessageId, subject: `Re: ${em.subj}` })}
@@ -701,10 +856,12 @@ export default function App() {
         onSnooze={handleSnooze}
         onDone={() => persistView("schedule")}
         onTipSaved={handleTipSaved}
-        onRefresh={async () => { try { await get("/emails/poll"); } catch { /* ignore */ } await refreshBrief(["emails"]); }}
+        onRefresh={async () => { await loadEmails(true); }}
         unclassifiedEmails={pendingNewEmails}
         onReclassify={async () => { openReclassifyModal(); }}
         reclassifying={reclassifying}
+        loaded={sectionsLoaded.emails}
+        lastEmailAiAt={lastEmailAiAt}
       />
     </div>
   );
@@ -769,9 +926,10 @@ export default function App() {
       {sharedModals}
       <ScheduleView
         items={brief?.calendarData || []}
+        loaded={sectionsLoaded.calendar}
         onEnterSales={() => { persistView("sales"); setCalSide(true); }}
         onEnterTasks={() => { setBusinessTab("tasks"); persistView("business"); setCalSide(true); }}
-        onRefresh={() => refreshBrief(["calendar"])}
+        onRefresh={async () => { await loadCalendar(true); }}
       />
     </div>
   );

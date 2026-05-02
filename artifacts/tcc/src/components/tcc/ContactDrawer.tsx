@@ -3,6 +3,7 @@ import { get, patch, post, del } from "@/lib/api";
 import { C, F, PC, PCBg, SC, PIPELINE_STAGES, LEAD_SOURCES, STATUS_OPTIONS, CONTACT_TYPES, CONTACT_CATEGORIES } from "./constants";
 import { VoiceField } from "./VoiceField";
 import { PainPointsSelect } from "./PainPointsSelect";
+import { showToast } from "./Toast";
 import type { Contact, ContactNote, CallEntry } from "./types";
 
 interface FilterState {
@@ -61,6 +62,11 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
   const [activeTab, setActiveTab] = useState<"details" | "notes" | "activity" | "meetings">("details");
   const [meetings, setMeetings] = useState<{ id: string; date: string; contactName: string | null; summary: string | null; nextSteps: string | null; outcome: string | null }[]>([]);
   const [meetingsLoaded, setMeetingsLoaded] = useState(false);
+  const [showAddMeeting, setShowAddMeeting] = useState(false);
+  const [meetingTranscript, setMeetingTranscript] = useState("");
+  const [meetingDate, setMeetingDate] = useState(() => new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" }));
+  const [extractingMeeting, setExtractingMeeting] = useState(false);
+  const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
   const [interacted, setInteracted] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
@@ -610,22 +616,60 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
               })()}
               {activeTab === "meetings" && (
                 <>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                    <button
+                      onClick={() => setShowAddMeeting(true)}
+                      style={{
+                        padding: "6px 12px", borderRadius: 8, border: `1px solid ${C.blu}`,
+                        background: C.bluBg, color: C.blu, fontSize: 12, fontWeight: 700,
+                        cursor: "pointer", fontFamily: F, display: "inline-flex", alignItems: "center", gap: 6,
+                      }}
+                    >
+                      <span style={{ fontSize: 14, fontWeight: 800, lineHeight: 1 }}>+</span> Add Meeting
+                    </button>
+                  </div>
                   {!meetingsLoaded ? (
                     <div style={{ color: C.mut, fontSize: 13, textAlign: "center", padding: "24px 0" }}>Loading…</div>
                   ) : meetings.length === 0 ? (
                     <div style={{ color: C.mut, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
                       No meeting history yet.<br />
-                      <span style={{ fontSize: 12 }}>Ask the AI to log a meeting after your next call.</span>
+                      <span style={{ fontSize: 12 }}>Click "+ Add Meeting" to paste a transcript.</span>
                     </div>
                   ) : (
                     meetings.map(m => (
-                      <div key={m.id} style={{ padding: "12px 14px", background: "#FAFAF8", borderRadius: 10, marginBottom: 10, borderLeft: `3px solid ${C.blu}` }}>
+                      <div key={m.id} style={{ position: "relative", padding: "12px 14px", paddingRight: 36, background: "#FAFAF8", borderRadius: 10, marginBottom: 10, borderLeft: `3px solid ${C.blu}` }}>
+                        <button
+                          onClick={async () => {
+                            if (deletingMeetingId === m.id) return;
+                            if (!confirm("Delete this meeting?")) return;
+                            setDeletingMeetingId(m.id);
+                            try {
+                              await del(`/meeting-history/${m.id}`);
+                              setMeetings(prev => prev.filter(x => x.id !== m.id));
+                              showToast({ title: "Meeting deleted" });
+                            } catch (err) {
+                              const msg = err instanceof Error ? err.message : String(err);
+                              showToast({ title: "Failed to delete", description: msg, variant: "error" });
+                            } finally {
+                              setDeletingMeetingId(null);
+                            }
+                          }}
+                          disabled={deletingMeetingId === m.id}
+                          title="Delete meeting"
+                          style={{
+                            position: "absolute", top: 8, right: 8, width: 24, height: 24,
+                            background: "transparent", border: "none", cursor: deletingMeetingId === m.id ? "not-allowed" : "pointer",
+                            color: C.mut, fontSize: 14, lineHeight: 1, opacity: deletingMeetingId === m.id ? 0.5 : 1,
+                          }}
+                        >
+                          {deletingMeetingId === m.id ? "…" : "🗑"}
+                        </button>
                         <div style={{ fontSize: 11, fontWeight: 700, color: C.blu, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
                           {m.date}
                         </div>
                         {m.summary && <div style={{ fontSize: 13, color: C.tx, lineHeight: 1.5, marginBottom: 4 }}>{m.summary}</div>}
                         {m.nextSteps && (
-                          <div style={{ fontSize: 12, color: C.grn, marginTop: 4 }}>
+                          <div style={{ fontSize: 12, color: C.grn, marginTop: 4, whiteSpace: "pre-wrap" }}>
                             <span style={{ fontWeight: 700 }}>Next Steps: </span>{m.nextSteps}
                           </div>
                         )}
@@ -638,6 +682,89 @@ export function ContactDrawer({ contactId, onClose, onUpdated, onDeleted, onAtte
                     ))
                   )}
                 </>
+              )}
+
+              {/* Add Meeting modal */}
+              {showAddMeeting && (
+                <div
+                  style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+                  onClick={e => { if (e.target === e.currentTarget && !extractingMeeting) setShowAddMeeting(false); }}
+                >
+                  <div style={{ background: C.card, borderRadius: 14, width: 560, maxWidth: "94vw", maxHeight: "92vh", display: "flex", flexDirection: "column", boxShadow: "0 12px 36px rgba(0,0,0,0.25)" }}>
+                    <div style={{ padding: "16px 22px", borderBottom: `1px solid ${C.brd}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: C.tx }}>Add Meeting</div>
+                        <div style={{ fontSize: 11, color: C.mut, marginTop: 2 }}>Paste the transcript — AI will extract a summary, next steps, and outcome.</div>
+                      </div>
+                      <button onClick={() => { if (!extractingMeeting) setShowAddMeeting(false); }} disabled={extractingMeeting} style={{ background: "none", border: "none", fontSize: 20, cursor: extractingMeeting ? "not-allowed" : "pointer", color: C.mut }}>✕</button>
+                    </div>
+                    <div style={{ padding: 22, overflowY: "auto", flex: 1 }}>
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 4 }}>Meeting Date</label>
+                        <input
+                          type="date"
+                          value={meetingDate}
+                          onChange={e => setMeetingDate(e.target.value)}
+                          disabled={extractingMeeting}
+                          style={{ width: 180, padding: "6px 10px", border: `1px solid ${C.brd}`, borderRadius: 7, fontSize: 13, fontFamily: F }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 4 }}>Transcript</label>
+                        <textarea
+                          value={meetingTranscript}
+                          onChange={e => setMeetingTranscript(e.target.value)}
+                          disabled={extractingMeeting}
+                          placeholder="Paste the full meeting transcript here…"
+                          style={{ width: "100%", minHeight: 220, padding: 12, border: `1px solid ${C.brd}`, borderRadius: 8, fontSize: 13, fontFamily: F, resize: "vertical", boxSizing: "border-box" }}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ padding: "14px 22px", borderTop: `1px solid ${C.brd}`, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                      <button
+                        onClick={() => setShowAddMeeting(false)}
+                        disabled={extractingMeeting}
+                        style={{ padding: "8px 16px", border: `1px solid ${C.brd}`, background: "#fff", borderRadius: 8, fontSize: 13, fontFamily: F, cursor: extractingMeeting ? "not-allowed" : "pointer", color: C.sub }}
+                      >Cancel</button>
+                      <button
+                        onClick={async () => {
+                          const trimmed = meetingTranscript.trim();
+                          if (!trimmed) {
+                            showToast({ title: "Transcript is empty", variant: "error" });
+                            return;
+                          }
+                          setExtractingMeeting(true);
+                          try {
+                            const row = await post<typeof meetings[number]>("/meeting-history/extract", {
+                              transcript: trimmed,
+                              contactName: contact?.name || null,
+                              date: meetingDate,
+                            });
+                            setMeetings(prev => [row, ...prev]);
+                            setMeetingsLoaded(true);
+                            setMeetingTranscript("");
+                            setShowAddMeeting(false);
+                            showToast({ title: "Meeting saved", description: "AI extracted summary + next steps" });
+                          } catch (err) {
+                            const msg = err instanceof Error ? err.message : String(err);
+                            showToast({ title: "Failed to save meeting", description: msg, variant: "error" });
+                          } finally {
+                            setExtractingMeeting(false);
+                          }
+                        }}
+                        disabled={extractingMeeting || !meetingTranscript.trim()}
+                        style={{
+                          padding: "8px 18px", border: "none", background: C.blu, color: "#fff",
+                          borderRadius: 8, fontSize: 13, fontFamily: F, fontWeight: 700,
+                          cursor: extractingMeeting || !meetingTranscript.trim() ? "not-allowed" : "pointer",
+                          opacity: extractingMeeting || !meetingTranscript.trim() ? 0.6 : 1,
+                        }}
+                      >
+                        {extractingMeeting ? "Extracting…" : "Save & Extract"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </>

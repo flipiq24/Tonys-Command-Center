@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { post, get } from "@/lib/api";
 import { C, F, FS, inp, btn1, btn2, lbl } from "./constants";
 import { VoiceInput } from "./VoiceInput";
+import { showToast } from "./Toast";
 import type { Idea } from "./types";
 
 const CATS = ["Tech", "Sales", "Marketing", "Strategic Partners", "Operations", "Product", "Personal"];
@@ -253,6 +254,22 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
           if (!mountedRef.current) { clearTimeout(t); resolve(); }
         });
       }
+
+      // Variant 5 (Normal park): notify Ethan via Slack DM.
+      // Skip for Tech (Variant 1 — already auto-posts to #engineering) and
+      // skip if pushback was active (Variants 3/4 have their own notification paths).
+      const isNormalPark = !pushback && finalCat !== "Tech";
+      if (isNormalPark) {
+        post("/ideas/notify-park", {
+          text, category: finalCat, urgency: finalUrg, ideaId: idea.id,
+        }).catch(err => console.warn("[Ideas] notify-park failed:", err));
+        showToast({ title: "Idea parked", description: "Ethan notified on Slack" });
+      } else if (finalCat === "Tech") {
+        showToast({ title: "Tech idea parked", description: "Posted to #engineering" });
+      } else {
+        showToast({ title: "Idea saved" });
+      }
+
       onSave(idea);
       // Only open task creation modal if urgency is NOT Someday
       if (onCreateTask && finalUrg !== "Someday") {
@@ -395,6 +412,13 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                           : `Idea parked. Ethan notified on Slack (calendar booking failed).`
                       );
 
+                      showToast({
+                        title: "Idea escalated to Ethan",
+                        description: r.ok && r.calendarOk !== false
+                          ? `Meeting booked for ${friendly}`
+                          : "Slack sent (calendar booking failed)",
+                      });
+
                       onSave(idea);
 
                       // Brief pause so Tony can read the confirmation, then either
@@ -408,7 +432,11 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                         await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
                       }
                       handleClose();
-                    } catch { setError("Failed to park idea"); setStep("review"); }
+                    } catch {
+                      setError("Failed to park idea");
+                      setStep("review");
+                      showToast({ title: "Failed to park idea", variant: "error" });
+                    }
                   }}
                   style={{ ...btn2, width: "100%", color: C.red, borderColor: C.red }}
                 >
@@ -446,9 +474,14 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                       setStep("saving");
                       try {
                         const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: "Someday" });
+                        showToast({ title: "Idea parked", description: "Saved as Someday on the parking lot" });
                         onSave(idea);
                         handleClose();
-                      } catch { setError("Failed to park idea"); setStep("review"); }
+                      } catch {
+                        setError("Failed to park idea");
+                        setStep("review");
+                        showToast({ title: "Failed to park idea", variant: "error" });
+                      }
                     }}
                     style={{ ...btn2, flex: 1, color: C.amb, borderColor: C.amb }}
                   >
@@ -481,11 +514,16 @@ export function IdeasModal({ open, onClose, onSave, onCreateTask, count }: Props
                     setStep("saving");
                     try {
                       const idea = await post<Idea>("/ideas", { text, category: finalCat, urgency: finalUrg });
-                      await post("/ideas/notify-override", { text, justification: override.justification }).catch(() => {});
+                      await post("/ideas/notify-override", { text, justification: override.justification, ideaId: idea.id }).catch(() => {});
+                      showToast({ title: "Override confirmed", description: "#engineering and Ethan notified" });
                       onSave(idea);
                       if (onCreateTask) await onCreateTask(text, finalCat, finalUrg, finalTt ?? undefined);
                       handleClose();
-                    } catch { setError("Failed to save idea"); setStep("review"); }
+                    } catch {
+                      setError("Failed to save idea");
+                      setStep("review");
+                      showToast({ title: "Failed to save override", variant: "error" });
+                    }
                   }}
                   disabled={!override.justification.trim()}
                   style={{ ...btn1, width: "100%", opacity: override.justification.trim() ? 1 : 0.4 }}

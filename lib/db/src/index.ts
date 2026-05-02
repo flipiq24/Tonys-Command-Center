@@ -29,6 +29,14 @@ if (process.env.SUPABASE_DATABASE_URL) {
   throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
 }
 
+// Idle connections to Supabase's pooler get dropped after a few minutes,
+// emitting an 'error' event on the pool that crashes the process if no
+// listener is attached. This handler swallows the reset — the next query
+// will get a fresh connection from the pool automatically.
+pool.on("error", (err) => {
+  console.warn("[DB] Idle pool client error (auto-reconnects on next query):", err.message);
+});
+
 export { pool };
 export const db = drizzle(pool, { schema });
 

@@ -61,3 +61,5 @@ Thumbs.db
 attached_assets/
 context/*
 ai-outputs/*
+ai-inputs/
+.claude

@@ -2166,6 +2166,22 @@ function MasterTaskTab({ onRefreshAll, categories, initialParentFilter, onInitia
             </tr>
           </thead>
           <tbody>
+            {loading && displayed.length === 0 && (
+              [0, 1, 2, 3, 4, 5, 6, 7].map(i => (
+                <tr key={`sk-${i}`} style={{ background: i % 2 === 0 ? "#fff" : "#FAFAFA", borderBottom: `1px solid ${C.brd}` }}>
+                  {Array.from({ length: 18 }).map((_, j) => (
+                    <td key={j} style={{ padding: "10px 10px", borderRight: `1px solid ${C.brd}` }}>
+                      <div style={{
+                        height: 10,
+                        background: j === 6 ? "#EEE" : "#F2F2F2",
+                        borderRadius: 3,
+                        width: j === 0 ? 14 : j === 6 ? "85%" : j === 7 ? "70%" : "60%",
+                      }} />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
             {displayed.map((task) => {
               const done = task.status === "completed";
               const isLate = !done && task.dueDate && new Date(task.dueDate) < new Date("2026-04-09");

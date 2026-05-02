@@ -19,6 +19,9 @@ interface Props {
   slackItems?: SlackItem[];
   contacts: Contact[];
   calls?: CallEntry[];
+  emailsLoaded?: boolean;
+  briefLoaded?: boolean;
+  lastEmailAiAt?: Date | null;
   onComplete: (task: TaskItem) => void;
   onNavigate: (view: NavView) => void;
   onOpenEmail?: (em: EmailItem) => void;
@@ -756,7 +759,19 @@ function FilterRow({ label, children }: { label: string; children: React.ReactNo
 }
 
 // ════════════════════════════════════════════════════════════════════
-export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, calls = [], onComplete, onNavigate, onOpenEmail, onAttempt, onCompose }: Props) {
+function formatRelativeTime(d: Date | null | undefined): string {
+  if (!d) return "never";
+  const ms = Date.now() - new Date(d).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `~${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `~${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `~${day}d ago`;
+}
+
+export function DashboardView({ tasks, tDone, calendarData, emailsImportant, linearItems, slackItems = [], contacts, calls = [], emailsLoaded = true, briefLoaded = true, lastEmailAiAt, onComplete, onNavigate, onOpenEmail, onAttempt, onCompose }: Props) {
   const [localTasks, setLocalTasks] = useState<LocalTask[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -1035,7 +1050,19 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
       <div style={{ width: "100%" }}>
 
         {/* ── Day Timeline ── real calendar data only (no sample fallback) */}
-        <DayTimeline meetings={calendarData} autoBlocks={wb.autoBlocks} onNavigate={onNavigate} />
+        {!briefLoaded ? (
+          <div style={{ background: "#fff", border: BORDER, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 18, height: 18, borderRadius: 4, background: "#EEE" }} />
+            <div style={{ flex: 1, display: "flex", gap: 8 }}>
+              {[0, 1, 2, 3, 4].map(i => (
+                <div key={i} style={{ flex: 1, height: 28, background: i % 2 === 0 ? "#F2F2F2" : "#EEE", borderRadius: 4 }} />
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "#999", fontStyle: "italic", whiteSpace: "nowrap" }}>Loading schedule…</div>
+          </div>
+        ) : (
+          <DayTimeline meetings={calendarData} autoBlocks={wb.autoBlocks} onNavigate={onNavigate} />
+        )}
 
         <div style={{ padding: "12px 20px 18px" }}>
 
@@ -1163,7 +1190,26 @@ export function DashboardView({ tasks, tDone, calendarData, emailsImportant, lin
 
             {/* ── PRIORITY EMAILS ── max 3 slots, empty state when 0 ── */}
             <SL text="📧 Priority Emails" color="#E65100" time={wb.emails} view="emails" onNavigate={onNavigate} />
-            {emails.length === 0 ? (
+            {emailsLoaded && (
+              <div style={{ fontSize: 10, color: "#999", padding: "4px 0 6px", fontStyle: "italic" }}>
+                Last AI classification {formatRelativeTime(lastEmailAiAt)}
+              </div>
+            )}
+            {!emailsLoaded ? (
+              <div style={{ border: BORDER, background: "#fff" }}>
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: i < 2 ? "1px solid #EBEBEB" : "none" }}>
+                    <div style={{ width: 14, height: 14, borderRadius: 3, background: "#EEE" }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ width: "30%", height: 10, background: "#EEE", borderRadius: 3, marginBottom: 6 }} />
+                      <div style={{ width: "70%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+                    </div>
+                    <div style={{ width: 50, height: 10, background: "#EEE", borderRadius: 3 }} />
+                  </div>
+                ))}
+                <div style={{ padding: "8px 12px", fontSize: 11, color: "#999", textAlign: "center", fontStyle: "italic" }}>Loading emails…</div>
+              </div>
+            ) : emails.length === 0 ? (
               <div style={{ border: BORDER, padding: "14px 10px", background: "#FAFAF8", textAlign: "center" }}>
                 <div style={{ fontSize: 13, color: "#888" }}>No important emails right now ✨</div>
               </div>

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, ilike, desc as descOrder, sql as sqlExpr, inArray } from "drizzle-orm";
-import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable } from "@workspace/db";
+import { db, dailyBriefsTable, businessContextTable, checkinsTable, taskCompletionsTable, callLogTable, contactsTable, sectionCacheTable } from "@workspace/db";
 import { communicationLogTable, contactIntelligenceTable } from "../../lib/schema-v2.js";
 import { anthropic, createTrackedMessage } from "@workspace/integrations-anthropic-ai";
 import { isAgentRuntimeEnabled } from "../../agents/flags.js";
@@ -547,9 +547,11 @@ async function briefTodayHandler(
   const refreshSet = new Set(
     ((req.query.refresh as string) || "").split(",").filter(Boolean)
   );
-  const forceRefreshEmails = refreshSet.has("emails") || refreshSet.has("ai");
-  const forceRefreshSlack  = refreshSet.has("slack")  || refreshSet.has("ai");
-  const forceRefreshTasks  = refreshSet.has("ai");
+  const forceRefreshEmails   = refreshSet.has("emails")   || refreshSet.has("ai");
+  const forceRefreshCalendar = refreshSet.has("calendar") || refreshSet.has("ai");
+  const forceRefreshLinear   = refreshSet.has("linear")   || refreshSet.has("ai");
+  const forceRefreshSlack    = refreshSet.has("slack")    || refreshSet.has("ai");
+  const forceRefreshTasks    = refreshSet.has("ai");
 
   // Step 1: Load today's cached brief from DB (tasks are user-editable so always respect them)
   const [dbBrief] = await db
@@ -557,16 +559,31 @@ async function briefTodayHandler(
     .from(dailyBriefsTable)
     .where(eq(dailyBriefsTable.date, today));
 
-  // Step 2: All live fetches in parallel — null = error/missing creds
+  // 1-hour TTL — sections with cache fresher than this skip the live fetch entirely.
+  // The Reclassify modal and the explicit refresh button still bypass this via ?refresh=.
+  const CACHE_TTL_MS = 60 * 60 * 1000;
+  const now = Date.now();
+  const isFresh = (ts: Date | null | undefined): boolean =>
+    !!ts && now - new Date(ts).getTime() < CACHE_TTL_MS;
+
+  const emailsCacheFresh   = !forceRefreshEmails   && isFresh(dbBrief?.emailsRefreshedAt)   && !!dbBrief?.emailsImportant;
+  const calendarCacheFresh = !forceRefreshCalendar && isFresh(dbBrief?.calendarRefreshedAt) && !!dbBrief?.calendarData;
+  const linearCacheFresh   = !forceRefreshLinear   && isFresh(dbBrief?.linearRefreshedAt)   && !!dbBrief?.linearItems;
+
+  // Step 2: Skip live fetches when cached data is fresh (<1h). Slack always live (cheap, important).
   const [liveEmails, liveCal, liveSlack, liveLinear] = await Promise.all([
-    fetchLiveEmails(),
-    fetchLiveCalendar(),
+    emailsCacheFresh   ? Promise.resolve(null) : fetchLiveEmails(),
+    calendarCacheFresh ? Promise.resolve(null) : fetchLiveCalendar(),
     fetchLiveSlack(),
-    fetchLiveLinear(),
+    linearCacheFresh   ? Promise.resolve(null) : fetchLiveLinear(),
   ]);
 
-  const calendarData = liveCal ?? DEFAULT_CAL;
-  const linearItems = liveLinear ?? DEFAULT_LINEAR;
+  // Calendar: prefer live, then cached (if not stale), then default seed
+  const calendarData: CalItem[] = liveCal
+    ?? (calendarCacheFresh && dbBrief?.calendarData ? (dbBrief.calendarData as CalItem[]) : DEFAULT_CAL);
+  // Linear: same priority order
+  const linearItems: LinearItem[] = liveLinear
+    ?? (linearCacheFresh && dbBrief?.linearItems ? (dbBrief.linearItems as LinearItem[]) : DEFAULT_LINEAR);
 
   // Step 3: Resolve emails — priority: live > DB cache (unless forced refresh) > Claude > fallback
   let emailsImportant: EmailImportant[];
@@ -578,7 +595,13 @@ async function briefTodayHandler(
     emailsImportant = liveEmails.important;
     emailsFyi = liveEmails.fyi;
     emailsPromotions = liveEmails.promotions;
+  } else if (emailsCacheFresh && dbBrief?.emailsImportant) {
+    // Cached and fresh (<1h) — serve from DB without re-fetching Gmail or running Claude
+    emailsImportant = dbBrief.emailsImportant as EmailImportant[];
+    emailsFyi = (dbBrief.emailsFyi as EmailFyi[]) ?? [];
+    emailsPromotions = [];
   } else if (dbBrief?.emailsImportant && !forceRefreshEmails) {
+    // Cache exists but is stale and live fetch failed — fall back to stale cache rather than seed
     emailsImportant = dbBrief.emailsImportant as EmailImportant[];
     emailsFyi = (dbBrief.emailsFyi as EmailFyi[]) ?? [];
     emailsPromotions = [];
@@ -641,8 +664,33 @@ async function briefTodayHandler(
     ? (dbBrief.tasks as typeof DEFAULT_TASKS)
     : (claudeGenerated?.tasks ?? DEFAULT_TASKS);
 
-  // Step 6: Cache Claude-generated content in DB so it doesn't regenerate on next request
-  if (claudeGenerated) {
+  // Step 6: Persist freshly-fetched sections + bump their refresh timestamps so the
+  // next request (within 1h) can serve from cache and skip the live fetches.
+  const nowDate = new Date();
+  const emailsRefreshed   = liveEmails !== null || claudeGenerated !== null;
+  const calendarRefreshed = liveCal    !== null;
+  const linearRefreshed   = liveLinear !== null;
+
+  if (emailsRefreshed || calendarRefreshed || linearRefreshed || claudeGenerated) {
+    const updateSet: Record<string, unknown> = {};
+    if (emailsRefreshed) {
+      updateSet.emailsImportant = emailsImportant;
+      updateSet.emailsFyi = emailsFyi;
+      updateSet.emailsRefreshedAt = nowDate;
+    }
+    if (calendarRefreshed) {
+      updateSet.calendarData = calendarData;
+      updateSet.calendarRefreshedAt = nowDate;
+    }
+    if (linearRefreshed) {
+      updateSet.linearItems = linearItems;
+      updateSet.linearRefreshedAt = nowDate;
+    }
+    if (claudeGenerated) {
+      updateSet.slackItems = slackItems;
+      updateSet.tasks = tasks;
+    }
+
     await db.insert(dailyBriefsTable)
       .values({
         date: today,
@@ -652,17 +700,21 @@ async function briefTodayHandler(
         slackItems,
         linearItems,
         tasks,
+        emailsRefreshedAt:   emailsRefreshed   ? nowDate : null,
+        calendarRefreshedAt: calendarRefreshed ? nowDate : null,
+        linearRefreshedAt:   linearRefreshed   ? nowDate : null,
       })
       .onConflictDoUpdate({
         target: dailyBriefsTable.date,
-        set: { emailsImportant, emailsFyi, slackItems, tasks },
+        set: updateSet,
       })
       .catch(err => console.warn("[brief] DB cache save failed:", err));
   }
 
   const emailSource = liveEmails !== null ? "live"
+    : emailsCacheFresh ? "cached"
     : forceRefreshEmails && claudeGenerated ? "claude"
-    : dbBrief?.emailsImportant && !forceRefreshEmails ? "cached"
+    : dbBrief?.emailsImportant && !forceRefreshEmails ? "cached-stale"
     : claudeGenerated ? "claude" : "seed";
 
   const slackSource = liveSlack !== null ? "live"
@@ -671,10 +723,10 @@ async function briefTodayHandler(
     : claudeGenerated ? "claude" : "seed";
 
   const sources = {
-    calendar: liveCal !== null ? "live" : "seed",
+    calendar: liveCal !== null ? "live" : calendarCacheFresh ? "cached" : "seed",
     emails: emailSource,
     slack: slackSource,
-    linear: liveLinear !== null ? "live" : "seed",
+    linear: liveLinear !== null ? "live" : linearCacheFresh ? "cached" : "seed",
   };
   console.log("[brief]", sources);
 
@@ -694,7 +746,296 @@ async function briefTodayHandler(
 router.get("/brief/today", briefTodayHandler);
 router.get("/morning-brief", briefTodayHandler);
 
+// ════════════════════════════════════════════════════════════════════════════
+// SECTION CACHE — view-scoped per-section endpoints
+//
+// Storage: section_cache table, one row per section name.
+// Read endpoints serve from cache (fast, no API calls).
+// Refetch endpoints pull live, save to cache, update fetched_at.
+// Email reclassify additionally bumps ai_processed_at (6h TTL on AI).
+// ════════════════════════════════════════════════════════════════════════════
+
+type SectionName = "emails" | "calendar" | "linear" | "slack";
+
+const EMAIL_AI_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+async function readCache(section: SectionName): Promise<{
+  data: unknown;
+  fetchedAt: Date | null;
+  aiProcessedAt: Date | null;
+} | null> {
+  try {
+    const [row] = await db.select().from(sectionCacheTable).where(eq(sectionCacheTable.section, section));
+    if (!row) return null;
+    return { data: row.data, fetchedAt: row.fetchedAt, aiProcessedAt: row.aiProcessedAt };
+  } catch (err) {
+    console.warn(`[section_cache] read failed for ${section}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+async function writeCache(
+  section: SectionName,
+  data: unknown,
+  opts: { bumpAi?: boolean } = {}
+): Promise<void> {
+  const now = new Date();
+  const setOnUpdate: Record<string, unknown> = { data, fetchedAt: now, updatedAt: now };
+  if (opts.bumpAi) setOnUpdate.aiProcessedAt = now;
+  try {
+    await db.insert(sectionCacheTable).values({
+      section,
+      data: data as object,
+      fetchedAt: now,
+      aiProcessedAt: opts.bumpAi ? now : null,
+    }).onConflictDoUpdate({
+      target: sectionCacheTable.section,
+      set: setOnUpdate,
+    });
+  } catch (err) {
+    console.warn(`[section_cache] write failed for ${section}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+// ── GET /brief/calendar ─────────────────────────────────────────────────────
+// Cache-first. On cache miss, fetches live. Only caches REAL live data —
+// never the seed fallback (that would permanently corrupt the cache).
+router.get("/brief/calendar", async (_req, res): Promise<void> => {
+  const cached = await readCache("calendar");
+  if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+    res.json({ calendarData: cached.data, fetchedAt: cached.fetchedAt });
+    return;
+  }
+  const live = await fetchLiveCalendar();
+  if (live !== null) {
+    await writeCache("calendar", live);
+    res.json({ calendarData: live, fetchedAt: new Date(), source: "live" });
+    return;
+  }
+  // Live fetch failed — return existing cache (even if stale) or empty,
+  // but do NOT poison the cache with seed data.
+  res.json({
+    calendarData: (cached?.data as CalItem[]) ?? [],
+    fetchedAt: cached?.fetchedAt ?? null,
+    source: cached ? "cached-stale" : "unavailable",
+  });
+});
+
+// ── GET /brief/emails ───────────────────────────────────────────────────────
+// Cache-first. Returns last-known classified buckets + AI timestamp.
+router.get("/brief/emails", async (_req, res): Promise<void> => {
+  const cached = await readCache("emails");
+  if (cached && cached.data && typeof cached.data === "object" && cached.aiProcessedAt) {
+    // Have a real classified cache (ai_processed_at set means triage ran)
+    const d = cached.data as { important?: EmailImportant[]; fyi?: EmailFyi[]; promotions?: EmailPromotion[] };
+    res.json({
+      emailsImportant: d.important ?? [],
+      emailsFyi: d.fyi ?? [],
+      emailsPromotions: d.promotions ?? [],
+      fetchedAt: cached.fetchedAt,
+      aiProcessedAt: cached.aiProcessedAt,
+    });
+    return;
+  }
+  // Cold start (or previous fetch failed) — run live triage
+  const live = await fetchLiveEmails();
+  if (live !== null) {
+    await writeCache("emails", live, { bumpAi: true });
+    res.json({
+      emailsImportant: live.important,
+      emailsFyi: live.fyi,
+      emailsPromotions: live.promotions,
+      fetchedAt: new Date(),
+      aiProcessedAt: new Date(),
+    });
+    return;
+  }
+  // Live triage failed — return whatever we have (could be empty/stale)
+  // without overwriting the cache.
+  const stale = cached?.data as { important?: EmailImportant[]; fyi?: EmailFyi[]; promotions?: EmailPromotion[] } | undefined;
+  res.json({
+    emailsImportant: stale?.important ?? [],
+    emailsFyi: stale?.fyi ?? [],
+    emailsPromotions: stale?.promotions ?? [],
+    fetchedAt: cached?.fetchedAt ?? null,
+    aiProcessedAt: cached?.aiProcessedAt ?? null,
+  });
+});
+
+// ── GET /brief/linear ───────────────────────────────────────────────────────
+router.get("/brief/linear", async (_req, res): Promise<void> => {
+  const cached = await readCache("linear");
+  if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+    res.json({ linearItems: cached.data, fetchedAt: cached.fetchedAt });
+    return;
+  }
+  const live = await fetchLiveLinear();
+  if (live !== null && live.length > 0) {
+    await writeCache("linear", live);
+    res.json({ linearItems: live, fetchedAt: new Date(), source: "live" });
+    return;
+  }
+  res.json({
+    linearItems: (cached?.data as LinearItem[]) ?? [],
+    fetchedAt: cached?.fetchedAt ?? null,
+    source: cached ? "cached-stale" : "unavailable",
+  });
+});
+
+// ── GET /brief/slack ────────────────────────────────────────────────────────
+router.get("/brief/slack", async (_req, res): Promise<void> => {
+  const cached = await readCache("slack");
+  if (cached && Array.isArray(cached.data) && cached.data.length > 0) {
+    res.json({ slackItems: cached.data, fetchedAt: cached.fetchedAt });
+    return;
+  }
+  const live = await fetchLiveSlack();
+  if (live !== null && live.length > 0) {
+    await writeCache("slack", live);
+    res.json({ slackItems: live, fetchedAt: new Date(), source: "live" });
+    return;
+  }
+  res.json({
+    slackItems: (cached?.data as SlackItem[]) ?? [],
+    fetchedAt: cached?.fetchedAt ?? null,
+    source: cached ? "cached-stale" : "unavailable",
+  });
+});
+
+// ── POST /brief/calendar/refetch ────────────────────────────────────────────
+// Used by 15-min auto-refresh and manual refresh button. Always pulls live.
+router.post("/brief/calendar/refetch", async (_req, res): Promise<void> => {
+  const live = await fetchLiveCalendar();
+  if (live === null) {
+    res.status(502).json({ ok: false, error: "Google Calendar fetch failed" });
+    return;
+  }
+  await writeCache("calendar", live);
+  res.json({ ok: true, calendarData: live, fetchedAt: new Date() });
+});
+
+// ── POST /brief/linear/refetch ──────────────────────────────────────────────
+router.post("/brief/linear/refetch", async (_req, res): Promise<void> => {
+  const live = await fetchLiveLinear();
+  if (live === null) {
+    res.status(502).json({ ok: false, error: "Linear fetch failed" });
+    return;
+  }
+  await writeCache("linear", live);
+  res.json({ ok: true, linearItems: live, fetchedAt: new Date() });
+});
+
+// ── POST /brief/slack/refetch ───────────────────────────────────────────────
+router.post("/brief/slack/refetch", async (_req, res): Promise<void> => {
+  const live = await fetchLiveSlack();
+  if (live === null) {
+    res.status(502).json({ ok: false, error: "Slack fetch failed" });
+    return;
+  }
+  await writeCache("slack", live);
+  res.json({ ok: true, slackItems: live, fetchedAt: new Date() });
+});
+
+// ── POST /brief/emails/poll ─────────────────────────────────────────────────
+// Cheap Gmail poll — checks for new messages in the last 24h that aren't
+// already in the cached classified buckets. Does NOT run AI. Returns the
+// list of new raw emails so the UI can show a "X new emails — reclassify?"
+// banner. Also auto-decides if AI is stale (>6h) — caller can use this hint.
+router.post("/brief/emails/poll", async (_req, res): Promise<void> => {
+  const cached = await readCache("emails");
+  const cachedData = (cached?.data as { important?: EmailImportant[]; fyi?: EmailFyi[] }) ?? { important: [], fyi: [] };
+
+  // Build set of already-classified gmail IDs
+  const seenIds = new Set<string>();
+  for (const e of (cachedData.important ?? [])) if (e.gmailMessageId) seenIds.add(e.gmailMessageId);
+  for (const e of (cachedData.fyi ?? [])) if ((e as { gmailMessageId?: string }).gmailMessageId) {
+    seenIds.add((e as { gmailMessageId?: string }).gmailMessageId!);
+  }
+
+  let newEmails: { from: string; subject: string; snippet: string; messageId: string; date: string }[] = [];
+  try {
+    const gmail = await getGmail();
+    const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+    const list = await gmail.users.messages.list({
+      userId: "me",
+      maxResults: 30,
+      q: `after:${since} in:inbox -category:promotions -category:social`,
+    });
+    const messages = list.data.messages || [];
+    const unseen = messages.filter(m => m.id && !seenIds.has(m.id));
+    if (unseen.length > 0) {
+      const details = await Promise.all(
+        unseen.slice(0, 20).map(msg =>
+          gmail.users.messages.get({
+            userId: "me",
+            id: msg.id!,
+            format: "metadata",
+            metadataHeaders: ["From", "Subject", "Date"],
+          })
+        )
+      );
+      newEmails = details.map((detail, i) => {
+        const hdrs = detail.data.payload?.headers || [];
+        const hdr = (n: string) => hdrs.find(h => h.name === n)?.value || "";
+        return {
+          from: hdr("From").replace(/<[^>]+>/, "").replace(/^"|"$/g, "").trim(),
+          subject: hdr("Subject"),
+          snippet: detail.data.snippet || "",
+          messageId: unseen[i].id!,
+          date: hdr("Date"),
+        };
+      });
+    }
+  } catch (err) {
+    console.warn("[brief/emails/poll] Gmail poll failed:", err instanceof Error ? err.message : err);
+  }
+
+  const aiAgeMs = cached?.aiProcessedAt ? Date.now() - new Date(cached.aiProcessedAt).getTime() : null;
+  const aiStale = aiAgeMs === null || aiAgeMs > EMAIL_AI_TTL_MS;
+
+  res.json({
+    ok: true,
+    newCount: newEmails.length,
+    newEmails,
+    aiProcessedAt: cached?.aiProcessedAt ?? null,
+    aiStale,
+  });
+});
+
+// ── POST /brief/emails/reclassify ───────────────────────────────────────────
+// Forces AI triage on the last 24h of emails. Replaces cached buckets.
+// Updates BOTH fetched_at and ai_processed_at.
+router.post("/brief/emails/reclassify", async (_req, res): Promise<void> => {
+  const live = await fetchLiveEmails();
+  if (live === null) {
+    res.status(502).json({ ok: false, error: "Email triage failed" });
+    return;
+  }
+  await writeCache("emails", live, { bumpAi: true });
+  res.json({
+    ok: true,
+    emailsImportant: live.important,
+    emailsFyi: live.fyi,
+    emailsPromotions: live.promotions,
+    fetchedAt: new Date(),
+    aiProcessedAt: new Date(),
+  });
+});
+
 // ── Spiritual Anchor ────────────────────────────────────────────────────────
+function sanitizeAnchorText(raw: string): string {
+  if (!raw) return raw;
+  let text = raw.trim();
+  text = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.anchor === "string") return parsed.anchor.trim();
+    } catch { /* fall through */ }
+  }
+  return text;
+}
+
 router.get("/brief/spiritual-anchor", async (req, res): Promise<void> => {
   const today = todayPacific();
   const yesterday = new Date(today);
@@ -809,6 +1150,8 @@ ${engagementNote}`;
       const block = message.content[0];
       anchor = block.type === "text" ? block.text : anchor;
     }
+
+    anchor = sanitizeAnchorText(anchor);
 
     res.json({ anchor, perfSummary });
   } catch (err) {

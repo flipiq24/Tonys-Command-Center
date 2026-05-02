@@ -403,6 +403,33 @@ router.post("/ideas/classify", async (req, res): Promise<void> => {
   res.json({ ok: true, classification: { ...classification, pushback, additionalContext } });
 });
 
+// Variant 5 (Normal park): notify Ethan via Slack DM that Tony parked an idea.
+// Distinct from /notify-override (Variant 4) and /escalate-to-ethan (Variant 2).
+router.post("/ideas/notify-park", async (req, res): Promise<void> => {
+  const { text, category, urgency, ideaId } = req.body as {
+    text?: string; category?: string; urgency?: string; ideaId?: string;
+  };
+
+  recordFeedback({
+    agent: "ideas",
+    skill: "park-normal",
+    sourceType: "free_text",
+    sourceId: ideaId || text || "unknown",
+    rating: null,
+    reviewText: null,
+    snapshotExtra: { ideaText: text, category, urgency, action: "park" },
+  }).catch(err => console.error("[ideas/notify-park] recordFeedback failed:", err));
+
+  try {
+    const slackText = `*Idea Parked by Tony*\n\n> ${text || "Untitled idea"}\n\n*Category:* ${category || "—"}\n*Urgency:* ${urgency || "—"}`;
+    const r = await postSlackMessage({ channel: "U0991BD321Y", text: slackText });
+    res.json({ ok: true, slackOk: r.ok });
+  } catch (err) {
+    console.warn("[ideas/notify-park] Slack DM failed:", err instanceof Error ? err.message : err);
+    res.json({ ok: true, slackOk: false });
+  }
+});
+
 router.post("/ideas/notify-override", async (req, res): Promise<void> => {
   const { text, justification, ideaId } = req.body as { text?: string; justification?: string; ideaId?: string };
 

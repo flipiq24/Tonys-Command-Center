@@ -57,6 +57,28 @@ interface Props {
 
 const ALL_SOURCES = ["emails", "calendar", "slack", "linear", "ai"];
 
+const SLACK_SEEN_KEY = "tcc:slack-seen-v1";
+
+function slackItemKey(item: SlackItem): string {
+  return item.url || `${item.from || ""}|${item.channel || ""}|${(item.message || "").slice(0, 120)}`;
+}
+
+function loadSeenSlack(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SLACK_SEEN_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr) : new Set();
+  } catch { return new Set(); }
+}
+
+function saveSeenSlack(set: Set<string>) {
+  try {
+    const arr = Array.from(set).slice(-200);
+    localStorage.setItem(SLACK_SEEN_KEY, JSON.stringify(arr));
+  } catch { /* ignore */ }
+}
+
 const levelColor = (level?: string) =>
   level === "high" ? C.red : level === "mid" ? C.amb : C.grn;
 
@@ -71,6 +93,31 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
   const [open, setOpen] = useState(false);
   const [dismissedHighUrgency, setDismissedHighUrgency] = useState(false);
   const [showSlackPopover, setShowSlackPopover] = useState(false);
+  const [seenSlack, setSeenSlack] = useState<Set<string>>(() => loadSeenSlack());
+
+  const unseenSlackCount = slackItems.reduce((n, item) => n + (seenSlack.has(slackItemKey(item)) ? 0 : 1), 0);
+
+  const markSlackSeen = useCallback(() => {
+    if (slackItems.length === 0) return;
+    setSeenSlack(prev => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const it of slackItems) {
+        const k = slackItemKey(it);
+        if (!next.has(k)) { next.add(k); changed = true; }
+      }
+      if (changed) saveSeenSlack(next);
+      return changed ? next : prev;
+    });
+  }, [slackItems]);
+
+  const toggleSlackPopover = useCallback(() => {
+    setShowSlackPopover(prev => {
+      const next = !prev;
+      if (next) markSlackSeen();
+      return next;
+    });
+  }, [markSlackSeen]);
   const [attendeeBriefExpanded, setAttendeeBriefExpanded] = useState(false);
   const [showEodModal, setShowEodModal] = useState(false);
   const [eodText, setEodText] = useState("");
@@ -211,8 +258,8 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
         {slackItems.length > 0 && (
           <div ref={slackPopoverRef} style={{ position: "relative" }}>
             <button
-              onClick={() => setShowSlackPopover(p => !p)}
-              title={`${slackItems.length} Slack mention${slackItems.length > 1 ? "s" : ""} — click to view`}
+              onClick={toggleSlackPopover}
+              title={`${slackItems.length} Slack mention${slackItems.length > 1 ? "s" : ""}${unseenSlackCount > 0 ? ` · ${unseenSlackCount} new` : ""}`}
               style={{
                 width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center",
                 background: showSlackPopover ? "#FFF7ED" : "none",
@@ -221,15 +268,17 @@ export function Header({ clock, ideas, unresolved, snoozedCount = 0, calSide, eo
               }}
             >
               <span style={{ fontSize: 15 }}>💬</span>
-              <span style={{
-                position: "absolute", top: -5, right: -5,
-                minWidth: 17, height: 17, borderRadius: 9,
-                background: slackLevel === "high" ? C.red : C.amb,
-                border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px", lineHeight: 1,
-              }}>
-                {slackItems.length}
-              </span>
+              {unseenSlackCount > 0 && (
+                <span style={{
+                  position: "absolute", top: -5, right: -5,
+                  minWidth: 17, height: 17, borderRadius: 9,
+                  background: slackLevel === "high" ? C.red : C.amb,
+                  border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9, fontWeight: 800, color: "#fff", padding: "0 3px", lineHeight: 1,
+                }}>
+                  {unseenSlackCount}
+                </span>
+              )}
             </button>
             {showSlackPopover && (
               <div style={{

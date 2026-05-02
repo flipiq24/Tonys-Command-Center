@@ -26,6 +26,8 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
   const [streamingText, setStreamingText] = useState("");
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -48,11 +50,15 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
     setStreamingText("");
     setToolActivities([]);
     setError(null);
+    setThreadLoading(true);
+    setMessages([]);
     try {
       const msgs = await get<Message[]>(`/chat/threads/${thread.id}/messages`);
       setMessages(msgs);
     } catch {
       setMessages([]);
+    } finally {
+      setThreadLoading(false);
     }
   }
 
@@ -98,6 +104,7 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
   async function sendMessage(text: string, mentionedAgent?: string) {
     if (!text.trim() || streaming) return;
 
+    setLastUserMessage(text);
     let thread = activeThread;
 
     // Lazy thread creation
@@ -268,7 +275,10 @@ export function CommandBrainView({ onBack, initialContextType, initialContextId,
               toolActivities={toolActivities}
               error={error}
               isEmpty={false}
+              streaming={streaming}
+              threadLoading={threadLoading}
               onQuickAction={handleQuickAction}
+              onRetry={lastUserMessage ? () => { setError(null); sendMessage(lastUserMessage); } : undefined}
             />
             <ChatInput
               streaming={streaming}

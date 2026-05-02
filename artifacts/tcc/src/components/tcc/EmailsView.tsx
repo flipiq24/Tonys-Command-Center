@@ -4,6 +4,7 @@ import { C, F, FS, card, btn1, btn2, TIPS } from "./constants";
 import { SmartTip } from "./SmartTip";
 import { EmailReplyModal } from "./EmailReplyModal";
 import { HoverCard } from "./HoverCard";
+import { showToast } from "./Toast";
 import type { EmailItem } from "./types";
 
 interface NewEmail { from: string; subject: string; snippet: string; messageId: string }
@@ -21,6 +22,20 @@ interface Props {
   unclassifiedEmails?: NewEmail[];
   onReclassify?: () => Promise<void>;
   reclassifying?: boolean;
+  loaded?: boolean;
+  lastEmailAiAt?: Date | null;
+}
+
+function formatRelativeAi(d: Date | null | undefined): string {
+  if (!d) return "never";
+  const ms = Date.now() - new Date(d).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `~${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `~${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `~${day}d ago`;
 }
 
 interface TrainingState {
@@ -30,7 +45,7 @@ interface TrainingState {
   saved: boolean;
 }
 
-export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh, unclassifiedEmails = [], onReclassify, reclassifying = false }: Props) {
+export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], snoozed, customTips, onSnooze, onDone, onTipSaved, onRefresh, unclassifiedEmails = [], onReclassify, reclassifying = false, loaded = true, lastEmailAiAt }: Props) {
   const [replyEmail, setReplyEmail] = useState<EmailItem | null>(null);
   const [training, setTraining] = useState<TrainingState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,7 +75,18 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
     setRefreshing(true);
-    try { await onRefresh(); } finally {
+    const startedAt = Date.now();
+    try {
+      await onRefresh();
+      const elapsed = Math.round((Date.now() - startedAt) / 1000);
+      showToast({
+        title: "Emails reclassified",
+        description: `Last 24h reprocessed in ${elapsed}s · ${emailsImportant.length} important`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast({ title: "Refresh failed", description: msg, variant: "error" });
+    } finally {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(() => setRefreshing(false), 600);
     }
@@ -104,21 +130,33 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
       <div style={{ padding: "24px 20px" }}>
         <div style={{ ...card, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <h3 style={{ fontFamily: FS, fontSize: 19, margin: 0 }}>Important Emails</h3>
               {onRefresh && (
-                <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  title="Refresh emails"
-                  style={{
-                    background: "none", border: "none", padding: 0, cursor: refreshing ? "default" : "pointer",
-                    color: refreshing ? C.blu : C.mut, fontSize: 16, lineHeight: 1,
-                    display: "flex", alignItems: "center",
-                    animation: refreshing ? "spin 0.7s linear infinite" : "none",
-                    transition: "color 0.2s",
-                  }}
-                >↻</button>
+                <>
+                  <button
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    title="Reclassify all emails from the last 24 hours"
+                    style={{
+                      background: "none", border: "none", padding: 0, cursor: refreshing ? "default" : "pointer",
+                      color: refreshing ? C.blu : C.mut, fontSize: 16, lineHeight: 1,
+                      display: "flex", alignItems: "center",
+                      animation: refreshing ? "spin 0.7s linear infinite" : "none",
+                      transition: "color 0.2s",
+                    }}
+                  >↻</button>
+                  {refreshing && (
+                    <span style={{ fontSize: 11, color: C.blu, fontWeight: 600, fontStyle: "italic" }}>
+                      Reclassifying last 24h…
+                    </span>
+                  )}
+                </>
+              )}
+              {!refreshing && loaded && (
+                <span style={{ fontSize: 11, color: C.mut, fontStyle: "italic" }}>
+                  Last AI classification {formatRelativeAi(lastEmailAiAt)}
+                </span>
               )}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -387,7 +425,19 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
             </div>
           ))}
 
-          {unresolved === 0 && <div style={{ padding: 16, textAlign: "center", color: C.grn, fontWeight: 700, background: C.grnBg, borderRadius: 10 }}>All handled ✓</div>}
+          {!loaded && emailsImportant.length === 0 && (
+            [0, 1, 2].map(i => (
+              <div key={i} style={{ padding: "12px 14px", background: "#FAFAF8", borderRadius: 10, marginBottom: 8, borderLeft: `3px solid ${C.brd}` }}>
+                <div style={{ width: "30%", height: 11, background: "#EEE", borderRadius: 3, marginBottom: 8 }} />
+                <div style={{ width: "70%", height: 10, background: "#F2F2F2", borderRadius: 3, marginBottom: 6 }} />
+                <div style={{ width: "55%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+              </div>
+            ))
+          )}
+          {!loaded && emailsImportant.length === 0 && (
+            <div style={{ padding: "8px 0", textAlign: "center", fontSize: 11, color: C.mut, fontStyle: "italic" }}>Loading emails…</div>
+          )}
+          {loaded && unresolved === 0 && <div style={{ padding: 16, textAlign: "center", color: C.grn, fontWeight: 700, background: C.grnBg, borderRadius: 10 }}>All handled ✓</div>}
 
           {hiddenCount > 0 && !showAll && (
             <button
@@ -410,7 +460,15 @@ export function EmailsView({ emailsImportant, emailsFyi, emailsPromotions = [], 
             <span style={{ fontSize: 13, color: C.mut, fontFamily: F }}>{emailsFyi.length} email{emailsFyi.length !== 1 ? "s" : ""} · no reply needed</span>
           </div>
 
-          {emailsFyi.length === 0 && (
+          {!loaded && emailsFyi.length === 0 && (
+            [0, 1].map(i => (
+              <div key={i} style={{ padding: "10px 12px", background: "#FAFAF8", borderRadius: 8, marginBottom: 6 }}>
+                <div style={{ width: "25%", height: 10, background: "#EEE", borderRadius: 3, marginBottom: 6 }} />
+                <div style={{ width: "60%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+              </div>
+            ))
+          )}
+          {loaded && emailsFyi.length === 0 && (
             <div style={{ fontSize: 13, color: C.mut, padding: "8px 0" }}>No FYI emails right now.</div>
           )}
 

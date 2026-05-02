@@ -89,6 +89,8 @@ interface ProposalRow {
 export function AgentsSettingsView({ onBack }: { onBack: () => void }) {
   const [agents, setAgents] = useState<AgentEntry[]>([]);
   const [pipelineEnabled, setPipelineEnabled] = useState(false);
+  const [pipelineLoading, setPipelineLoading] = useState(true);
+  const [agentsLoading, setAgentsLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -98,7 +100,11 @@ export function AgentsSettingsView({ onBack }: { onBack: () => void }) {
         setPipelineEnabled(d.feedback_pipeline_enabled);
         if (d.agents.length > 0 && !selectedAgent) setSelectedAgent(d.agents[0].name);
       })
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => {
+        setPipelineLoading(false);
+        setAgentsLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -109,11 +115,15 @@ export function AgentsSettingsView({ onBack }: { onBack: () => void }) {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: C.tx, margin: 0, fontFamily: FS }}>Agent Training</h1>
         <span style={{
           marginLeft: "auto", fontSize: 11, padding: "4px 10px", borderRadius: 999,
-          background: pipelineEnabled ? C.grnBg : C.redBg,
-          color: pipelineEnabled ? C.grn : C.red,
+          background: pipelineLoading ? "#F3F4F6" : pipelineEnabled ? C.grnBg : C.redBg,
+          color: pipelineLoading ? C.mut : pipelineEnabled ? C.grn : C.red,
           fontWeight: 700,
         }}>
-          {pipelineEnabled ? "Feedback pipeline ON" : "Feedback pipeline OFF (no rows being captured)"}
+          {pipelineLoading
+            ? "Loading pipeline status…"
+            : pipelineEnabled
+              ? "Feedback pipeline ON"
+              : "Feedback pipeline OFF (no rows being captured)"}
         </span>
       </div>
 
@@ -142,7 +152,14 @@ export function AgentsSettingsView({ onBack }: { onBack: () => void }) {
               )}
             </button>
           ))}
-          {agents.length === 0 && (
+          {agents.length === 0 && agentsLoading && (
+            [0, 1, 2, 3].map(i => (
+              <div key={i} style={{ padding: "10px 14px", borderBottom: `1px solid ${C.brd}` }}>
+                <div style={{ width: "60%", height: 10, background: "#EEE", borderRadius: 3 }} />
+              </div>
+            ))
+          )}
+          {agents.length === 0 && !agentsLoading && (
             <div style={{ padding: 16, fontSize: 12, color: C.mut }}>No agents found in registry.</div>
           )}
         </div>
@@ -151,7 +168,9 @@ export function AgentsSettingsView({ onBack }: { onBack: () => void }) {
         <div>
           {selectedAgent
             ? <AgentDetail agent={selectedAgent} pipelineEnabled={pipelineEnabled} />
-            : <div style={{ padding: 24, color: C.mut }}>Pick an agent from the sidebar.</div>}
+            : agentsLoading
+              ? <div style={{ padding: 24, color: C.mut }}>Loading agents…</div>
+              : <div style={{ padding: 24, color: C.mut }}>Pick an agent from the sidebar.</div>}
         </div>
       </div>
     </div>
@@ -230,7 +249,27 @@ function AgentDetail({ agent, pipelineEnabled }: { agent: string; pipelineEnable
 
   const [tab, setTab] = useState<DetailTab>("training");
 
-  if (!state) return <div style={{ color: C.mut }}>Loading…</div>;
+  if (!state) {
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 12, borderBottom: `1px solid ${C.brd}` }}>
+          {(["training", "memory", "skills", "runs"] as DetailTab[]).map(t => (
+            <div key={t} style={{ padding: "8px 14px", fontSize: 13, color: C.mut, textTransform: "capitalize" }}>{t}</div>
+          ))}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, padding: 14 }}>
+              <div style={{ width: "40%", height: 12, background: "#EEE", borderRadius: 4, marginBottom: 10 }} />
+              <div style={{ width: "75%", height: 10, background: "#F2F2F2", borderRadius: 4, marginBottom: 6 }} />
+              <div style={{ width: "60%", height: 10, background: "#F2F2F2", borderRadius: 4 }} />
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: C.mut, fontStyle: "italic", padding: "8px 4px" }}>Loading {agent}…</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -512,7 +551,14 @@ function MemoryTab({ agent }: { agent: string }) {
       {/* Section list */}
       <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 10, overflow: "hidden", maxHeight: "70vh", overflowY: "auto" }}>
         <div style={{ padding: "8px 12px", fontSize: 10, fontWeight: 700, color: C.mut, textTransform: "uppercase", background: "#FAFAFA" }}>Memory (editable)</div>
-        {memoryEntries.length === 0 && <div style={{ padding: 12, fontSize: 12, color: C.mut }}>None — Coach proposals will populate this.</div>}
+        {loading && entries.length === 0 && (
+          [0, 1, 2].map(i => (
+            <div key={i} style={{ padding: "8px 12px", borderBottom: `1px solid ${C.brd}` }}>
+              <div style={{ width: "65%", height: 10, background: "#EEE", borderRadius: 3 }} />
+            </div>
+          ))
+        )}
+        {!loading && memoryEntries.length === 0 && <div style={{ padding: 12, fontSize: 12, color: C.mut }}>None — Coach proposals will populate this.</div>}
         {memoryEntries.map(e => (
           <button
             key={`${e.kind}/${e.section_name}`}
@@ -633,11 +679,15 @@ function MemoryTab({ agent }: { agent: string }) {
 function SkillsTab({ agent }: { agent: string }) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
+    setError("");
     get<{ skills: SkillEntry[] }>(`/agents/${agent}/skills`)
       .then(r => setSkills(r.skills))
-      .catch(err => setError(err instanceof Error ? err.message : String(err)));
+      .catch(err => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
   }, [agent]);
 
   const updateOverride = async (skillName: string, override: string | null) => {
@@ -653,7 +703,15 @@ function SkillsTab({ agent }: { agent: string }) {
   return (
     <div>
       {error && <div style={{ background: C.redBg, color: C.red, padding: 8, borderRadius: 6, marginBottom: 8, fontSize: 12 }}>{error}</div>}
-      {skills.length === 0 && <div style={{ color: C.mut, padding: 24 }}>No skills registered.</div>}
+      {loading && skills.length === 0 && (
+        [0, 1, 2].map(i => (
+          <div key={i} style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, padding: 12, marginBottom: 8 }}>
+            <div style={{ width: "30%", height: 12, background: "#EEE", borderRadius: 4, marginBottom: 8 }} />
+            <div style={{ width: "55%", height: 10, background: "#F2F2F2", borderRadius: 4 }} />
+          </div>
+        ))
+      )}
+      {!loading && skills.length === 0 && <div style={{ color: C.mut, padding: 24 }}>No skills registered.</div>}
       {skills.map(s => (
         <div key={s.skillName} style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, padding: 12, marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
@@ -687,14 +745,34 @@ function SkillsTab({ agent }: { agent: string }) {
 function RunsTab({ agent }: { agent: string }) {
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLoading(true);
+    setError("");
     get<{ runs: RunEntry[] }>(`/agents/${agent}/runs?limit=100`)
       .then(r => setRuns(r.runs))
-      .catch(err => setError(err instanceof Error ? err.message : String(err)));
+      .catch(err => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
   }, [agent]);
 
   if (error) return <div style={{ background: C.redBg, color: C.red, padding: 10, borderRadius: 8 }}>{error}</div>;
+
+  if (loading && runs.length === 0) {
+    return (
+      <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, padding: 16 }}>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} style={{ display: "flex", gap: 12, padding: "8px 0", borderBottom: i < 3 ? `1px solid ${C.brd}` : "none" }}>
+            <div style={{ width: "20%", height: 10, background: "#EEE", borderRadius: 3 }} />
+            <div style={{ width: "20%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+            <div style={{ width: "15%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+            <div style={{ width: "10%", height: 10, background: "#F2F2F2", borderRadius: 3 }} />
+          </div>
+        ))}
+        <div style={{ fontSize: 11, color: C.mut, fontStyle: "italic", paddingTop: 10, textAlign: "center" }}>Loading run history…</div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ background: C.card, border: `1px solid ${C.brd}`, borderRadius: 8, overflow: "auto" }}>

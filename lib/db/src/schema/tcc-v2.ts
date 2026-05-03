@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, numeric, timestamp, date, integer, jsonb, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, numeric, timestamp, date, integer, jsonb, boolean, index, uniqueIndex, customType } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { contactsTable } from "./tcc";
 
 export const contactIntelligenceTable = pgTable("contact_intelligence", {
@@ -259,11 +260,14 @@ export const aiUsageLogsTable = pgTable("ai_usage_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
   featureName: text("feature_name").notNull(),
+  tier: text("tier"),                                      // 'basic' | 'medium' | 'complex' (multi-provider)
   provider: text("provider").notNull().default("anthropic"),
   model: text("model").notNull(),
   inputTokens: integer("input_tokens").default(0),
   outputTokens: integer("output_tokens").default(0),
   totalTokens: integer("total_tokens").default(0),
+  cacheReadInputTokens: integer("cache_read_input_tokens").default(0),
+  cacheCreationInputTokens: integer("cache_creation_input_tokens").default(0),
   inputCostUsd: numeric("input_cost_usd", { precision: 10, scale: 6 }),
   outputCostUsd: numeric("output_cost_usd", { precision: 10, scale: 6 }),
   totalCostUsd: numeric("total_cost_usd", { precision: 10, scale: 6 }),
@@ -280,7 +284,24 @@ export const aiUsageLogsTable = pgTable("ai_usage_logs", {
   index("idx_aul_feature").on(table.featureName),
   index("idx_aul_provider").on(table.provider),
   index("idx_aul_model").on(table.model),
+  index("idx_aul_tier").on(table.tier),
 ]);
+
+// Per-tier provider/model/key configuration. Powers the model-agnostic
+// settings UI at /settings/models. API keys are stored as AES-256-GCM
+// ciphertext (cipher + iv + auth tag); see lib/integrations-anthropic-ai/src/secrets.ts.
+export const aiProviderSettingsTable = pgTable("ai_provider_settings", {
+  tier: text("tier").primaryKey(),                                  // 'basic' | 'medium' | 'complex'
+  provider: text("provider").notNull(),                             // 'anthropic' | 'openai' | 'google' | 'openrouter'
+  model: text("model").notNull(),                                   // free-form; provider validates at call time
+  apiKeyCipher: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("api_key_cipher"),
+  apiKeyIv: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("api_key_iv"),
+  apiKeyTag: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("api_key_tag"),
+  baseUrl: text("base_url"),                                        // optional (Vertex region, OpenAI-compatible self-host)
+  extraOptions: jsonb("extra_options").notNull().default(sql`'{}'::jsonb`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
 
 export const brainTrainingLogTable = pgTable("brain_training_log", {
   id: uuid("id").defaultRandom().primaryKey(),

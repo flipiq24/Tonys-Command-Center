@@ -8,8 +8,14 @@
     "./batch": "./src/batch/index.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.74",
+    "@ai-sdk/google": "^3.0.67",
+    "@ai-sdk/openai": "^3.0.58",
     "@anthropic-ai/sdk": "^0.78.0",
+    "@openrouter/ai-sdk-provider": "^2.9.0",
     "@workspace/db": "workspace:*",
+    "ai": "^6.0.174",
+    "drizzle-orm": "catalog:",
     "p-limit": "^7.3.0",
     "p-retry": "^7.1.1"
   }

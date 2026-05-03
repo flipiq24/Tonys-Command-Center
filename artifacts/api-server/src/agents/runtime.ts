@@ -108,6 +108,16 @@ export async function runAgent(
   let turns = 0;
   let errorMessage: string | undefined;
 
+  // Cumulative usage across multi-turn loop. Each createTrackedMessage call
+  // returns a single turn's usage; we sum them so the agent_runs row reflects
+  // the WHOLE run, not just the final turn (which was the original bug).
+  const cum = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+  };
+
   try {
     while (turns < MAX_TURNS) {
       turns++;
@@ -124,6 +134,12 @@ export async function runAgent(
         params,
         { agent, skill: skillName, caller: input.caller || "direct", turn: turns, ...input.meta },
       );
+      // Accumulate token usage from this turn.
+      const u = (response.usage ?? {}) as any;
+      cum.input_tokens             += u.input_tokens                 ?? 0;
+      cum.output_tokens            += u.output_tokens                ?? 0;
+      cum.cache_read_input_tokens  += u.cache_read_input_tokens      ?? 0;
+      cum.cache_creation_input_tokens += u.cache_creation_input_tokens ?? 0;
 
       // Stop conditions: end_turn, max_tokens, or stop_sequence — model is done.
       if (response.stop_reason !== "tool_use") break;
@@ -172,9 +188,9 @@ export async function runAgent(
   } catch (err) {
     errorMessage = err instanceof Error ? err.message : String(err);
     await logRun({
-      agent, skillName,
+      agent, skillName, model,
       caller: input.caller, callerThreadId: input.callerThreadId,
-      response: null, durationMs: Date.now() - start,
+      cumUsage: cum, durationMs: Date.now() - start,
       status: "error", errorMessage,
     });
     throw err;
@@ -188,9 +204,9 @@ export async function runAgent(
 
   const text = extractText(response);
   const runId = await logRun({
-    agent, skillName,
+    agent, skillName, model,
     caller: input.caller, callerThreadId: input.callerThreadId,
-    response, durationMs: Date.now() - start,
+    cumUsage: cum, durationMs: Date.now() - start,
     status: "success",
   });
 
@@ -214,26 +230,55 @@ function extractText(response: AnthropicMessage): string {
 interface LogRunArgs {
   agent: string;
   skillName: string;
+  model: string;
   caller?: string;
   callerThreadId?: string;
-  response: AnthropicMessage | null;
+  cumUsage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+  };
   durationMs: number;
   status: "success" | "error";
   errorMessage?: string;
 }
 
+// Cache pricing rules duplicated from usage-logger.ts to avoid an import dance.
+// If they ever diverge, fix in usage-logger first then mirror here.
+const CACHE_CREATION_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.10;
+
+async function computeRunCost(model: string, u: LogRunArgs["cumUsage"]): Promise<number> {
+  try {
+    const { getPricing } = await import("@workspace/integrations-anthropic-ai");
+    const p = getPricing(model);
+    const uncachedInput = Math.max(0, u.input_tokens - u.cache_read_input_tokens);
+    const inputCost =
+      (uncachedInput / 1_000_000) * p.inputPerM +
+      (u.cache_read_input_tokens / 1_000_000) * p.inputPerM * CACHE_READ_MULTIPLIER +
+      (u.cache_creation_input_tokens / 1_000_000) * p.inputPerM * CACHE_CREATION_MULTIPLIER;
+    const outputCost = (u.output_tokens / 1_000_000) * p.outputPerM;
+    return inputCost + outputCost;
+  } catch {
+    return 0;
+  }
+}
+
 async function logRun(args: LogRunArgs): Promise<string> {
   try {
-    const usage = args.response?.usage;
+    const u = args.cumUsage;
+    const cost = await computeRunCost(args.model, u);
     const inserted = await db.insert(agentRunsTable).values({
       agent: args.agent,
       skill: args.skillName,
       caller: args.caller || null,
       callerThreadId: args.callerThreadId || null,
-      inputTokens: usage?.input_tokens ?? 0,
-      outputTokens: usage?.output_tokens ?? 0,
-      cacheReadTokens: (usage as any)?.cache_read_input_tokens ?? 0,
-      cacheCreationTokens: (usage as any)?.cache_creation_input_tokens ?? 0,
+      inputTokens: u.input_tokens,
+      outputTokens: u.output_tokens,
+      cacheReadTokens: u.cache_read_input_tokens,
+      cacheCreationTokens: u.cache_creation_input_tokens,
+      costUsd: cost.toFixed(6),
       durationMs: args.durationMs,
       status: args.status,
       errorMessage: args.errorMessage || null,

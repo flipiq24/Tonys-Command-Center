@@ -23,12 +23,16 @@ export const agentSkillsTable = pgTable("agent_skills", {
   id: uuid("id").defaultRandom().primaryKey(),
   agent: text("agent").notNull(),
   skillName: text("skill_name").notNull(),           // e.g. 'reply.draft', 'classify'
-  model: text("model").notNull(),                    // e.g. 'claude-haiku-4-5', 'claude-sonnet-4-6'
+  // tier — primary signal under multi-provider settings (basic/medium/complex).
+  // Resolves provider+model via ai_provider_settings at call time.
+  // model + modelOverride below remain for backward compat / per-skill override.
+  tier: text("tier"),                                // 'basic' | 'medium' | 'complex'
+  model: text("model").notNull(),                    // legacy: e.g. 'claude-haiku-4-5'
   maxTokens: integer("max_tokens").notNull().default(1024),
   tools: jsonb("tools").notNull().default(sql`'[]'::jsonb`),                   // string[] of tool names
   memorySections: jsonb("memory_sections").notNull().default(sql`'[]'::jsonb`), // string[] of section_name
   autoExamples: jsonb("auto_examples").notNull().default(sql`'false'::jsonb`),  // boolean — Coach may auto-append examples
-  modelOverride: text("model_override"),             // optional dashboard-set override
+  modelOverride: text("model_override"),             // optional dashboard-set override (still wins over tier)
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("agent_skills_unique_idx").on(t.agent, t.skillName),

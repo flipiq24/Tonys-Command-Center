@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { eq, desc, and, sql, asc } from "drizzle-orm";
-import { anthropic, createTrackedMessage, logStreamedUsage } from "@workspace/integrations-anthropic-ai";
+import { anthropic, createTrackedMessage, createTrackedStream } from "@workspace/integrations-anthropic-ai";
 import { db, systemInstructionsTable, contactsTable } from "@workspace/db";
 import { chatThreadsTable, chatMessagesTable, communicationLogTable, contactIntelligenceTable, companyGoalsTable, teamRolesTable } from "../../lib/schema-v2";
 import { createLinearIssue, getLinearIssues, getLinearMembers } from "../../lib/linear";
@@ -774,8 +774,10 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
 
   try {
     for (let turn = 0; turn < 5; turn++) {
-      const stream = anthropic.messages.stream({
-        model: "claude-sonnet-4-6",
+      // createTrackedStream resolves provider/model from the 'medium' tier
+      // (chat_thread is mapped there in feature-tiers.ts). Each turn writes
+      // its own ai_usage_logs row via the wrapper's onFinish hook.
+      const stream = await createTrackedStream("chat_thread", {
         max_tokens: 4096,
         system: systemPrompt,
         tools: TOOLS,
@@ -784,36 +786,49 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
 
       let turnText = "";
       const toolUseBlocks: { id: string; name: string; input: Record<string, unknown> }[] = [];
-      let currentToolName = "";
-      let currentToolId = "";
-      let currentToolInput = "";
+      const announcedTools = new Set<string>();
 
-      for await (const event of stream) {
-        if (event.type === "content_block_start") {
-          if (event.content_block.type === "tool_use") {
-            currentToolName = event.content_block.name;
-            currentToolId = event.content_block.id;
-            currentToolInput = "";
-            res.write(`data: ${JSON.stringify({ type: "tool_start", tool: currentToolName })}\n\n`);
+      // Vercel AI SDK fullStream emits unified events across providers.
+      for await (const event of stream.fullStream) {
+        switch (event.type) {
+          case "text-delta": {
+            const delta = (event as any).text ?? "";
+            turnText += delta;
+            res.write(`data: ${JSON.stringify({ type: "text", text: delta })}\n\n`);
+            break;
           }
-        } else if (event.type === "content_block_delta") {
-          if (event.delta.type === "text_delta") {
-            turnText += event.delta.text;
-            res.write(`data: ${JSON.stringify({ type: "text", text: event.delta.text })}\n\n`);
-          } else if (event.delta.type === "input_json_delta") {
-            currentToolInput += event.delta.partial_json;
-          }
-        } else if (event.type === "content_block_stop") {
-          if (currentToolName && currentToolId) {
-            try {
-              toolUseBlocks.push({ id: currentToolId, name: currentToolName, input: JSON.parse(currentToolInput || "{}") });
-            } catch {
-              toolUseBlocks.push({ id: currentToolId, name: currentToolName, input: {} });
+          case "tool-input-start": {
+            const id = (event as any).id;
+            const name = (event as any).toolName ?? (event as any).name;
+            if (id && !announcedTools.has(id)) {
+              announcedTools.add(id);
+              res.write(`data: ${JSON.stringify({ type: "tool_start", tool: name })}\n\n`);
             }
-            currentToolName = "";
-            currentToolId = "";
-            currentToolInput = "";
+            break;
           }
+          case "tool-call": {
+            const e = event as any;
+            toolUseBlocks.push({
+              id: e.toolCallId,
+              name: e.toolName,
+              input: (e.input ?? {}) as Record<string, unknown>,
+            });
+            // Announce if not already (some providers skip tool-input-start).
+            if (!announcedTools.has(e.toolCallId)) {
+              announcedTools.add(e.toolCallId);
+              res.write(`data: ${JSON.stringify({ type: "tool_start", tool: e.toolName })}\n\n`);
+            }
+            break;
+          }
+          case "error": {
+            const e = event as any;
+            console.warn("[chat-threads] stream error:", e.error);
+            break;
+          }
+          // Other events (start, finish, finish-step, text-start, text-end,
+          // tool-input-delta, tool-input-end) are not user-visible — ignore.
+          default:
+            break;
         }
       }
 
@@ -837,8 +852,8 @@ router.post("/chat/threads/:threadId/messages", async (req, res): Promise<void> 
       messages.push({ role: "user", content: toolResultContent });
     }
 
-    const streamDurationMs = Date.now() - streamStartTime;
-    logStreamedUsage("chat_thread", "claude-sonnet-4-6", { input_tokens: 0, output_tokens: 0 }, streamDurationMs, content.substring(0, 200), fullResponse.substring(0, 200));
+    // Stream usage is logged per-turn by createTrackedStream's onFinish callback.
+    void streamStartTime;
 
     await db.insert(chatMessagesTable).values({
       threadId,
